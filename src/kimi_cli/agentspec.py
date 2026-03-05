@@ -19,6 +19,10 @@ def get_agents_dir() -> Path:
 
 DEFAULT_AGENT_FILE = get_agents_dir() / "default" / "agent.yaml"
 OKABE_AGENT_FILE = get_agents_dir() / "okabe" / "agent.yaml"
+VIDEO_CREATOR_AGENT_FILE = get_agents_dir() / "video-creator" / "agent.yaml"
+VIDEO_EVALUATOR_AGENT_FILE = get_agents_dir() / "video-evaluator" / "agent.yaml"
+VIDEO_DIRECTOR_AGENT_FILE = get_agents_dir() / "video-director" / "agent.yaml"
+VIDEO_AUTO_EVAL_AGENT_FILE = get_agents_dir() / "video-auto-eval" / "agent.yaml"
 
 
 class Inherit(NamedTuple):

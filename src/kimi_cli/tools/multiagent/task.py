@@ -1,4 +1,5 @@
 import asyncio
+import re
 from pathlib import Path
 from typing import override
 
@@ -48,6 +49,18 @@ class Params(BaseModel):
             "because the subagent cannot see anything in your context."
         )
     )
+    session_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional session ID for stateful multi-turn dialogue. "
+            "When provided, the subagent resumes its previous conversation context "
+            "instead of starting fresh. Use the same session_id across multiple "
+            "Task calls to the same subagent to maintain continuity. "
+            "This is useful for iterative workflows where a subagent needs to "
+            "remember previous interactions (e.g., an evaluator tracking improvements "
+            "across multiple rounds of feedback)."
+        ),
+    )
 
 
 class Task(CallableTool2[Params]):
@@ -69,13 +82,26 @@ class Task(CallableTool2[Params]):
         self._labor_market = runtime.labor_market
         self._session = runtime.session
 
-    async def _get_subagent_context_file(self) -> Path:
-        """Generate a unique context file path for subagent."""
+    async def _get_subagent_context_file(self, session_id: str | None = None) -> Path:
+        """Generate a context file path for subagent.
+
+        If session_id is provided, returns a stable path so the subagent can
+        resume its previous conversation context across multiple Task calls.
+        Otherwise, generates a new unique path (original behaviour).
+        """
         main_context_file = self._session.context_file
+        parent = main_context_file.parent
+        parent.mkdir(parents=True, exist_ok=True)
+
+        if session_id is not None:
+            sanitized = re.sub(r"[^a-zA-Z0-9_\-]", "_", session_id)
+            if not sanitized:
+                sanitized = "unnamed"
+            return parent / f"dialogue_{sanitized}.jsonl"
+
         subagent_base_name = f"{main_context_file.stem}_sub"
-        main_context_file.parent.mkdir(parents=True, exist_ok=True)  # just in case
         sub_context_file = await next_available_rotation(
-            main_context_file.parent / f"{subagent_base_name}{main_context_file.suffix}"
+            parent / f"{subagent_base_name}{main_context_file.suffix}"
         )
         assert sub_context_file is not None
         return sub_context_file
@@ -91,7 +117,7 @@ class Task(CallableTool2[Params]):
             )
         agent = subagents[params.subagent_name]
         try:
-            result = await self._run_subagent(agent, params.prompt)
+            result = await self._run_subagent(agent, params.prompt, params.session_id)
             return result
         except Exception as e:
             return ToolError(
@@ -99,7 +125,9 @@ class Task(CallableTool2[Params]):
                 brief="Failed to run subagent",
             )
 
-    async def _run_subagent(self, agent: Agent, prompt: str) -> ToolReturnValue:
+    async def _run_subagent(
+        self, agent: Agent, prompt: str, session_id: str | None = None
+    ) -> ToolReturnValue:
         """Run subagent with optional continuation for task summary."""
         super_wire = get_wire_or_none()
         assert super_wire is not None
@@ -128,8 +156,10 @@ class Task(CallableTool2[Params]):
                 msg = await wire_ui.receive()
                 _super_wire_send(msg)
 
-        subagent_context_file = await self._get_subagent_context_file()
+        subagent_context_file = await self._get_subagent_context_file(session_id)
         context = Context(file_backend=subagent_context_file)
+        if session_id is not None and subagent_context_file.exists():
+            await context.restore()
         soul = KimiSoul(agent, context=context)
 
         try:

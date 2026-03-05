@@ -1,0 +1,23 @@
+version: 1
+agent:
+  extend: default
+  name: video-director
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kimi_cli.tools.multiagent:Task"
+    - "kimi_cli.tools.ask_user:AskUserQuestion"
+    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+  subagents:
+    video-creator:
+      path: ../video-creator/agent.yaml
+      description: "Generates videos from script to final output. Has access to GenerateVideo, CheckVideoJob, VideoEdit, and other video production tools."
+    video-evaluator:
+      path: ../video-evaluator/agent.yaml
+      description: "Analyzes and evaluates videos. Compares generated videos against originals and provides detailed natural language feedback with scores."

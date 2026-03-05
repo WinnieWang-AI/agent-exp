@@ -37,6 +37,11 @@ def test_task_params_schema(task_tool: Task):
                     "description": "The task for the subagent to perform. You must provide a detailed prompt with all necessary background information because the subagent cannot see anything in your context.",
                     "type": "string",
                 },
+                "session_id": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Optional session ID for stateful multi-turn dialogue. When provided, the subagent resumes its previous conversation context instead of starting fresh. Use the same session_id across multiple Task calls to the same subagent to maintain continuity. This is useful for iterative workflows where a subagent needs to remember previous interactions (e.g., an evaluator tracking improvements across multiple rounds of feedback).",
+                },
             },
             "required": ["description", "subagent_name", "prompt"],
             "type": "object",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Literal, Self
 
@@ -141,6 +142,59 @@ class MCPConfig(BaseModel):
     )
 
 
+class VideoProviderConfig(BaseModel):
+    """Video generation provider configuration."""
+
+    type: str
+    """Provider type: "mock", "sora", "vidu", "kling", etc."""
+    base_url: str = ""
+    """API base URL."""
+    api_key: SecretStr = SecretStr("")
+    """API key."""
+    model_name: str = ""
+    """Model name override (provider-specific, e.g. "sora-2", "viduq3-pro")."""
+    custom_headers: dict[str, str] | None = None
+    """Custom headers to include in API requests."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+class ImageProviderConfig(BaseModel):
+    """Image generation provider configuration."""
+
+    type: str
+    """Provider type: "gemini", etc."""
+    api_key: SecretStr = SecretStr("")
+    """API key."""
+    model_name: str = ""
+    """Model name (e.g. "gemini-2.0-flash-exp")."""
+    base_url: str = ""
+    """Optional base URL (e.g. for Vertex AI)."""
+    custom_headers: dict[str, str] | None = None
+    """Custom headers to include in API requests."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+class NacosSettings(BaseModel):
+    """Nacos configuration center connection settings."""
+
+    server_addr: str = ""
+    """Nacos server address (e.g. ``http://101.47.165.90:8848``)."""
+    namespace: str = ""
+    """Nacos namespace / tenant ID."""
+    username: str = ""
+    """Nacos login username."""
+    password: str = ""
+    """Nacos login password."""
+    group: str = "DEFAULT_GROUP"
+    """Nacos configuration group."""
+
+
 class Config(BaseModel):
     """Main configuration structure."""
 
@@ -159,6 +213,15 @@ class Config(BaseModel):
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
     services: Services = Field(default_factory=Services, description="Services configuration")
     mcp: MCPConfig = Field(default_factory=MCPConfig, description="MCP configuration")
+    video_providers: dict[str, VideoProviderConfig] = Field(
+        default_factory=dict, description="Video generation provider configurations"
+    )
+    image_providers: dict[str, ImageProviderConfig] = Field(
+        default_factory=dict, description="Image generation provider configurations"
+    )
+    nacos: NacosSettings | None = Field(
+        default=None, description="Nacos configuration center settings"
+    )
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
@@ -216,6 +279,7 @@ def load_config(config_file: Path | None = None) -> Config:
         logger.debug("No config file found, creating default config: {config}", config=config)
         save_config(config, config_file)
         config.is_from_default_location = is_default_config_file
+        _merge_nacos_configs(config)
         return config
 
     try:
@@ -232,6 +296,7 @@ def load_config(config_file: Path | None = None) -> Config:
     except ValidationError as e:
         raise ConfigError(f"Invalid configuration file {config_file}: {e}") from e
     config.is_from_default_location = is_default_config_file
+    _merge_nacos_configs(config)
     return config
 
 
@@ -322,3 +387,146 @@ def _migrate_json_config_to_toml() -> None:
     backup_path = old_json_config_file.with_name("config.json.bak")
     old_json_config_file.replace(backup_path)
     logger.info("Legacy config backed up to {file}", file=backup_path)
+
+
+def _resolve_nacos_settings(config: Config) -> NacosSettings | None:
+    """Build NacosSettings from config.toml ``[nacos]`` section or env vars.
+
+    Environment variables take precedence over the TOML section.
+    Returns ``None`` if no Nacos coordinates are available.
+    """
+    env_ip = os.environ.get("NACOS_IP", "")
+    if env_ip:
+        port = os.environ.get("NACOS_PORT", "8848")
+        return NacosSettings(
+            server_addr=f"http://{env_ip}:{port}",
+            namespace=os.environ.get("NACOS_NAMESPACE", ""),
+            username=os.environ.get("NACOS_USERNAME", ""),
+            password=os.environ.get("NACOS_PASSWORD", ""),
+            group=os.environ.get("NACOS_GROUP", "DEFAULT_GROUP"),
+        )
+
+    if config.nacos and config.nacos.server_addr:
+        return config.nacos
+
+    return None
+
+
+def _merge_nacos_configs(config: Config) -> None:
+    """Fetch remote configs from Nacos and merge into *config* in-place.
+
+    Mapping
+    -------
+    * ``sora_config`` → ``video_providers["sora"]`` (type ``apiyi``)
+    * ``openai_config`` → ``providers["main"]`` + ``models["default"]`` (only
+      when the local config does not already define them)
+
+    Errors are logged as warnings and never block startup.
+    """
+    settings = _resolve_nacos_settings(config)
+    if settings is None:
+        return
+
+    from kimi_cli.nacos import NacosClient
+
+    client = NacosClient(
+        server_addr=settings.server_addr,
+        namespace=settings.namespace,
+        username=settings.username,
+        password=settings.password,
+        group=settings.group,
+    )
+    client.login()
+
+    # --- sora_config → video_providers["sora"] (type=apiyi) ---
+    sora = client.get_config("sora_config")
+    if sora:
+        api_key = sora.get("api_key") or sora.get("apiKey") or ""
+        base_url = sora.get("base_url") or sora.get("baseUrl") or ""
+        model_name = sora.get("model") or sora.get("model_name") or ""
+        if api_key:
+            config.video_providers.setdefault(
+                "sora",
+                VideoProviderConfig(
+                    type="apiyi",
+                    api_key=SecretStr(api_key),
+                    base_url=base_url,
+                    model_name=model_name,
+                ),
+            )
+            logger.debug("Nacos: merged sora_config into video_providers['sora']")
+
+    # --- openai_config → providers["main"] + models["default"] ---
+    if "main" not in config.providers:
+        openai = client.get_config("openai_config")
+        if openai:
+            api_key = openai.get("api_key") or openai.get("apiKey") or ""
+            base_url = openai.get("base_url") or openai.get("baseUrl") or ""
+            # model name can be at top-level or nested in llm.chat.default_model
+            llm_section = openai.get("llm") or {}
+            chat_section = llm_section.get("chat") or {} if isinstance(llm_section, dict) else {}
+            model = (
+                openai.get("model")
+                or openai.get("model_name")
+                or chat_section.get("default_model")
+                or ""
+            )
+            if api_key and base_url:
+                config.providers["main"] = LLMProvider(
+                    type="openai_legacy",
+                    base_url=base_url,
+                    api_key=SecretStr(api_key),
+                )
+                if model and "default" not in config.models:
+                    config.models["default"] = LLMModel(
+                        provider="main",
+                        model=model,
+                        max_context_size=128_000,
+                    )
+                    if not config.default_model:
+                        config.default_model = "default"
+                logger.debug("Nacos: merged openai_config into providers['main']")
+
+    # --- Statsig: shengshu → video_providers["vidu"] (type=vidu) ---
+    _merge_statsig_configs(config)
+
+
+def _merge_statsig_configs(config: Config) -> None:
+    """Fetch dynamic configs from Statsig and merge into *config* in-place.
+
+    Mapping
+    -------
+    * ``shengshu`` → ``video_providers["vidu"]`` (type ``vidu``)
+
+    Requires ``STATSIG_SK`` environment variable.
+    Errors are logged as warnings and never block startup.
+    """
+    statsig_sk = os.environ.get("STATSIG_SK", "")
+    if not statsig_sk:
+        return
+
+    if "vidu" in config.video_providers:
+        return
+
+    try:
+        from statsig import statsig, StatsigOptions, StatsigUser
+
+        statsig.initialize(statsig_sk, StatsigOptions(tier="development"))
+        try:
+            user = StatsigUser(user_id="kimi_cli")
+            shengshu = statsig.get_config(user, "shengshu").get_value()
+        finally:
+            statsig.shutdown()
+
+        if shengshu:
+            api_key = shengshu.get("api_key", "")
+            base_url = shengshu.get("base_url", "https://api.vidu.com")
+            if api_key:
+                config.video_providers["vidu"] = VideoProviderConfig(
+                    type="vidu",
+                    api_key=SecretStr(api_key),
+                    base_url=base_url,
+                )
+                logger.debug("Statsig: merged shengshu into video_providers['vidu']")
+    except Exception as exc:
+        logger.warning("Statsig config fetch failed: {exc}", exc=exc)

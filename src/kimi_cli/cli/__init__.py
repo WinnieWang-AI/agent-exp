@@ -220,7 +220,7 @@ def kimi(
     ] = False,
     # Customization
     agent: Annotated[
-        Literal["default", "okabe"] | None,
+        Literal["default", "okabe", "video-auto-eval", "video-creator", "video-director", "video-evaluator"] | None,
         typer.Option(
             "--agent",
             help="Builtin agent specification to use. Default: builtin default agent.",
@@ -313,7 +313,14 @@ def kimi(
 
     from kaos.path import KaosPath
 
-    from kimi_cli.agentspec import DEFAULT_AGENT_FILE, OKABE_AGENT_FILE
+    from kimi_cli.agentspec import (
+        DEFAULT_AGENT_FILE,
+        OKABE_AGENT_FILE,
+        VIDEO_CREATOR_AGENT_FILE,
+        VIDEO_AUTO_EVAL_AGENT_FILE,
+        VIDEO_DIRECTOR_AGENT_FILE,
+        VIDEO_EVALUATOR_AGENT_FILE,
+    )
     from kimi_cli.app import KimiCLI, enable_logging
     from kimi_cli.config import Config, load_config_from_string
     from kimi_cli.exception import ConfigError
@@ -391,6 +398,14 @@ def kimi(
                 agent_file = DEFAULT_AGENT_FILE
             case "okabe":
                 agent_file = OKABE_AGENT_FILE
+            case "video-auto-eval":
+                agent_file = VIDEO_AUTO_EVAL_AGENT_FILE
+            case "video-creator":
+                agent_file = VIDEO_CREATOR_AGENT_FILE
+            case "video-director":
+                agent_file = VIDEO_DIRECTOR_AGENT_FILE
+            case "video-evaluator":
+                agent_file = VIDEO_EVALUATOR_AGENT_FILE
 
     ui: UIMode = "shell"
     if print_mode:

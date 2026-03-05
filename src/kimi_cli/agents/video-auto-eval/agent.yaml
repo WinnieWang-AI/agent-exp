@@ -1,0 +1,18 @@
+version: 1
+agent:
+  extend: default
+  name: video-auto-eval
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+    MAX_ROUNDS: "5"
+    APPROVAL_THRESHOLD: "9"
+  tools:
+    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+  subagents: {}

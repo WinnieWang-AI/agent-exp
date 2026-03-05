@@ -1,0 +1,31 @@
+version: 1
+agent:
+  extend: default
+  name: video-creator
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    # Base tools inherited from default
+    - "kimi_cli.tools.multiagent:Task"
+    - "kimi_cli.tools.ask_user:AskUserQuestion"
+    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.shell:Shell"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    - "kimi_cli.tools.web:SearchWeb"
+    - "kimi_cli.tools.web:FetchURL"
+    # Video-specific tools
+    - "kimi_cli.tools.video:ManageVideoProject"
+    - "kimi_cli.tools.video:GenerateVideo"
+    - "kimi_cli.tools.video:CheckVideoJob"
+    - "kimi_cli.tools.video:VideoEdit"
+    - "kimi_cli.tools.video:GenerateImage"
+  subagents:
+    coder:
+      path: ../default/sub.yaml
+      description: "Good at general software engineering tasks."

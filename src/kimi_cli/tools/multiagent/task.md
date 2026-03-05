@@ -21,6 +21,17 @@ Examples:
 - When you need to analyze a huge codebase (> hundreds of thousands of lines), you can spawn multiple subagents each exploring on a different part of the codebase and gather the summarized results.
 - When you need to search the web for multiple queries, you can spawn multiple subagents for better efficiency.
 
+**Stateful Multi-Turn Dialogue**
+
+By default, each Task call gives the subagent a fresh context with no memory of previous calls. When you need a subagent to remember previous interactions across multiple Task calls, provide a `session_id`. The same session_id will let the subagent resume its previous conversation context.
+
+Use cases for stateful dialogue:
+- An evaluator agent that tracks improvement trends across multiple feedback rounds
+- A creator agent that iteratively refines its output based on accumulated feedback
+- Any workflow requiring multi-turn collaboration between agents
+
+Example: Use `session_id="eval_project1"` for all calls to an evaluator subagent within the same project, so it remembers its earlier analysis when comparing new results.
+
 **Available Subagents:**
 
 ${SUBAGENTS_MD}
