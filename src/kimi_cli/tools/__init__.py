@@ -35,6 +35,10 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("name"):
                 return None
             key_argument = str(curr_args["name"])
+        case "ChatWithAgent":
+            if not isinstance(curr_args, dict) or not curr_args.get("agent_name"):
+                return None
+            key_argument = str(curr_args["agent_name"])
         case "SendDMail":
             return None
         case "Think":
@@ -99,6 +103,14 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("prompt"):
                 return None
             key_argument = str(curr_args["prompt"])
+        case "AnalyzeVideo":
+            if not isinstance(curr_args, dict) or not curr_args.get("video_path"):
+                return None
+            key_argument = _normalize_path(str(curr_args["video_path"]))
+        case "CompareVideos":
+            if not isinstance(curr_args, dict) or not curr_args.get("original_path"):
+                return None
+            key_argument = _normalize_path(str(curr_args["original_path"]))
         case _:
             if isinstance(json_content, streamingjson.Lexer):
                 # lexer.json_content is list[str] based on streamingjson source code

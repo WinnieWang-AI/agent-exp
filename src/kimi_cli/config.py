@@ -180,6 +180,29 @@ class ImageProviderConfig(BaseModel):
         return v.get_secret_value()
 
 
+class VLMProviderConfig(BaseModel):
+    """VLM (vision-language model) provider configuration."""
+
+    type: str = "gemini"
+    """Provider type: "gemini"."""
+    api_key: SecretStr = SecretStr("")
+    """API key (for Gemini Developer API)."""
+    model_name: str = ""
+    """Model name (e.g. "gemini-2.0-flash")."""
+    base_url: str = ""
+    """Optional base URL override."""
+    project_id: str = ""
+    """Google Cloud project ID (for Vertex AI)."""
+    location: str = "global"
+    """Vertex AI location."""
+    credentials_json: str = ""
+    """Path to service account JSON file (for Vertex AI)."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
 class NacosSettings(BaseModel):
     """Nacos configuration center connection settings."""
 
@@ -218,6 +241,9 @@ class Config(BaseModel):
     )
     image_providers: dict[str, ImageProviderConfig] = Field(
         default_factory=dict, description="Image generation provider configurations"
+    )
+    vlm_providers: dict[str, VLMProviderConfig] = Field(
+        default_factory=dict, description="VLM (vision-language model) provider configurations"
     )
     nacos: NacosSettings | None = Field(
         default=None, description="Nacos configuration center settings"
@@ -486,6 +512,44 @@ def _merge_nacos_configs(config: Config) -> None:
                     if not config.default_model:
                         config.default_model = "default"
                 logger.debug("Nacos: merged openai_config into providers['main']")
+
+    # --- gemini → vlm_providers["gemini"] (type=gemini, Vertex AI) ---
+    if "gemini" not in config.vlm_providers:
+        gemini = client.get_config("gemini")
+        if gemini:
+            api_key_url = gemini.get("api_key_url", "")
+            # Nacos model_name is for image generation; VLM uses a different model
+            model_name = "gemini-2.5-flash"
+            project_id = gemini.get("project_id", "")
+            location = gemini.get("location", "global")
+
+            credentials_json = ""
+            if api_key_url:
+                try:
+                    import httpx as _httpx
+
+                    resp = _httpx.get(api_key_url, timeout=10)
+                    resp.raise_for_status()
+                    # Save service account JSON to a temp file
+                    creds_file = Path(get_share_dir()) / "gemini_sa.json"
+                    creds_file.write_text(resp.text, encoding="utf-8")
+                    credentials_json = str(creds_file)
+                except Exception as exc:
+                    logger.warning(
+                        "Nacos: failed to fetch Gemini credentials from {url}: {exc}",
+                        url=api_key_url,
+                        exc=exc,
+                    )
+
+            if credentials_json or project_id:
+                config.vlm_providers["gemini"] = VLMProviderConfig(
+                    type="gemini",
+                    model_name=model_name,
+                    project_id=project_id,
+                    location=location,
+                    credentials_json=credentials_json,
+                )
+                logger.debug("Nacos: merged gemini into vlm_providers['gemini']")
 
     # --- Statsig: shengshu → video_providers["vidu"] (type=vidu) ---
     _merge_statsig_configs(config)

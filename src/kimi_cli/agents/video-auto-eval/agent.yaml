@@ -8,11 +8,13 @@ agent:
     MAX_ROUNDS: "5"
     APPROVAL_THRESHOLD: "9"
   tools:
+    - "kimi_cli.tools.multiagent:ChatWithAgent"
     - "kimi_cli.tools.todo:SetTodoList"
-    - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:ReadFile"
-    - "kimi_cli.tools.file:ReadMediaFile"
     - "kimi_cli.tools.file:WriteFile"
     - "kimi_cli.tools.file:Glob"
     - "kimi_cli.tools.file:Grep"
+    # VLM video analysis tools
+    - "kimi_cli.tools.video:AnalyzeVideo"
+    - "kimi_cli.tools.video:CompareVideos"
   subagents: {}
