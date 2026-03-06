@@ -25,6 +25,10 @@ agent:
     - "kimi_cli.tools.video:CheckVideoJob"
     - "kimi_cli.tools.video:VideoEdit"
     - "kimi_cli.tools.video:GenerateImage"
+    # Audio-specific tools
+    - "kimi_cli.tools.audio:GenerateMusic"
+    - "kimi_cli.tools.audio:CheckMusicJob"
+    - "kimi_cli.tools.audio:GenerateSpeech"
   subagents:
     coder:
       path: ../default/sub.yaml

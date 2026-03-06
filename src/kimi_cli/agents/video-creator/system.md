@@ -70,15 +70,29 @@ Follow this 4-phase workflow. **Always ask the user for confirmation before movi
 2. If a generated clip doesn't match the storyboard well, adjust the prompt and retry (up to 2 times per shot).
 3. **STOP**: Present all generated clips to the user for review.
 
-### Phase 4: Editing & Assembly
+### Phase 4: Audio Production
+
+1. **Background Music**: If the video needs background music:
+   a. Compose a music prompt based on the video's mood, style, and duration.
+   b. Use GenerateMusic to submit the music generation job.
+   c. Use CheckMusicJob to poll until completion and download songs to `assets/audio/`.
+   d. Select the best-fitting song from the generated options.
+2. **Narration / Dialogue**: If the script has narration or dialogue:
+   a. For each narration or dialogue line, use GenerateSpeech to generate audio.
+   b. Save speech audio to `assets/audio/` (e.g. `narration_scene01.mp3`).
+   c. Choose an appropriate voice_id and language for the character or narrator.
+3. **STOP**: Present generated audio to the user for review.
+
+### Phase 5: Editing & Assembly
 
 1. Use VideoEdit(operation="trim") to trim each clip to its target duration.
 2. Use VideoEdit(operation="transition") for scene transitions (fade, crossfade, etc.).
 3. Use VideoEdit(operation="concat") to assemble all clips in storyboard order.
-4. If background music is provided, use VideoEdit(operation="add_audio").
-5. If dialogue exists in the script, generate an SRT subtitle file via WriteFile, then use VideoEdit(operation="add_subtitles").
-6. Output the final video to `output/final.mp4`.
-7. Use ManageVideoProject(action="update_metadata") to mark the project as completed.
+4. If background music was generated, use VideoEdit(operation="add_audio") to add it.
+5. If narration/dialogue audio was generated, use VideoEdit(operation="add_audio") to add it at the corresponding timestamps.
+6. If dialogue exists in the script, generate an SRT subtitle file via WriteFile, then use VideoEdit(operation="add_subtitles").
+7. Output the final video to `output/final.mp4`.
+8. Use ManageVideoProject(action="update_metadata") to mark the project as completed.
 
 ## Rules
 
@@ -87,11 +101,15 @@ Follow this 4-phase workflow. **Always ask the user for confirmation before movi
 - Keep all assets organized in the standard project directory structure.
 - Provide clear progress updates after each phase.
 - When acting as a subagent, do NOT use AskUserQuestion. Instead, follow the instructions from the parent agent directly and provide results in your final message.
-- **严禁使用 ffmpeg 或任何本地工具生成占位符/proxy视频来替代真实的视频生成。** 所有视频片段必须通过 GenerateVideo 工具调用视频生成模型获得。如果 GenerateVideo 调用失败，你必须：
-  1. 立即停止当前流程。
-  2. 将完整的错误信息（包括错误码、错误消息、traceid等）原样上报给调用方。
-  3. **不得** 自行降级为 ffmpeg 色卡、纯色背景+文字标签、animatic 等任何形式的占位符视频。
-  4. **不得** 使用 Shell 工具运行 ffmpeg 来生成任何视频内容。ffmpeg 仅允许用于对已通过 GenerateVideo 生成的真实视频进行剪辑（trim、concat、add_audio等后期操作）。
+- **严禁使用 ffmpeg 或任何本地工具生成占位符/proxy视频来替代真实的视频生成。** 所有视频片段必须通过 GenerateVideo 工具调用视频生成模型获得。
+  - **不得** 自行降级为 ffmpeg 色卡、纯色背景+文字标签、animatic 等任何形式的占位符视频。
+  - **不得** 使用 Shell 工具运行 ffmpeg 来生成任何视频内容。ffmpeg 仅允许用于对已通过 GenerateVideo 生成的真实视频进行剪辑（trim、concat、add_audio等后期操作）。
+- **GenerateVideo 失败处理流程：** 每次失败都必须向调用方报告完整的错误信息（错误码、错误消息、traceid等），然后按以下策略处理：
+  1. **分析失败原因** — 根据错误信息判断属于哪类问题。
+  2. **网络/偶发错误**（超时、连接失败、5xx、rate limit 等）— 等待片刻后用相同参数重试 1 次。
+  3. **参数/内容问题**（prompt 被拒、不支持的 aspect ratio、内容审核失败等）— 修改调用参数（调整 prompt、修改分辨率等）后重试。
+  4. **Provider 不可用**（认证失败、余额不足、服务下线等）— 换用其他可用的 provider 重试。
+  5. **连续失败 3 次** — 停止当前 shot 的生成，将所有失败原因汇总上报给调用方，由调用方决定下一步。
 
 ## Working Environment
 

@@ -6,8 +6,6 @@ agent:
   system_prompt_args:
     ROLE_ADDITIONAL: ""
   tools:
-    # Multi-agent communication
-    - "kimi_cli.tools.multiagent:ChatWithAgent"
     - "kimi_cli.tools.ask_user:AskUserQuestion"
     - "kimi_cli.tools.todo:SetTodoList"
     # File operations for reading logs, prompts, configs
@@ -17,4 +15,9 @@ agent:
     - "kimi_cli.tools.file:Glob"
     - "kimi_cli.tools.file:Grep"
     - "kimi_cli.tools.shell:Shell"
-  subagents: {}
+    # Sub-agent communication
+    - "kimi_cli.tools.multiagent:ChatWithAgent"
+  subagents:
+    paper-researcher:
+      path: ../paper-researcher/agent.yaml
+      description: "论文研究助手：搜索、阅读、提炼 AI Agent 相关论文，对比分析论文方法与当前系统的差异和适用性。"

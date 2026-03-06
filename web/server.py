@@ -103,6 +103,23 @@ async def create_cli(agent_name: str) -> KimiCLI:
     return cli
 
 
+async def handle_question(websocket: WebSocket, msg: QuestionRequest, pending: dict):
+    """Send a QuestionRequest to the frontend and wait for the user's answer."""
+    questions = []
+    for q in msg.questions:
+        qdata: dict[str, Any] = {"question": q.question}
+        if q.options:
+            qdata["options"] = [{"label": o.label} for o in q.options]
+        questions.append(qdata)
+    qid = id(msg)
+    pending[qid] = msg
+    await websocket.send_json({
+        "type": "question",
+        "id": qid,
+        "questions": questions,
+    })
+
+
 @app.websocket("/ws/chat/{agent_name}")
 async def ws_chat(websocket: WebSocket, agent_name: str):
     """
@@ -110,7 +127,9 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
 
     Protocol:
     - Client sends: {"type": "message", "content": "..."}
+    - Client sends: {"type": "answer", "id": ..., "answers": {...}}
     - Server sends: {"type": "wire", "data": {...}}  (wire message envelope)
+    - Server sends: {"type": "question", "id": ..., "questions": [...]}
     - Server sends: {"type": "status", "status": "ready"|"thinking"|"done"|"error"}
     - Server sends: {"type": "error", "message": "..."}
     """
@@ -130,9 +149,35 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
 
     await websocket.send_json({"type": "status", "status": "ready"})
 
+    pending_questions: dict[int, QuestionRequest] = {}
+    incoming_queue: asyncio.Queue = asyncio.Queue()
+
+    async def ws_reader():
+        """Read from websocket and put messages into the queue."""
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                await incoming_queue.put(raw)
+        except WebSocketDisconnect:
+            await incoming_queue.put(None)  # sentinel
+
+    reader_task = asyncio.create_task(ws_reader())
+
     try:
         while True:
-            raw = await websocket.receive_json()
+            raw = await incoming_queue.get()
+            if raw is None:
+                break
+
+            # Handle answers to pending questions
+            if raw.get("type") == "answer":
+                qid = raw.get("id")
+                qmsg = pending_questions.pop(qid, None)
+                if qmsg:
+                    answers = raw.get("answers", {})
+                    qmsg.resolve(answers)
+                continue
+
             if raw.get("type") != "message":
                 continue
 
@@ -143,32 +188,48 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
-            try:
-                async for msg in cli.run(content, cancel_event, merge_wire_messages=True):
-                    try:
-                        data = serialize_wire_message(msg)
-                        await websocket.send_json({"type": "wire", "data": data})
-                    except Exception:
-                        pass  # skip unserializable messages
+            async def run_agent():
+                try:
+                    async for msg in cli.run(content, cancel_event, merge_wire_messages=True):
+                        try:
+                            data = serialize_wire_message(msg)
+                            await websocket.send_json({"type": "wire", "data": data})
+                        except Exception:
+                            pass
 
-                    # Auto-approve any approval requests
-                    if isinstance(msg, ApprovalRequest):
-                        msg.resolve("approve")
+                        if isinstance(msg, ApprovalRequest):
+                            msg.resolve("approve")
 
-                    # Auto-answer question requests
-                    if isinstance(msg, QuestionRequest):
-                        answers = {}
-                        for q in msg.questions:
-                            answers[q.question] = q.options[0].label if q.options else ""
-                        msg.resolve(answers)
+                        if isinstance(msg, QuestionRequest):
+                            await handle_question(websocket, msg, pending_questions)
 
-            except Exception as e:
-                await websocket.send_json({"type": "error", "message": str(e)})
+                except Exception as e:
+                    await websocket.send_json({"type": "error", "message": str(e)})
+                await websocket.send_json({"type": "status", "status": "ready"})
 
-            await websocket.send_json({"type": "status", "status": "ready"})
+            agent_task = asyncio.create_task(run_agent())
+
+            # While agent is running, keep processing incoming messages (answers)
+            while not agent_task.done():
+                try:
+                    raw2 = await asyncio.wait_for(incoming_queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+                if raw2 is None:
+                    cancel_event.set()
+                    break
+                if raw2.get("type") == "answer":
+                    qid = raw2.get("id")
+                    qmsg = pending_questions.pop(qid, None)
+                    if qmsg:
+                        qmsg.resolve(raw2.get("answers", {}))
+
+            await agent_task
 
     except WebSocketDisconnect:
         pass
+    finally:
+        reader_task.cancel()
 
 
 @app.websocket("/ws/auto")

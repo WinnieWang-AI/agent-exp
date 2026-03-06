@@ -20,19 +20,22 @@ When a user describes a video they want to create:
 ### Step 1: Understand Requirements
 
 - Ask clarifying questions if the user's description is vague (style, duration, resolution, mood, etc.).
+- Also ask about audio needs:
+  - **Background music**: mood, genre, instrumental or with vocals?
+  - **Narration/dialogue**: any voiceover? language? voice style?
 - Choose a project name based on the topic or user preference.
 - The session IDs will be: `eval_{project_name}` and `create_{project_name}`.
 
 ### Step 2: Create Video
 
-Pass the user's requirements to the creator:
+Pass the user's requirements to the creator, **including audio requirements**:
 
 ```
 Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate video",
-  prompt="Create a video based on the following description:\n\n{user_description}\n\nSave the project to ./output/{project_name}/ and the final output to ./output/{project_name}/output/attempt_1.mp4"
+  prompt="Create a video based on the following description:\n\n{user_description}\n\nAudio requirements:\n- Background music: {music_description}\n- Narration: {narration_description}\n\nSave the project to ./output/{project_name}/ and the final output to ./output/{project_name}/output/attempt_1.mp4"
 )
 ```
 
@@ -45,7 +48,7 @@ Task(
   subagent_name="video-evaluator",
   session_id="eval_{project_name}",
   description="Evaluate video quality",
-  prompt="Evaluate the video at {video_path}. Provide detailed feedback on composition, color, motion, timing, and overall quality."
+  prompt="Evaluate the video at {video_path}. Provide detailed feedback on composition, color, motion, timing, audio quality, and overall quality."
 )
 ```
 
@@ -62,6 +65,32 @@ Task(
 
 - Repeat evaluation-revision up to **5 rounds** maximum.
 - If the user is satisfied or after 5 rounds, report the final output path.
+
+## Workflow: Audio-Only Tasks
+
+When a user only wants audio (music or speech) without video:
+
+### Music Generation
+
+```
+Task(
+  subagent_name="video-creator",
+  session_id="create_{project_name}",
+  description="Generate music",
+  prompt="Generate background music with the following requirements:\n\n- Style: {music_style}\n- Mood: {mood}\n- Instrumental: {yes/no}\n- Lyrics: {lyrics_if_any}\n\nSave the generated audio to ./output/{project_name}/assets/audio/"
+)
+```
+
+### Speech / Narration Generation
+
+```
+Task(
+  subagent_name="video-creator",
+  session_id="create_{project_name}",
+  description="Generate speech",
+  prompt="Generate speech audio for the following text:\n\n{text}\n\n- Language: {language}\n- Voice style: {voice_description}\n\nSave the generated audio to ./output/{project_name}/assets/audio/"
+)
+```
 
 ## Workflow: Video Reproduction (with reference)
 

@@ -51,12 +51,16 @@ class GenerateVideo(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Video generation rejected by user.", brief="Rejected")
 
+        available = list(self._config.video_providers.keys())
         try:
             provider_name, provider = get_default_provider(
                 self._config.video_providers, params.provider
             )
         except ValueError as e:
-            return builder.error(message=str(e), brief="Provider error")
+            return builder.error(
+                message=f"{e}\nAvailable providers: {available}",
+                brief="Provider error",
+            )
 
         request = GenerationRequest(
             mode=params.mode,
@@ -80,5 +84,6 @@ class GenerateVideo(CallableTool2[Params]):
         builder.write(f"  job_id: {submission.job_id}\n")
         builder.write(f"  provider: {provider_name}\n")
         builder.write(f"  estimated_seconds: {submission.estimated_seconds}\n")
+        builder.write(f"  available_providers: {available}\n")
         builder.write(f"\nUse CheckVideoJob with this job_id to poll for completion.\n")
         return builder.ok(message=f"Job submitted: {submission.job_id}")

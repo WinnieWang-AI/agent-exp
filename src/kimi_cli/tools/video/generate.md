@@ -2,13 +2,10 @@ Submit an asynchronous video generation job to a configured video provider.
 
 Returns a job_id immediately. Use CheckVideoJob to poll for completion and download the result.
 
-**Available providers (only these are supported):**
-- `kling` — 可灵 (Kling), model: kling-video-o1
-- `vidu` — Vidu (生数科技), model: viduq3-pro
-- `sora` — Sora 2 (via Geneasy API)
-- `apiyi` — ApiYi (SSE streaming)
-
-Do NOT use any provider not listed above.
+**Provider selection:**
+- Leave `provider` empty to use the default (first configured) provider. This is recommended in most cases.
+- Only specify `provider` explicitly when retrying with a different provider after a failure.
+- Do NOT guess or assume which providers are available. If a provider is not configured, the call will fail.
 
 **Modes:**
 - `text_to_video`: Generate video from a text prompt alone.

@@ -203,6 +203,42 @@ class VLMProviderConfig(BaseModel):
         return v.get_secret_value()
 
 
+class MusicProviderConfig(BaseModel):
+    """Music generation provider configuration."""
+
+    type: str
+    """Provider type: "suno", etc."""
+    api_key: SecretStr = SecretStr("")
+    """API key."""
+    base_url: str = ""
+    """API base URL."""
+    model_name: str = ""
+    """Model name override."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
+class TTSProviderConfig(BaseModel):
+    """TTS (text-to-speech) provider configuration."""
+
+    type: str
+    """Provider type: "minimax", etc."""
+    api_key: SecretStr = SecretStr("")
+    """API key."""
+    base_url: str = ""
+    """API base URL."""
+    group_id: str = ""
+    """Group ID (required for Minimax)."""
+    model_name: str = ""
+    """Model name (e.g. "speech-01-tts")."""
+
+    @field_serializer("api_key", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+
 class NacosSettings(BaseModel):
     """Nacos configuration center connection settings."""
 
@@ -244,6 +280,12 @@ class Config(BaseModel):
     )
     vlm_providers: dict[str, VLMProviderConfig] = Field(
         default_factory=dict, description="VLM (vision-language model) provider configurations"
+    )
+    music_providers: dict[str, MusicProviderConfig] = Field(
+        default_factory=dict, description="Music generation provider configurations"
+    )
+    tts_providers: dict[str, TTSProviderConfig] = Field(
+        default_factory=dict, description="TTS (text-to-speech) provider configurations"
     )
     nacos: NacosSettings | None = Field(
         default=None, description="Nacos configuration center settings"
@@ -446,6 +488,8 @@ def _merge_nacos_configs(config: Config) -> None:
     * ``sora_config`` → ``video_providers["sora"]`` (type ``apiyi``)
     * ``openai_config`` → ``providers["main"]`` + ``models["default"]`` (only
       when the local config does not already define them)
+    * ``suno_config`` → ``music_providers["suno"]`` (type ``suno``)
+    * ``minimax_config`` → ``tts_providers["minimax"]`` (type ``minimax``)
 
     Errors are logged as warnings and never block startup.
     """
@@ -550,6 +594,46 @@ def _merge_nacos_configs(config: Config) -> None:
                     credentials_json=credentials_json,
                 )
                 logger.debug("Nacos: merged gemini into vlm_providers['gemini']")
+
+    # --- suno_config → music_providers["suno"] (type=suno) ---
+    if "suno" not in config.music_providers:
+        suno = client.get_config("suno_config")
+        if suno:
+            api_key = suno.get("api_key") or ""
+            base_url = suno.get("base_url") or ""
+            if api_key:
+                config.music_providers["suno"] = MusicProviderConfig(
+                    type="suno",
+                    api_key=SecretStr(api_key),
+                    base_url=base_url,
+                )
+                logger.debug("Nacos: merged suno_config into music_providers['suno']")
+
+    # --- minimax_config → tts_providers["minimax"] (type=minimax) ---
+    if "minimax" not in config.tts_providers:
+        minimax = client.get_config("minimax_config")
+        if minimax:
+            api_key = minimax.get("api_key") or ""
+            group_id = minimax.get("group_id") or ""
+            # Pick the first audio model name as the default model
+            audio_models = minimax.get("audio") or {}
+            model_name = ""
+            if audio_models and isinstance(audio_models, dict):
+                first_key = next(iter(audio_models))
+                model_cfg = audio_models[first_key]
+                model_name = (
+                    model_cfg.get("model_name") or first_key
+                    if isinstance(model_cfg, dict)
+                    else first_key
+                )
+            if api_key and group_id:
+                config.tts_providers["minimax"] = TTSProviderConfig(
+                    type="minimax",
+                    api_key=SecretStr(api_key),
+                    group_id=group_id,
+                    model_name=model_name,
+                )
+                logger.debug("Nacos: merged minimax_config into tts_providers['minimax']")
 
     # --- Statsig: shengshu → video_providers["vidu"] (type=vidu) ---
     _merge_statsig_configs(config)
