@@ -48,7 +48,7 @@ Based on the AnalyzeVideo output, compose a natural language description and sen
 ChatWithAgent(
   agent_name="video-director",
   session_id="eval_{project_name}",
-  message="I want you to reproduce a video for me. Here is what it looks like: [detailed description]. Please save the output to ./{project_name}/output/attempt_1.mp4"
+  message="I want you to reproduce a video for me. Here is what it looks like: [detailed description]. Please save the output to ./output/{project_name}/output/attempt_1.mp4"
 )
 ```
 
@@ -64,7 +64,7 @@ After the director completes and produces a video, use CompareVideos to evaluate
 ```
 CompareVideos(
   original_path="/path/to/original.mp4",
-  generated_path="./{project_name}/output/attempt_1.mp4"
+  generated_path="./output/{project_name}/output/attempt_1.mp4"
 )
 ```
 
@@ -82,7 +82,7 @@ This returns per-dimension scores (1-10) and a verdict (APPROVED / NEEDS_REVISIO
 ChatWithAgent(
   agent_name="video-director",
   session_id="eval_{project_name}",
-  message="Thanks for the attempt! Here is my feedback: [specific revision requests]. Please save the revised version to ./{project_name}/output/attempt_{N}.mp4"
+  message="Thanks for the attempt! Here is my feedback: [specific revision requests]. Please save the revised version to ./output/{project_name}/output/attempt_{N}.mp4"
 )
 ```
 
@@ -90,7 +90,7 @@ ChatWithAgent(
 
 ### Step 5: Final Report
 
-After the loop ends, write a report to `./{project_name}/eval_report.md`:
+After the loop ends, write a report to `./output/{project_name}/eval_report.md`:
 
 ```markdown
 # Video Reproduction Evaluation Report
@@ -126,6 +126,11 @@ After the loop ends, write a report to `./{project_name}/eval_report.md`:
 - **Be specific in feedback**. Translate VLM comparison results into actionable user-style descriptions.
 - **Use the same session_id** for all rounds so the director maintains context.
 - **Save the evaluation report** at the end.
+- **文件路径处理**：用户提供文件路径后，先用 Glob 验证该路径是否存在。如果路径不存在（可能用户拼写有误），**立即**用 `**/文件名` 模式搜索（如 `**/killbill.mp4`），一步定位文件。**禁止**猜测目录名反复尝试（如依次试 `video_samples/`、`assets/`、`data/` 等），也**禁止**用纯后缀模式（如 `**/*.mp4`）全仓库扫描。
+- **严禁接受或要求任何形式的占位符/proxy视频。** 你只接受通过视频生成模型（如 Sora、Vidu 等）真正生成的视频。如果 director 报告视频生成 API 失败，你应该：
+  1. 要求 director 排查并解决 API 问题后重试，而不是接受降级方案。
+  2. **不得** 主动建议或同意生成 proxy、低保真占位符、色卡、animatic 等替代品。
+  3. 如果 API 持续失败无法恢复，直接终止流程并在报告中记录失败原因，而不是用占位符假装完成。
 
 ## Working Environment
 

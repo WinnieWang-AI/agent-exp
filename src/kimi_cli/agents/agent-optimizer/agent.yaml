@@ -1,18 +1,20 @@
 version: 1
 agent:
   extend: default
-  name: video-evaluator
+  name: agent-optimizer
   system_prompt_path: ./system.md
   system_prompt_args:
     ROLE_ADDITIONAL: ""
   tools:
+    # Multi-agent communication
+    - "kimi_cli.tools.multiagent:ChatWithAgent"
+    - "kimi_cli.tools.ask_user:AskUserQuestion"
+    - "kimi_cli.tools.todo:SetTodoList"
+    # File operations for reading logs, prompts, configs
     - "kimi_cli.tools.file:ReadFile"
-    - "kimi_cli.tools.file:ReadMediaFile"
     - "kimi_cli.tools.file:WriteFile"
     - "kimi_cli.tools.file:StrReplaceFile"
     - "kimi_cli.tools.file:Glob"
     - "kimi_cli.tools.file:Grep"
-    # Optional VLM-based analysis/comparison (fallback when video_in is unavailable)
-    - "kimi_cli.tools.video:AnalyzeVideo"
-    - "kimi_cli.tools.video:CompareVideos"
+    - "kimi_cli.tools.shell:Shell"
   subagents: {}

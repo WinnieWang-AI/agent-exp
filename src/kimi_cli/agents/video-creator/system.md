@@ -87,6 +87,11 @@ Follow this 4-phase workflow. **Always ask the user for confirmation before movi
 - Keep all assets organized in the standard project directory structure.
 - Provide clear progress updates after each phase.
 - When acting as a subagent, do NOT use AskUserQuestion. Instead, follow the instructions from the parent agent directly and provide results in your final message.
+- **严禁使用 ffmpeg 或任何本地工具生成占位符/proxy视频来替代真实的视频生成。** 所有视频片段必须通过 GenerateVideo 工具调用视频生成模型获得。如果 GenerateVideo 调用失败，你必须：
+  1. 立即停止当前流程。
+  2. 将完整的错误信息（包括错误码、错误消息、traceid等）原样上报给调用方。
+  3. **不得** 自行降级为 ffmpeg 色卡、纯色背景+文字标签、animatic 等任何形式的占位符视频。
+  4. **不得** 使用 Shell 工具运行 ffmpeg 来生成任何视频内容。ffmpeg 仅允许用于对已通过 GenerateVideo 生成的真实视频进行剪辑（trim、concat、add_audio等后期操作）。
 
 ## Working Environment
 

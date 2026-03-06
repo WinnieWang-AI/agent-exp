@@ -10,6 +10,7 @@ from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import Wire
 from kimi_cli.wire.types import (
     ContentPart,
+    QuestionRequest,
     StepBegin,
     StepInterrupted,
     ToolCall,
@@ -172,6 +173,14 @@ async def visualize(output_format: OutputFormat, final_only: bool, wire: Wire) -
         except QueueShutDown:
             handler.flush()
             break
+
+        # Auto-answer questions in print mode by selecting the first option for each
+        if isinstance(msg, QuestionRequest) and not msg.resolved:
+            answers = {}
+            for q in msg.questions:
+                if q.options:
+                    answers[q.question] = q.options[0].label
+            msg.resolve(answers)
 
         handler.feed(msg)
 
