@@ -73,7 +73,8 @@ class MinimaxTTSProvider(TTSProvider):
 
     async def download_audio(self, audio_url: str, output_path: str) -> None:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        async with self._client() as client:
+        # Use a plain client without Authorization header for CDN downloads.
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=30.0)) as client:
             resp = await client.get(audio_url)
             resp.raise_for_status()
             Path(output_path).write_bytes(resp.content)

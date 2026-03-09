@@ -11,13 +11,13 @@ from kimi_cli.tools.audio.providers import get_default_music_provider
 from kimi_cli.tools.audio.providers.base import MusicGenerationRequest
 
 
+PROMPT_MAX_LENGTH = 300
+
+
 class Params(BaseModel):
-    prompt: str = Field(description="Description of the music to generate (mood, tempo, instruments, etc.)")
-    music_style: str = Field(default="", description='Style tags (e.g. "pop, upbeat", "cinematic, orchestral")')
-    lyrics: str = Field(default="", description="Lyrics for the song (leave empty for instrumental or auto-generated)")
-    make_instrumental: bool = Field(default=False, description="Generate instrumental-only music (no vocals)")
-    vocal_only: bool = Field(default=False, description="Generate vocals only (no accompaniment)")
-    voice_id: str = Field(default="", description="Specific singer voice ID")
+    prompt: str = Field(description="Description of the music to generate (mood, instruments, style, etc.). Max 300 characters.")
+    lyrics: str = Field(default="", description="Lyrics for the song (leave empty for instrumental)")
+    make_instrumental: bool = Field(default=True, description="Generate instrumental-only music (no vocals)")
     provider: str = Field(default="", description="Provider name (uses default if empty)")
 
 
@@ -43,6 +43,12 @@ class GenerateMusic(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Music generation rejected by user.", brief="Rejected")
 
+        if len(params.prompt) > PROMPT_MAX_LENGTH:
+            return builder.error(
+                message=f"Prompt too long: {len(params.prompt)} characters (max {PROMPT_MAX_LENGTH}). Please shorten the prompt.",
+                brief="Prompt too long",
+            )
+
         available = list(self._config.music_providers.keys())
         try:
             provider_name, provider = get_default_music_provider(
@@ -56,11 +62,8 @@ class GenerateMusic(CallableTool2[Params]):
 
         request = MusicGenerationRequest(
             prompt=params.prompt,
-            music_style=params.music_style,
             lyrics=params.lyrics,
             make_instrumental=params.make_instrumental,
-            vocal_only=params.vocal_only,
-            voice_id=params.voice_id,
         )
 
         try:

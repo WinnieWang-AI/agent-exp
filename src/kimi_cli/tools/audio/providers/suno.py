@@ -20,10 +20,25 @@ QUERY_PATH = "/api/public/v1/byId"
 DEFAULT_CONVERSION_TYPE = "MUSIC_AI"
 
 
+def _normalize_base_url(base_url: str) -> str:
+    """Strip trailing path components so we always get the root URL.
+
+    Nacos may return ``https://api.musicgpt.com/api/public/v1`` while the
+    provider code appends ``/api/public/v1/...`` itself.  Normalise to the
+    scheme + host (+ optional port) only.
+    """
+    base_url = base_url.rstrip("/")
+    for suffix in ("/api/public/v1", "/api/public"):
+        if base_url.endswith(suffix):
+            base_url = base_url[: -len(suffix)]
+            break
+    return base_url
+
+
 class SunoMusicProvider(MusicProvider):
     def __init__(self, config: MusicProviderConfig):
         self._config = config
-        self._base_url = config.base_url or "https://api.musicgpt.com"
+        self._base_url = _normalize_base_url(config.base_url or "https://api.musicgpt.com")
         self._api_key = config.api_key.get_secret_value()
 
     def _client(self) -> httpx.AsyncClient:
@@ -40,14 +55,9 @@ class SunoMusicProvider(MusicProvider):
         payload = {
             "prompt": request.prompt,
             "make_instrumental": request.make_instrumental,
-            "vocal_only": request.vocal_only,
         }
-        if request.music_style:
-            payload["music_style"] = request.music_style
         if request.lyrics:
             payload["lyrics"] = request.lyrics
-        if request.voice_id:
-            payload["voice_id"] = request.voice_id
 
         url = self._base_url + GENERATE_PATH
         async with self._client() as client:
@@ -147,7 +157,9 @@ class SunoMusicProvider(MusicProvider):
 
     async def download_audio(self, audio_url: str, output_path: str) -> None:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        async with self._client() as client:
+        # Use a plain client without Authorization header — the audio URLs
+        # are on third-party CDNs (e.g. S3) that reject unknown auth headers.
+        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=30.0)) as client:
             resp = await client.get(audio_url)
             resp.raise_for_status()
             Path(output_path).write_bytes(resp.content)

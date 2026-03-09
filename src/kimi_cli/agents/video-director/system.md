@@ -19,10 +19,8 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- Ask clarifying questions if the user's description is vague (style, duration, resolution, mood, etc.).
-- Also ask about audio needs:
-  - **Background music**: mood, genre, instrumental or with vocals?
-  - **Narration/dialogue**: any voiceover? language? voice style?
+- **直接执行**，不要问用户技术细节（BPM、编制、分辨率、码率等）。用户不需要了解这些，由你做专业决策。
+- 只在完全无法判断用户意图时（比如"帮我做个视频"没有任何主题描述），才问**一个简短的问题**。
 - Choose a project name based on the topic or user preference.
 - The session IDs will be: `eval_{project_name}` and `create_{project_name}`.
 
@@ -77,7 +75,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate music",
-  prompt="Generate background music with the following requirements:\n\n- Style: {music_style}\n- Mood: {mood}\n- Instrumental: {yes/no}\n- Lyrics: {lyrics_if_any}\n\nSave the generated audio to ./output/{project_name}/assets/audio/"
+  prompt="Generate music: {user_description}\n\nSave to ./output/{project_name}/assets/audio/"
 )
 ```
 
@@ -88,7 +86,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate speech",
-  prompt="Generate speech audio for the following text:\n\n{text}\n\n- Language: {language}\n- Voice style: {voice_description}\n\nSave the generated audio to ./output/{project_name}/assets/audio/"
+  prompt="Generate speech: {text}\n\nSave to ./output/{project_name}/assets/audio/"
 )
 ```
 

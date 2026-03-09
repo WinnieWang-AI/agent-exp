@@ -22,11 +22,8 @@ class MusicGenerationRequest(BaseModel):
     """Request to generate music."""
 
     prompt: str
-    music_style: str = ""
     lyrics: str = ""
-    make_instrumental: bool = False
-    vocal_only: bool = False
-    voice_id: str = ""
+    make_instrumental: bool = True
 
 
 class MusicJobSubmission(BaseModel):

@@ -14,7 +14,7 @@ from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_t
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.utils.path import is_within_directory
-from kimi_cli.wire.types import ImageURLPart, VideoURLPart
+from kimi_cli.wire.types import AudioURLPart, ImageURLPart, VideoURLPart
 
 MAX_MEDIA_MEGABYTES = 100
 
@@ -85,7 +85,7 @@ class ReadMediaFile(CallableTool2[Params]):
         return None
 
     async def _read_media(self, path: KaosPath, file_type: FileType) -> ToolReturnValue:
-        assert file_type.kind in ("image", "video")
+        assert file_type.kind in ("image", "video", "audio")
 
         media_path = str(path)
         stat = await path.stat()
@@ -123,6 +123,12 @@ class ReadMediaFile(CallableTool2[Params]):
                     data_url = _to_data_url(file_type.mime_type, data)
                     part = VideoURLPart(video_url=VideoURLPart.VideoURL(url=data_url))
                     wrapped = wrap_media_part(part, tag="video", attrs={"path": media_path})
+                image_size = None
+            case "audio":
+                data = await path.read_bytes()
+                data_url = _to_data_url(file_type.mime_type, data)
+                part = AudioURLPart(audio_url=AudioURLPart.AudioURL(url=data_url))
+                wrapped = wrap_media_part(part, tag="audio", attrs={"path": media_path})
                 image_size = None
 
         size_hint = ""
@@ -177,7 +183,7 @@ class ReadMediaFile(CallableTool2[Params]):
             if file_type.kind == "unknown":
                 return ToolError(
                     message=(
-                        f"`{params.path}` seems not readable as an image or video file. "
+                        f"`{params.path}` seems not readable as an image, video, or audio file. "
                         "You may need to read it with proper shell commands, Python tools "
                         "or MCP tools if available. "
                         "If you read/operate it with Python, you MUST ensure that any "

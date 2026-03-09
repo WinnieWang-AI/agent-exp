@@ -52,6 +52,17 @@ _VIDEO_MIME_BY_SUFFIX = {
     ".3gp": "video/3gpp",
     ".3g2": "video/3gpp2",
 }
+_AUDIO_MIME_BY_SUFFIX = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/opus",
+    ".aac": "audio/aac",
+    ".m4a": "audio/mp4",
+    ".wma": "audio/x-ms-wma",
+}
 _TEXT_MIME_BY_SUFFIX = {
     ".svg": "image/svg+xml",
 }
@@ -130,16 +141,6 @@ _NON_TEXT_SUFFIXES = {
     ".ar",
     ".deb",
     ".rpm",
-    # Audio
-    ".mp3",
-    ".wav",
-    ".flac",
-    ".ogg",
-    ".oga",
-    ".opus",
-    ".aac",
-    ".m4a",
-    ".wma",
     # Fonts
     ".ttf",
     ".otf",
@@ -171,7 +172,7 @@ _NON_TEXT_SUFFIXES = {
 
 @dataclass(frozen=True)
 class FileType:
-    kind: Literal["text", "image", "video", "unknown"]
+    kind: Literal["text", "image", "video", "audio", "unknown"]
     mime_type: str
 
 
@@ -229,6 +230,8 @@ def detect_file_type(path: str | PurePath, header: bytes | None = None) -> FileT
         media_hint = FileType(kind="image", mime_type=_IMAGE_MIME_BY_SUFFIX[suffix])
     elif suffix in _VIDEO_MIME_BY_SUFFIX:
         media_hint = FileType(kind="video", mime_type=_VIDEO_MIME_BY_SUFFIX[suffix])
+    elif suffix in _AUDIO_MIME_BY_SUFFIX:
+        media_hint = FileType(kind="audio", mime_type=_AUDIO_MIME_BY_SUFFIX[suffix])
     else:
         mime_type, _ = mimetypes.guess_type(str(path))
         if mime_type:
@@ -236,8 +239,10 @@ def detect_file_type(path: str | PurePath, header: bytes | None = None) -> FileT
                 media_hint = FileType(kind="image", mime_type=mime_type)
             elif mime_type.startswith("video/"):
                 media_hint = FileType(kind="video", mime_type=mime_type)
+            elif mime_type.startswith("audio/"):
+                media_hint = FileType(kind="audio", mime_type=mime_type)
 
-    if media_hint and media_hint.kind in ("image", "video"):
+    if media_hint and media_hint.kind in ("image", "video", "audio"):
         return media_hint
 
     if header is not None:

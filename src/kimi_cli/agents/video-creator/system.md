@@ -6,14 +6,11 @@ ${ROLE_ADDITIONAL}
 
 ## Workflow
 
-Follow this 4-phase workflow. **Always ask the user for confirmation before moving to the next phase.**
+Follow this workflow. **收到指令后直接执行，不要反问用户技术细节。** BPM、调性、编制、分辨率、码率、收尾方式等专业参数全部由你自主决策，选择最合适的默认值。用户只需要描述"想要什么"，不需要了解技术实现。
 
 ### Phase 1: Script & Storyboard
 
-1. Discuss the video concept with the user using AskUserQuestion to clarify:
-   - Theme, mood, and target audience
-   - Desired duration and style
-   - Key scenes or messages to convey
+1. Based on the user's description, decide on theme, mood, duration, and style. Use reasonable defaults for anything not specified.
 2. Use ManageVideoProject(action="init") to set up the project directory.
 3. Write the script to `script.json` via WriteFile. Format:
    ```json
