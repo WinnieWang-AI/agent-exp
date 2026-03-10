@@ -95,6 +95,10 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
             if not isinstance(curr_args, dict) or not curr_args.get("operation"):
                 return None
             key_argument = str(curr_args["operation"])
+        case "ExtractFrame":
+            if not isinstance(curr_args, dict) or not curr_args.get("video_path"):
+                return None
+            key_argument = _normalize_path(str(curr_args["video_path"]))
         case "ManageVideoProject":
             if not isinstance(curr_args, dict) or not curr_args.get("action"):
                 return None

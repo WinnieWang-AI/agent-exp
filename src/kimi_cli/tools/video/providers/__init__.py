@@ -1,38 +1,34 @@
 from __future__ import annotations
 
-from kimi_cli.config import ImageProviderConfig, VideoProviderConfig
+from kimi_cli.config import ImageProviderConfig, TOSConfig, VideoProviderConfig
 from kimi_cli.tools.video.providers.base import VideoProvider
 from kimi_cli.tools.video.providers.image_base import ImageProvider
 
 
-def create_provider(config: VideoProviderConfig) -> VideoProvider:
+def create_provider(
+    config: VideoProviderConfig, tos_config: TOSConfig | None = None
+) -> VideoProvider:
     """Factory function to create a video provider from configuration."""
     provider_type = config.type.lower()
     if provider_type == "mock":
         from kimi_cli.tools.video.providers.mock import MockVideoProvider
 
         return MockVideoProvider()
-    if provider_type == "sora":
-        from kimi_cli.tools.video.providers.sora import SoraVideoProvider
-
-        return SoraVideoProvider(config)
     if provider_type == "vidu":
         from kimi_cli.tools.video.providers.vidu import ViduVideoProvider
 
-        return ViduVideoProvider(config)
+        return ViduVideoProvider(config, tos_config)
     if provider_type == "kling":
         from kimi_cli.tools.video.providers.kling import KlingVideoProvider
 
-        return KlingVideoProvider(config)
-    if provider_type == "apiyi":
-        from kimi_cli.tools.video.providers.apiyi import ApiYiVideoProvider
-
-        return ApiYiVideoProvider(config)
+        return KlingVideoProvider(config, tos_config)
     raise ValueError(f"Unknown video provider type: {config.type}")
 
 
 def get_default_provider(
-    providers: dict[str, VideoProviderConfig], preferred: str = ""
+    providers: dict[str, VideoProviderConfig],
+    preferred: str = "",
+    tos_config: TOSConfig | None = None,
 ) -> tuple[str, VideoProvider]:
     """Get a video provider by name, or the first available one.
 
@@ -45,9 +41,9 @@ def get_default_provider(
     if not providers:
         raise ValueError("No video providers configured")
     if preferred and preferred in providers:
-        return preferred, create_provider(providers[preferred])
+        return preferred, create_provider(providers[preferred], tos_config)
     name = next(iter(providers))
-    return name, create_provider(providers[name])
+    return name, create_provider(providers[name], tos_config)
 
 
 def create_image_provider(config: ImageProviderConfig) -> ImageProvider:

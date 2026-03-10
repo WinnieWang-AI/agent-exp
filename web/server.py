@@ -4,6 +4,7 @@ Web server for interacting with video-director and video-auto-eval agents.
 Provides:
 - WebSocket endpoints for real-time agent communication
 - Three modes: chat with director, chat with auto-eval, auto-interaction mode
+- Session management: each conversation gets a session_id for persistence and retrieval
 """
 
 from __future__ import annotations
@@ -11,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import traceback
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +56,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 WORK_DIR = KaosPath.unsafe_from_local_path(Path.cwd())
 
+# Directory for web session metadata (chat logs, session info)
+WEB_SESSIONS_DIR = Path.cwd() / "output" / ".sessions"
+WEB_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
 AGENT_FILES = {
     "video-director": VIDEO_DIRECTOR_AGENT_FILE,
     "video-auto-eval": VIDEO_AUTO_EVAL_AGENT_FILE,
@@ -91,16 +98,99 @@ def serialize_wire_message(msg: Any) -> dict:
     return envelope.model_dump(mode="json")
 
 
-async def create_cli(agent_name: str) -> KimiCLI:
-    """Create a KimiCLI instance for the given agent."""
+def _get_session_dir(session_id: str) -> Path:
+    """Get the web session directory for a given session_id."""
+    d = WEB_SESSIONS_DIR / session_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _save_session_meta(session_id: str, agent_name: str, mode: str) -> None:
+    """Save session metadata (agent, mode, timestamps)."""
+    meta_path = _get_session_dir(session_id) / "meta.json"
+    meta: dict[str, Any] = {}
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+    if "created_at" not in meta:
+        meta["created_at"] = time.time()
+    meta.update({
+        "session_id": session_id,
+        "agent": agent_name,
+        "mode": mode,
+        "updated_at": time.time(),
+    })
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False))
+
+
+def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
+    """Append a chat entry to the session's chat.jsonl."""
+    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    entry = {
+        "timestamp": time.time(),
+        "role": role,
+        "agent": agent,
+        "content": content,
+    }
+    with open(chat_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+async def create_cli(agent_name: str, session_id: str | None = None) -> KimiCLI:
+    """Create a KimiCLI instance for the given agent, optionally with a specific session_id.
+
+    Each session gets its own work_dir under output/{session_id}/ so that
+    project files (video clips, scripts, etc.) are isolated per session.
+    """
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    # Create session output directory for generated artifacts
+    session_output_dir = Path.cwd() / "output" / session_id
+    session_output_dir.mkdir(parents=True, exist_ok=True)
+    # Use project root as work_dir so agents can search files like video_sample/
+    work_dir = WORK_DIR
+
     agent_file = AGENT_FILES[agent_name]
-    session = await Session.create(WORK_DIR)
+    session = await Session.create(work_dir, session_id=session_id)
     cli = await KimiCLI.create(
         session,
         agent_file=agent_file,
         yolo=True,  # auto-approve in web UI
     )
     return cli
+
+
+# ─── Session REST APIs ───────────────────────────────────────────────
+
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """List all web sessions, sorted by most recent."""
+    sessions = []
+    if WEB_SESSIONS_DIR.exists():
+        for d in WEB_SESSIONS_DIR.iterdir():
+            meta_path = d / "meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                sessions.append(meta)
+    sessions.sort(key=lambda s: s.get("updated_at", 0), reverse=True)
+    return {"sessions": sessions}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get session metadata and chat history."""
+    session_dir = WEB_SESSIONS_DIR / session_id
+    if not session_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Session not found")
+    meta_path = session_dir / "meta.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    chat_path = session_dir / "chat.jsonl"
+    messages = []
+    if chat_path.exists():
+        for line in chat_path.read_text().splitlines():
+            if line.strip():
+                messages.append(json.loads(line))
+    return {"meta": meta, "messages": messages}
 
 
 async def handle_question(websocket: WebSocket, msg: QuestionRequest, pending: dict):
@@ -126,8 +216,9 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     WebSocket endpoint for chatting with a single agent.
 
     Protocol:
-    - Client sends: {"type": "message", "content": "..."}
+    - Client sends: {"type": "message", "content": "...", "session_id": "..."} (session_id optional, only used on first message to resume)
     - Client sends: {"type": "answer", "id": ..., "answers": {...}}
+    - Server sends: {"type": "session", "session_id": "..."}  (sent once after init)
     - Server sends: {"type": "wire", "data": {...}}  (wire message envelope)
     - Server sends: {"type": "question", "id": ..., "questions": [...]}
     - Server sends: {"type": "status", "status": "ready"|"thinking"|"done"|"error"}
@@ -140,17 +231,27 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     await websocket.accept()
     await websocket.send_json({"type": "status", "status": "initializing"})
 
+    # Wait for first message to check for session_id
+    first_raw = await websocket.receive_json()
+    requested_session_id = first_raw.get("session_id")
+
     try:
-        cli = await create_cli(agent_name)
+        cli = await create_cli(agent_name, session_id=requested_session_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
         return
 
+    session_id = cli.session.id
+    _save_session_meta(session_id, agent_name, mode="chat")
+    await websocket.send_json({"type": "session", "session_id": session_id})
     await websocket.send_json({"type": "status", "status": "ready"})
 
     pending_questions: dict[int, QuestionRequest] = {}
     incoming_queue: asyncio.Queue = asyncio.Queue()
+
+    # Re-inject the first message into the queue
+    await incoming_queue.put(first_raw)
 
     async def ws_reader():
         """Read from websocket and put messages into the queue."""
@@ -185,6 +286,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
             if not content:
                 continue
 
+            _append_chat_log(session_id, "user", "user", content)
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
@@ -194,6 +296,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
                         try:
                             data = serialize_wire_message(msg)
                             await websocket.send_json({"type": "wire", "data": data})
+                            _append_chat_log(session_id, "assistant", agent_name, data)
                         except Exception:
                             pass
 
@@ -205,6 +308,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
 
                 except Exception as e:
                     await websocket.send_json({"type": "error", "message": str(e)})
+                _save_session_meta(session_id, agent_name, mode="chat")
                 await websocket.send_json({"type": "status", "status": "ready"})
 
             agent_task = asyncio.create_task(run_agent())
@@ -242,32 +346,47 @@ async def ws_auto(websocket: WebSocket):
     All wire events (including SubagentEvents) are streamed to the client.
 
     Protocol:
-    - Client sends: {"type": "message", "content": "..."}
+    - Client sends: {"type": "message", "content": "...", "session_id": "..."} (session_id optional)
+    - Server sends: {"type": "session", "session_id": "..."}  (sent once after init)
     - Server sends: {"type": "wire", "agent": "video-auto-eval", "data": {...}}
     - Server sends: {"type": "status", "status": "ready"|"thinking"|"done"|"error"}
     """
     await websocket.accept()
     await websocket.send_json({"type": "status", "status": "initializing"})
 
+    # Wait for first message to check for session_id
+    first_raw = await websocket.receive_json()
+    requested_session_id = first_raw.get("session_id")
+
     try:
-        cli = await create_cli("video-auto-eval")
+        cli = await create_cli("video-auto-eval", session_id=requested_session_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
         return
 
+    session_id = cli.session.id
+    _save_session_meta(session_id, "video-auto-eval", mode="auto")
+    await websocket.send_json({"type": "session", "session_id": session_id})
     await websocket.send_json({"type": "status", "status": "ready"})
+
+    # Process the first message content
+    first_content = first_raw.get("content", "") if first_raw.get("type") == "message" else ""
+    messages_to_process = [first_content] if first_content else []
 
     try:
         while True:
-            raw = await websocket.receive_json()
-            if raw.get("type") != "message":
-                continue
+            if not messages_to_process:
+                raw = await websocket.receive_json()
+                if raw.get("type") != "message":
+                    continue
+                content = raw.get("content", "")
+                if not content:
+                    continue
+            else:
+                content = messages_to_process.pop(0)
 
-            content = raw.get("content", "")
-            if not content:
-                continue
-
+            _append_chat_log(session_id, "user", "user", content)
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
@@ -285,6 +404,7 @@ async def ws_auto(websocket: WebSocket):
                             "agent": agent_label,
                             "data": data,
                         })
+                        _append_chat_log(session_id, "assistant", agent_label, data)
                     except Exception:
                         pass
 
@@ -300,6 +420,7 @@ async def ws_auto(websocket: WebSocket):
                 tb = traceback.format_exc()
                 await websocket.send_json({"type": "error", "message": f"{e}\n{tb}"})
 
+            _save_session_meta(session_id, "video-auto-eval", mode="auto")
             await websocket.send_json({"type": "status", "status": "ready"})
 
     except WebSocketDisconnect:
@@ -361,7 +482,8 @@ async def ws_room(websocket: WebSocket):
     Without @mention, the message is broadcast to all agents.
 
     Protocol:
-    - Client sends: {"type": "message", "content": "..."}
+    - Client sends: {"type": "message", "content": "...", "session_id": "..."} (session_id optional, first msg only)
+    - Server sends: {"type": "session", "session_id": "..."}  (sent once after init)
     - Server sends: {"type": "wire", "agent": "<agent-name>", "data": {...}}
     - Server sends: {"type": "status", "agent": "<agent-name>", "status": "ready"|"thinking"|...}
     - Server sends: {"type": "error", "message": "..."}
@@ -369,11 +491,18 @@ async def ws_room(websocket: WebSocket):
     await websocket.accept()
     await websocket.send_json({"type": "status", "status": "initializing"})
 
+    # Wait for first message to check for session_id
+    first_raw = await websocket.receive_json()
+    requested_session_id = first_raw.get("session_id")
+
     # Build agent list for the room
     agent_list = [
         {"alias": alias.capitalize(), "name": name}
         for alias, name in AGENT_MENTION_ALIASES.items()
     ]
+
+    # Use a shared session_id for the room
+    session_id = requested_session_id or str(uuid.uuid4())
 
     clis: dict[str, KimiCLI] = {}
     try:
@@ -383,6 +512,9 @@ async def ws_room(websocket: WebSocket):
         await websocket.send_json({"type": "error", "message": f"Failed to create agents: {e}"})
         await websocket.close()
         return
+
+    _save_session_meta(session_id, "room", mode="room")
+    await websocket.send_json({"type": "session", "session_id": session_id})
 
     # Inject chat room context into each agent's system prompt
     for agent_name, cli in clis.items():
@@ -416,6 +548,7 @@ async def ws_room(websocket: WebSocket):
                     await safe_send({
                         "type": "wire", "agent": agent_name, "data": data,
                     })
+                    _append_chat_log(session_id, "assistant", agent_name, data)
                 except Exception:
                     pass
 
@@ -431,6 +564,7 @@ async def ws_room(websocket: WebSocket):
             await safe_send({
                 "type": "error", "agent": agent_name, "message": f"{e}\n{tb}",
             })
+        _save_session_meta(session_id, "room", mode="room")
         await safe_send({
             "type": "status", "agent": agent_name, "status": "ready",
         })
@@ -438,15 +572,25 @@ async def ws_room(websocket: WebSocket):
     def _on_task_done(task: asyncio.Task):
         running_tasks.discard(task)
 
+    # Queue of messages to process (first_raw is already received)
+    pending_messages = []
+    if first_raw.get("type") == "message" and first_raw.get("content", "").strip():
+        pending_messages.append(first_raw)
+
     try:
         while True:
-            raw = await websocket.receive_json()
+            if pending_messages:
+                raw = pending_messages.pop(0)
+            else:
+                raw = await websocket.receive_json()
             if raw.get("type") != "message":
                 continue
 
             content = raw.get("content", "").strip()
             if not content:
                 continue
+
+            _append_chat_log(session_id, "user", "user", content)
 
             # Parse @mentions to determine target agents
             mentions = set(m.lower() for m in MENTION_RE.findall(content))

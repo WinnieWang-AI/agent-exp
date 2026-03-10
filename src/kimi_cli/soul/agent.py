@@ -45,6 +45,8 @@ class BuiltinSystemPromptArgs:
     """The content of AGENTS.md."""
     KIMI_SKILLS: str
     """Formatted information about available skills."""
+    SESSION_OUTPUT_DIR: str = "./output"
+    """Session-specific output directory for project outputs."""
 
 
 async def load_agents_md(work_dir: KaosPath) -> str | None:

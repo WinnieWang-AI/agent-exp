@@ -33,7 +33,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate video",
-  prompt="Create a video based on the following description:\n\n{user_description}\n\nAudio requirements:\n- Background music: {music_description}\n- Narration: {narration_description}\n\nSave the project to ./output/{project_name}/ and the final output to ./output/{project_name}/output/attempt_1.mp4"
+  prompt="Create a video based on the following description:\n\n{user_description}\n\nAudio requirements:\n- Background music: {music_description}\n- Narration: {narration_description}\n\nSave the project to ${SESSION_OUTPUT_DIR}/{project_name}/ and the final output to ${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4"
 )
 ```
 
@@ -57,7 +57,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Revise based on feedback",
-  prompt="The following feedback was provided on your previous attempt:\n\n{feedback}\n\nPlease revise and generate a new version at ./output/{project_name}/output/attempt_{N}.mp4"
+  prompt="The following feedback was provided on your previous attempt:\n\n{feedback}\n\nPlease revise and generate a new version at ${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_{N}.mp4"
 )
 ```
 
@@ -75,7 +75,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate music",
-  prompt="Generate music: {user_description}\n\nSave to ./output/{project_name}/assets/audio/"
+  prompt="Generate music: {user_description}\n\nSave to ${SESSION_OUTPUT_DIR}/{project_name}/assets/audio/"
 )
 ```
 
@@ -86,7 +86,7 @@ Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
   description="Generate speech",
-  prompt="Generate speech: {text}\n\nSave to ./output/{project_name}/assets/audio/"
+  prompt="Generate speech: {text}\n\nSave to ${SESSION_OUTPUT_DIR}/{project_name}/assets/audio/"
 )
 ```
 

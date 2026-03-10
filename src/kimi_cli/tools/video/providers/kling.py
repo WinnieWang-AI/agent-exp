@@ -7,15 +7,17 @@ from pathlib import Path
 import httpx
 
 from kimi_cli.config import VideoProviderConfig
+from kimi_cli.config import TOSConfig
 from kimi_cli.tools.video.providers.base import (
     GenerationRequest,
     VideoJobState,
     VideoJobStatus,
     VideoJobSubmission,
     VideoProvider,
+    resolve_image_to_url,
 )
 
-_DEFAULT_MODEL = "kling-video-o1"
+_DEFAULT_MODEL = "kling-video-o3"
 _DEFAULT_BASE_URL = "https://api.klingai.com"
 
 
@@ -30,11 +32,12 @@ class KlingVideoProvider(VideoProvider):
       - Result: ``data[].url`` (HTTP URL)
     """
 
-    def __init__(self, config: VideoProviderConfig) -> None:
+    def __init__(self, config: VideoProviderConfig, tos_config: TOSConfig | None = None) -> None:
         self._base_url = (config.base_url or _DEFAULT_BASE_URL).rstrip("/")
         self._api_key = config.api_key.get_secret_value()
         self._model = config.model_name or _DEFAULT_MODEL
         self._custom_headers = config.custom_headers or {}
+        self._tos_config = tos_config
 
     # ------------------------------------------------------------------
     # VideoProvider interface
@@ -49,9 +52,23 @@ class KlingVideoProvider(VideoProvider):
             "generateAudio": True,
         }
 
-        # Image-to-video: attach reference image.
+        # Image-to-video: attach single reference image.
         if request.mode == "image_to_video" and request.reference_image_path:
-            body["image"] = {"url": request.reference_image_path}
+            body["image"] = {"url": resolve_image_to_url(request.reference_image_path, self._tos_config)}
+
+        # Multi-reference images (max 4). Referenced in prompt as <<<image_1>>>, <<<image_2>>> etc.
+        if request.reference_images:
+            images = request.reference_images[:4]
+            body["images"] = [
+                {"url": resolve_image_to_url(img, self._tos_config)}
+                for img in images
+            ]
+
+        # First-last-frame (FLF) mode.
+        if request.first_frame_path:
+            body["firstFrame"] = resolve_image_to_url(request.first_frame_path, self._tos_config)
+        if request.last_frame_path:
+            body["lastFrame"] = resolve_image_to_url(request.last_frame_path, self._tos_config)
 
         async with self._client() as client:
             resp = await client.post("/v1/videos/generations", json=body)

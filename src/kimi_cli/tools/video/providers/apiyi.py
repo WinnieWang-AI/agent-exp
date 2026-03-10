@@ -17,12 +17,14 @@ from pathlib import Path
 import httpx
 
 from kimi_cli.config import VideoProviderConfig
+from kimi_cli.config import TOSConfig
 from kimi_cli.tools.video.providers.base import (
     GenerationRequest,
     VideoJobState,
     VideoJobStatus,
     VideoJobSubmission,
     VideoProvider,
+    resolve_image_to_url,
 )
 
 _DEFAULT_BASE_URL = "https://api.apiyi.com"
@@ -48,11 +50,12 @@ class ApiYiVideoProvider(VideoProvider):
     4. ``download_result`` performs a plain HTTP GET to fetch the video file.
     """
 
-    def __init__(self, config: VideoProviderConfig) -> None:
+    def __init__(self, config: VideoProviderConfig, tos_config: TOSConfig | None = None) -> None:
         self._base_url = (config.base_url or _DEFAULT_BASE_URL).rstrip("/")
         self._api_key = config.api_key.get_secret_value()
         self._model = config.model_name or _DEFAULT_MODEL
         self._custom_headers = config.custom_headers or {}
+        self._tos_config = tos_config
         # job_id → video URL (populated by submit_job)
         self._results: dict[str, str] = {}
 
@@ -65,7 +68,8 @@ class ApiYiVideoProvider(VideoProvider):
 
         prompt = request.prompt
         if request.mode == "image_to_video" and request.reference_image_path:
-            prompt = f"{prompt}\nReference image: {request.reference_image_path}"
+            image_url = resolve_image_to_url(request.reference_image_path, self._tos_config)
+            prompt = f"{prompt}\nReference image: {image_url}"
 
         body = {
             "model": self._model,

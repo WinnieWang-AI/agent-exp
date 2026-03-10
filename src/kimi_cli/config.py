@@ -146,13 +146,13 @@ class VideoProviderConfig(BaseModel):
     """Video generation provider configuration."""
 
     type: str
-    """Provider type: "mock", "sora", "vidu", "kling", etc."""
+    """Provider type: "mock", "vidu", "kling", etc."""
     base_url: str = ""
     """API base URL."""
     api_key: SecretStr = SecretStr("")
     """API key."""
     model_name: str = ""
-    """Model name override (provider-specific, e.g. "sora-2", "viduq3-pro")."""
+    """Model name override (provider-specific, e.g. "viduq3-pro")."""
     custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests."""
 
@@ -239,6 +239,31 @@ class TTSProviderConfig(BaseModel):
         return v.get_secret_value()
 
 
+class TOSConfig(BaseModel):
+    """TOS (Volcengine Object Storage) configuration."""
+
+    ak: SecretStr = SecretStr("")
+    """Access key."""
+    sk: SecretStr = SecretStr("")
+    """Secret key."""
+    region: str = ""
+    """Region (e.g. "ap-southeast-1")."""
+    bucket: str = ""
+    """Bucket name."""
+    domain: str = ""
+    """Public access domain (e.g. "ace.tos-s3-accelerate.volces.com")."""
+    prefix: str = "agent_exp/test_2026_03"
+    """Object key prefix for uploads."""
+
+    @field_serializer("ak", "sk", when_used="json")
+    def dump_secret(self, v: SecretStr):
+        return v.get_secret_value()
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.ak.get_secret_value() and self.sk.get_secret_value() and self.region and self.bucket and self.domain)
+
+
 class NacosSettings(BaseModel):
     """Nacos configuration center connection settings."""
 
@@ -287,6 +312,7 @@ class Config(BaseModel):
     tts_providers: dict[str, TTSProviderConfig] = Field(
         default_factory=dict, description="TTS (text-to-speech) provider configurations"
     )
+    tos: TOSConfig = Field(default_factory=TOSConfig, description="TOS object storage configuration")
     nacos: NacosSettings | None = Field(
         default=None, description="Nacos configuration center settings"
     )
@@ -485,7 +511,6 @@ def _merge_nacos_configs(config: Config) -> None:
 
     Mapping
     -------
-    * ``sora_config`` → ``video_providers["sora"]`` (type ``apiyi``)
     * ``openai_config`` → ``providers["main"]`` + ``models["default"]`` (only
       when the local config does not already define them)
     * ``suno_config`` → ``music_providers["suno"]`` (type ``suno``)
@@ -507,24 +532,6 @@ def _merge_nacos_configs(config: Config) -> None:
         group=settings.group,
     )
     client.login()
-
-    # --- sora_config → video_providers["sora"] (type=apiyi) ---
-    sora = client.get_config("sora_config")
-    if sora:
-        api_key = sora.get("api_key") or sora.get("apiKey") or ""
-        base_url = sora.get("base_url") or sora.get("baseUrl") or ""
-        model_name = sora.get("model") or sora.get("model_name") or ""
-        if api_key:
-            config.video_providers.setdefault(
-                "sora",
-                VideoProviderConfig(
-                    type="apiyi",
-                    api_key=SecretStr(api_key),
-                    base_url=base_url,
-                    model_name=model_name,
-                ),
-            )
-            logger.debug("Nacos: merged sora_config into video_providers['sora']")
 
     # --- openai_config → providers["main"] + models["default"] ---
     if "main" not in config.providers:
@@ -644,7 +651,10 @@ def _merge_statsig_configs(config: Config) -> None:
 
     Mapping
     -------
+    * ``kling26`` → ``video_providers["kling"]`` (type ``kling``)
     * ``shengshu`` → ``video_providers["vidu"]`` (type ``vidu``)
+
+    Kling is inserted first so it becomes the default provider.
 
     Requires ``STATSIG_SK`` environment variable.
     Errors are logged as warnings and never block startup.
@@ -653,28 +663,47 @@ def _merge_statsig_configs(config: Config) -> None:
     if not statsig_sk:
         return
 
-    if "vidu" in config.video_providers:
-        return
-
     try:
         from statsig import statsig, StatsigOptions, StatsigUser
 
         statsig.initialize(statsig_sk, StatsigOptions(tier="development"))
         try:
             user = StatsigUser(user_id="kimi_cli")
-            shengshu = statsig.get_config(user, "shengshu").get_value()
+
+            # --- kling26 → video_providers["kling"] (type=kling) ---
+            if "kling" not in config.video_providers:
+                kling26 = statsig.get_config(user, "kling26").get_value()
+                if kling26:
+                    api_key = kling26.get("api_key", "")
+                    base_url = kling26.get("base_url", "https://api.klingai.com")
+                    model_name = kling26.get("model_name", "")
+                    if api_key:
+                        # Insert kling at the front so it is the default provider.
+                        old = config.video_providers.copy()
+                        config.video_providers.clear()
+                        config.video_providers["kling"] = VideoProviderConfig(
+                            type="kling",
+                            api_key=SecretStr(api_key),
+                            base_url=base_url,
+                            model_name=model_name,
+                        )
+                        config.video_providers.update(old)
+                        logger.debug("Statsig: merged kling26 into video_providers['kling']")
+
+            # --- shengshu → video_providers["vidu"] (type=vidu) ---
+            if "vidu" not in config.video_providers:
+                shengshu = statsig.get_config(user, "shengshu").get_value()
+                if shengshu:
+                    api_key = shengshu.get("api_key", "")
+                    base_url = shengshu.get("base_url", "https://api.vidu.com")
+                    if api_key:
+                        config.video_providers["vidu"] = VideoProviderConfig(
+                            type="vidu",
+                            api_key=SecretStr(api_key),
+                            base_url=base_url,
+                        )
+                        logger.debug("Statsig: merged shengshu into video_providers['vidu']")
         finally:
             statsig.shutdown()
-
-        if shengshu:
-            api_key = shengshu.get("api_key", "")
-            base_url = shengshu.get("base_url", "https://api.vidu.com")
-            if api_key:
-                config.video_providers["vidu"] = VideoProviderConfig(
-                    type="vidu",
-                    api_key=SecretStr(api_key),
-                    base_url=base_url,
-                )
-                logger.debug("Statsig: merged shengshu into video_providers['vidu']")
     except Exception as exc:
         logger.warning("Statsig config fetch failed: {exc}", exc=exc)

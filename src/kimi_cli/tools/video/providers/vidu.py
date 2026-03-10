@@ -7,12 +7,14 @@ from pathlib import Path
 import httpx
 
 from kimi_cli.config import VideoProviderConfig
+from kimi_cli.config import TOSConfig
 from kimi_cli.tools.video.providers.base import (
     GenerationRequest,
     VideoJobState,
     VideoJobStatus,
     VideoJobSubmission,
     VideoProvider,
+    resolve_image_to_url,
 )
 
 _DEFAULT_MODEL = "viduq3-pro"
@@ -34,11 +36,12 @@ class ViduVideoProvider(VideoProvider):
       - Result: ``creations[].url`` (HTTP URL, valid 24h)
     """
 
-    def __init__(self, config: VideoProviderConfig) -> None:
+    def __init__(self, config: VideoProviderConfig, tos_config: TOSConfig | None = None) -> None:
         self._base_url = (config.base_url or _DEFAULT_BASE_URL).rstrip("/")
         self._api_key = config.api_key.get_secret_value()
         self._model = config.model_name or _DEFAULT_MODEL
         self._custom_headers = config.custom_headers or {}
+        self._tos_config = tos_config
 
     # ------------------------------------------------------------------
     # VideoProvider interface
@@ -64,7 +67,22 @@ class ViduVideoProvider(VideoProvider):
             body["moderation"] = "disabled"
 
         if is_i2v:
-            body["images"] = [request.reference_image_path]
+            body["images"] = [resolve_image_to_url(request.reference_image_path, self._tos_config)]
+
+        # Multi-reference images for visual consistency (max 7).
+        # Uses reference_images field (mutually exclusive with subjects mode).
+        if request.reference_images:
+            refs = request.reference_images[:7]
+            body["reference_images"] = [
+                resolve_image_to_url(img, self._tos_config)
+                for img in refs
+            ]
+
+        # First-last-frame (SE2V) mode.
+        if request.first_frame_path:
+            body["start_frame"] = resolve_image_to_url(request.first_frame_path, self._tos_config)
+        if request.last_frame_path:
+            body["end_frame"] = resolve_image_to_url(request.last_frame_path, self._tos_config)
 
         async with self._client() as client:
             resp = await client.post(endpoint, json=body)

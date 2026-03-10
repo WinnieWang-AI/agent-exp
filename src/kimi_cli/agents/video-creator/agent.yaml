@@ -24,6 +24,7 @@ agent:
     - "kimi_cli.tools.video:GenerateVideo"
     - "kimi_cli.tools.video:CheckVideoJob"
     - "kimi_cli.tools.video:VideoEdit"
+    - "kimi_cli.tools.video:ExtractFrame"
     - "kimi_cli.tools.video:GenerateImage"
     # Audio-specific tools
     - "kimi_cli.tools.audio:GenerateMusic"

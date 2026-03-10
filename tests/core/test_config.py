@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 from inline_snapshot import snapshot
 
+from pydantic import SecretStr
+
 from kimi_cli.config import (
     Config,
     get_default_config,
@@ -33,6 +35,20 @@ def test_default_config_dump():
             },
             "services": {"moonshot_search": None, "moonshot_fetch": None},
             "mcp": {"client": {"tool_call_timeout_ms": 60000}},
+            "video_providers": {},
+            "image_providers": {},
+            "vlm_providers": {},
+            "music_providers": {},
+            "tts_providers": {},
+            "tos": {
+                "ak": SecretStr(""),
+                "sk": SecretStr(""),
+                "region": "",
+                "bucket": "",
+                "domain": "",
+                "prefix": "agent_exp/test_2026_03",
+            },
+            "nacos": None,
         }
     )
 

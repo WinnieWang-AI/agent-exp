@@ -8,6 +8,7 @@ from kimi_cli.config import Config
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.video.error_log import record_error
 from kimi_cli.tools.video.providers import get_default_provider
 from kimi_cli.tools.video.providers.base import GenerationRequest
 
@@ -22,7 +23,21 @@ class Params(BaseModel):
     aspect_ratio: str = Field(default="16:9", description='Aspect ratio (e.g. "16:9", "9:16", "1:1")')
     provider: str = Field(default="", description="Provider name (uses default if empty)")
     reference_image_path: str = Field(
-        default="", description="Path to reference image (required for image_to_video mode)"
+        default="", description="Path to reference image for image_to_video mode (single image as video starting point)"
+    )
+    reference_images: list[str] = Field(
+        default=[],
+        description="Paths to reference images (character, environment, etc.) for multi-reference video generation. "
+        "The video model uses these to maintain visual consistency. Max 4 images. "
+        "In prompts, reference them as <<<image_1>>>, <<<image_2>>>, etc.",
+    )
+    first_frame_path: str = Field(
+        default="",
+        description="Path to the first frame image. Used with last_frame_path for first-last-frame (FLF) video generation.",
+    )
+    last_frame_path: str = Field(
+        default="",
+        description="Path to the last frame image. Used with first_frame_path for first-last-frame (FLF) video generation.",
     )
     style: str = Field(default="", description='Style hint (e.g. "cinematic", "anime", "realistic")')
     negative_prompt: str = Field(default="", description="What to avoid in the generated video")
@@ -52,11 +67,18 @@ class GenerateVideo(CallableTool2[Params]):
             return builder.error(message="Video generation rejected by user.", brief="Rejected")
 
         available = list(self._config.video_providers.keys())
+        tos_config = self._config.tos if self._config.tos.is_configured else None
         try:
             provider_name, provider = get_default_provider(
-                self._config.video_providers, params.provider
+                self._config.video_providers, params.provider, tos_config
             )
         except ValueError as e:
+            record_error(
+                tool="GenerateVideo",
+                error=str(e),
+                prompt=params.prompt,
+                extra={"available_providers": available},
+            )
             return builder.error(
                 message=f"{e}\nAvailable providers: {available}",
                 brief="Provider error",
@@ -68,21 +90,44 @@ class GenerateVideo(CallableTool2[Params]):
             duration_seconds=params.duration_seconds,
             aspect_ratio=params.aspect_ratio,
             reference_image_path=params.reference_image_path,
+            reference_images=params.reference_images,
+            first_frame_path=params.first_frame_path,
+            last_frame_path=params.last_frame_path,
             style=params.style,
             negative_prompt=params.negative_prompt,
         )
 
+        model_name = self._config.video_providers[provider_name].model_name or "(default)"
+
         try:
             submission = await provider.submit_job(request)
         except Exception as e:
+            record_error(
+                tool="GenerateVideo",
+                provider=provider_name,
+                model=model_name,
+                prompt=params.prompt,
+                error=str(e),
+                extra={
+                    "mode": params.mode,
+                    "duration_seconds": params.duration_seconds,
+                    "aspect_ratio": params.aspect_ratio,
+                },
+            )
             return builder.error(
-                message=f"Failed to submit video generation job: {e}",
+                message=(
+                    f"Failed to submit video generation job.\n"
+                    f"  provider: {provider_name}\n"
+                    f"  model: {model_name}\n"
+                    f"  error: {e}"
+                ),
                 brief="Submission failed",
             )
 
         builder.write(f"Video generation job submitted successfully.\n")
         builder.write(f"  job_id: {submission.job_id}\n")
         builder.write(f"  provider: {provider_name}\n")
+        builder.write(f"  model: {model_name}\n")
         builder.write(f"  estimated_seconds: {submission.estimated_seconds}\n")
         builder.write(f"  available_providers: {available}\n")
         builder.write(f"\nUse CheckVideoJob with this job_id to poll for completion.\n")
