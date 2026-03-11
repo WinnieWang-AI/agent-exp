@@ -66,6 +66,7 @@ class KimiCLI:
         agent_file: Path | None = None,
         mcp_configs: list[MCPConfig] | list[dict[str, Any]] | None = None,
         skills_dir: KaosPath | None = None,
+        session_output_dir: str | None = None,
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
@@ -155,7 +156,7 @@ class KimiCLI:
             logger.info("Using LLM model: {model}", model=model)
             logger.info("Thinking mode: {thinking}", thinking=thinking)
 
-        runtime = await Runtime.create(config, oauth, llm, session, yolo, skills_dir)
+        runtime = await Runtime.create(config, oauth, llm, session, yolo, skills_dir, session_output_dir)
 
         if agent_file is None:
             agent_file = DEFAULT_AGENT_FILE

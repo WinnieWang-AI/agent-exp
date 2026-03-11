@@ -24,6 +24,7 @@ VIDEO_EVALUATOR_AGENT_FILE = get_agents_dir() / "video-evaluator" / "agent.yaml"
 VIDEO_DIRECTOR_AGENT_FILE = get_agents_dir() / "video-director" / "agent.yaml"
 VIDEO_AUTO_EVAL_AGENT_FILE = get_agents_dir() / "video-auto-eval" / "agent.yaml"
 AGENT_OPTIMIZER_AGENT_FILE = get_agents_dir() / "agent-optimizer" / "agent.yaml"
+SCREENWRITER_AGENT_FILE = get_agents_dir() / "screenwriter" / "agent.yaml"
 
 
 class Inherit(NamedTuple):

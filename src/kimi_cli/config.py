@@ -642,6 +642,25 @@ def _merge_nacos_configs(config: Config) -> None:
                 )
                 logger.debug("Nacos: merged minimax_config into tts_providers['minimax']")
 
+    # --- tos_config → tos (TOS object storage) ---
+    if not config.tos.is_configured:
+        tos_data = client.get_config("tos_config")
+        if tos_data:
+            ak = tos_data.get("ak", "")
+            sk = tos_data.get("sk", "")
+            region = tos_data.get("region", "")
+            bucket = tos_data.get("bucket", "")
+            domain = tos_data.get("domain", "")
+            if ak and sk and region and bucket and domain:
+                config.tos = TOSConfig(
+                    ak=SecretStr(ak),
+                    sk=SecretStr(sk),
+                    region=region,
+                    bucket=bucket,
+                    domain=domain,
+                )
+                logger.debug("Nacos: merged tos_config into tos")
+
     # --- Statsig: shengshu → video_providers["vidu"] (type=vidu) ---
     _merge_statsig_configs(config)
 

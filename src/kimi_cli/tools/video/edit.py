@@ -20,6 +20,13 @@ class Params(BaseModel):
     start_time: float = Field(default=0, description="Start time in seconds (for trim)")
     end_time: float = Field(default=0, description="End time in seconds (for trim)")
     audio_path: str = Field(default="", description="Audio file path (for add_audio)")
+    audio_offset: float = Field(
+        default=0, description="Offset in seconds to place the audio in the video timeline (for add_audio). 0 means start of video."
+    )
+    audio_mix: bool = Field(
+        default=True,
+        description="If true, mix the new audio with existing audio tracks. If false, replace the audio track entirely (for add_audio).",
+    )
     subtitle_path: str = Field(default="", description="SRT subtitle file path (for add_subtitles)")
     transition_type: str = Field(default="fade", description="Transition type (for transition)")
     transition_duration: float = Field(
@@ -94,13 +101,30 @@ class VideoEdit(CallableTool2[Params]):
     def _build_concat(self, params: Params) -> list[str]:
         if len(params.input_files) < 2:
             raise ValueError("concat requires at least 2 input files")
-        # Use concat demuxer via filter_complex for reliability
+        # Normalize all inputs to the same resolution/SAR before concatenating.
+        # For clips without audio, generate a silent audio track so concat works.
+        n = len(params.input_files)
         inputs: list[str] = []
         filter_parts: list[str] = []
+        concat_parts: list[str] = []
         for i, f in enumerate(params.input_files):
             inputs.extend(["-i", f])
-            filter_parts.append(f"[{i}:v:0][{i}:a:0]")
-        filter_str = "".join(filter_parts) + f"concat=n={len(params.input_files)}:v=1:a=1[outv][outa]"
+            filter_parts.append(
+                f"[{i}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,"
+                f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}];"
+            )
+            if self._probe_has_audio(f):
+                filter_parts.append(
+                    f"[{i}:a:0]aformat=sample_rates=44100:channel_layouts=stereo[a{i}];"
+                )
+            else:
+                # No audio stream — generate silent audio matching the video duration.
+                filter_parts.append(
+                    f"anullsrc=r=44100:cl=stereo[null{i}];"
+                    f"[null{i}]atrim=duration=60[a{i}];"
+                )
+            concat_parts.append(f"[v{i}][a{i}]")
+        filter_str = "".join(filter_parts) + "".join(concat_parts) + f"concat=n={n}:v=1:a=1[outv][outa]"
         return [
             "ffmpeg", "-y", *inputs,
             "-filter_complex", filter_str,
@@ -125,16 +149,67 @@ class VideoEdit(CallableTool2[Params]):
             raise ValueError("add_audio requires at least 1 input video file")
         if not params.audio_path:
             raise ValueError("add_audio requires audio_path")
-        return [
-            "ffmpeg", "-y",
-            "-i", params.input_files[0],
-            "-i", params.audio_path,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-map", "0:v:0", "-map", "1:a:0",
-            "-shortest",
-            params.output_path,
-        ]
+
+        video_input = params.input_files[0]
+        has_audio = self._probe_has_audio(video_input)
+
+        if params.audio_mix and has_audio:
+            # Mix new audio with existing audio, output length = video length.
+            # adelay: offset the new audio by audio_offset seconds (in ms).
+            # amix: combine both audio streams; duration=first keeps video's length.
+            delay_ms = int(params.audio_offset * 1000)
+            if delay_ms > 0:
+                af = f"[1:a]adelay={delay_ms}|{delay_ms}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            else:
+                af = "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            return [
+                "ffmpeg", "-y",
+                "-i", video_input,
+                "-i", params.audio_path,
+                "-filter_complex", af,
+                "-map", "0:v:0", "-map", "[aout]",
+                "-c:v", "copy", "-c:a", "aac",
+                params.output_path,
+            ]
+        else:
+            # No existing audio or replace mode: add audio track to video.
+            # Do NOT use -shortest (it truncates video to audio length).
+            delay_ms = int(params.audio_offset * 1000)
+            if delay_ms > 0:
+                # Delay the audio and pad to video length.
+                af = f"[1:a]adelay={delay_ms}|{delay_ms},apad[aout]"
+                return [
+                    "ffmpeg", "-y",
+                    "-i", video_input,
+                    "-i", params.audio_path,
+                    "-filter_complex", af,
+                    "-map", "0:v:0", "-map", "[aout]",
+                    "-c:v", "copy", "-c:a", "aac",
+                    params.output_path,
+                ]
+            else:
+                return [
+                    "ffmpeg", "-y",
+                    "-i", video_input,
+                    "-i", params.audio_path,
+                    "-c:v", "copy", "-c:a", "aac",
+                    "-map", "0:v:0", "-map", "1:a:0",
+                    params.output_path,
+                ]
+
+    @staticmethod
+    def _probe_has_audio(path: str) -> bool:
+        """Check if a video file has an audio stream."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-select_streams", "a",
+                 "-show_entries", "stream=index", "-of", "csv=p=0", path],
+                capture_output=True, text=True, timeout=10,
+            )
+            return bool(result.stdout.strip())
+        except Exception:
+            return False
 
     def _build_add_subtitles(self, params: Params) -> list[str]:
         if not params.input_files:
@@ -153,15 +228,41 @@ class VideoEdit(CallableTool2[Params]):
         if len(params.input_files) < 2:
             raise ValueError("transition requires at least 2 input files")
         dur = params.transition_duration
-        # Simple crossfade between two clips
+        # xfade offset = first clip duration - transition duration.
+        # Probe the first clip to get its duration.
+        offset = self._probe_duration(params.input_files[0]) - dur
+        if offset < 0:
+            offset = 0
+        # Handle clips that may lack audio tracks.
+        has_a0 = self._probe_has_audio(params.input_files[0])
+        has_a1 = self._probe_has_audio(params.input_files[1])
+        video_filter = f"[0:v][1:v]xfade=transition={params.transition_type}:duration={dur}:offset={offset}[outv]"
+        if has_a0 and has_a1:
+            audio_filter = f";[0:a][1:a]acrossfade=d={dur}[outa]"
+            audio_map = ["-map", "[outa]"]
+        else:
+            audio_filter = ""
+            audio_map = []
         return [
             "ffmpeg", "-y",
             "-i", params.input_files[0],
             "-i", params.input_files[1],
-            "-filter_complex",
-            f"[0:v][1:v]xfade=transition={params.transition_type}:duration={dur}:offset=0[outv];"
-            f"[0:a][1:a]acrossfade=d={dur}[outa]",
-            "-map", "[outv]", "-map", "[outa]",
+            "-filter_complex", video_filter + audio_filter,
+            "-map", "[outv]", *audio_map,
             "-c:v", "libx264", "-c:a", "aac",
             params.output_path,
         ]
+
+    @staticmethod
+    def _probe_duration(path: str) -> float:
+        """Get video duration in seconds via ffprobe."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", path],
+                capture_output=True, text=True, timeout=10,
+            )
+            return float(result.stdout.strip())
+        except Exception:
+            return 5.0

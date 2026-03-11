@@ -75,10 +75,7 @@ class WriteFile(CallableTool2[Params]):
             p = p.canonical()
 
             if not await p.parent.exists():
-                return ToolError(
-                    message=f"`{params.path}` parent directory does not exist.",
-                    brief="Parent directory not found",
-                )
+                await p.parent.mkdir(parents=True, exist_ok=True)
 
             # Validate mode parameter
             if params.mode not in ["overwrite", "append"]:

@@ -26,11 +26,7 @@ _PROJECT_DIRS = [
     "output",
 ]
 
-_PROJECT_FILES = [
-    "script.json",
-    "storyboard.json",
-    "characters.json",
-]
+_PROJECT_FILES: list[str] = []
 
 
 class ManageVideoProject(CallableTool2[Params]):

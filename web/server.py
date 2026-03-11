@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from kaos.path import KaosPath
 
-from kimi_cli.agentspec import VIDEO_DIRECTOR_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE
+from kimi_cli.agentspec import VIDEO_DIRECTOR_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE
 from kimi_cli.app import KimiCLI, enable_logging
 from kimi_cli.session import Session
 from kimi_cli.wire.types import (
@@ -64,6 +64,7 @@ AGENT_FILES = {
     "video-director": VIDEO_DIRECTOR_AGENT_FILE,
     "video-auto-eval": VIDEO_AUTO_EVAL_AGENT_FILE,
     "agent-optimizer": AGENT_OPTIMIZER_AGENT_FILE,
+    "screenwriter": SCREENWRITER_AGENT_FILE,
 }
 
 
@@ -90,6 +91,21 @@ async def serve_local_file(file_path: str):
     ):
         raise HTTPException(status_code=403, detail="Only media files are served")
     return FileResponse(str(full_path), media_type=mime)
+
+
+@app.get("/read-json/{file_path:path}")
+async def read_json_file(file_path: str):
+    """Serve a local JSON file (e.g., story-graph.json) so the frontend can load it."""
+    # Try as absolute path first
+    full_path = Path("/") / file_path
+    if not full_path.is_file():
+        # Try relative to cwd (handles paths like "output/session_id/project/story-graph.json")
+        full_path = (Path.cwd() / file_path).resolve()
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    if full_path.suffix != ".json":
+        raise HTTPException(status_code=403, detail="Only JSON files are served")
+    return FileResponse(str(full_path), media_type="application/json")
 
 
 def serialize_wire_message(msg: Any) -> dict:
@@ -154,8 +170,10 @@ async def create_cli(agent_name: str, session_id: str | None = None) -> KimiCLI:
     cli = await KimiCLI.create(
         session,
         agent_file=agent_file,
+        session_output_dir=str(session_output_dir),
         yolo=True,  # auto-approve in web UI
     )
+
     return cli
 
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.video.analyze_video import AnalyzeVideo
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
 _DEFAULT_CRITERIA = """\
@@ -68,6 +69,10 @@ class CompareVideos(CallableTool2[Params]):
 
         prompt = params.criteria if params.criteria else _DEFAULT_CRITERIA
 
+        # Get objective metadata for both videos.
+        orig_meta = await AnalyzeVideo._probe_metadata(params.original_path)
+        gen_meta = await AnalyzeVideo._probe_metadata(params.generated_path)
+
         try:
             result = await self._client.compare(
                 params.original_path, params.generated_path, prompt
@@ -78,5 +83,12 @@ class CompareVideos(CallableTool2[Params]):
                 brief="Comparison failed",
             )
 
+        if orig_meta or gen_meta:
+            builder.write("[Video Metadata (from ffprobe)]\n")
+            if orig_meta:
+                builder.write(f"  Original: {orig_meta}\n")
+            if gen_meta:
+                builder.write(f"  Generated: {gen_meta}\n")
+            builder.write("\n[VLM Comparison]\n")
         builder.write(result)
         return builder.ok(message="Video comparison complete.")

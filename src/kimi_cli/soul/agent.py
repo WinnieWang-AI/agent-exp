@@ -85,6 +85,7 @@ class Runtime:
         session: Session,
         yolo: bool,
         skills_dir: KaosPath | None = None,
+        session_output_dir: str | None = None,
     ) -> Runtime:
         ls_output, agents_md, environment = await asyncio.gather(
             list_directory(session.work_dir),
@@ -121,18 +122,24 @@ class Runtime:
             on_change=_on_approval_change,
         )
 
+        builtin_args = BuiltinSystemPromptArgs(
+            KIMI_NOW=datetime.now().astimezone().isoformat(),
+            KIMI_WORK_DIR=session.work_dir,
+            KIMI_WORK_DIR_LS=ls_output,
+            KIMI_AGENTS_MD=agents_md or "",
+            KIMI_SKILLS=skills_formatted or "No skills found.",
+        )
+        if session_output_dir is not None:
+            builtin_args = BuiltinSystemPromptArgs(
+                **{**asdict(builtin_args), "SESSION_OUTPUT_DIR": session_output_dir}
+            )
+
         return Runtime(
             config=config,
             oauth=oauth,
             llm=llm,
             session=session,
-            builtin_args=BuiltinSystemPromptArgs(
-                KIMI_NOW=datetime.now().astimezone().isoformat(),
-                KIMI_WORK_DIR=session.work_dir,
-                KIMI_WORK_DIR_LS=ls_output,
-                KIMI_AGENTS_MD=agents_md or "",
-                KIMI_SKILLS=skills_formatted or "No skills found.",
-            ),
+            builtin_args=builtin_args,
             denwa_renji=DenwaRenji(),
             approval=Approval(state=approval_state),
             labor_market=LaborMarket(),
