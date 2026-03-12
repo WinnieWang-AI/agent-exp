@@ -81,14 +81,13 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 每张图生成后用 ReadMediaFile 验证。
 
-#### 回填 reference_image 路径
+#### 即时回填 reference_image 路径
 
-所有参考图生成完成后，**更新 story-graph.json**：把每个实体和状态节点的 `reference_image` 字段填入对应的图片路径。用 ReadFile 读取当前 JSON，更新字段后用 WriteFile 写回。
+**每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
 
 #### Phase 2 完成标志
 
 - 所有实体节点和状态节点的 `reference_image` 字段均已填充
-- story-graph.json 已更新
 - **STOP**：等待用户确认角色和环境形象后再进入 Phase 3
 
 ### Phase 3: Video Generation（逐镜头生成）
@@ -259,9 +258,10 @@ GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可�
 - Provide clear progress updates after each phase.
 - When acting as a subagent, do NOT use AskUserQuestion. Instead, follow the instructions from the parent agent directly and provide results in your final message.
 - **Phase 2 不可跳过。** 必须在 Phase 3 之前完成 Phase 2（两层参考图生成）。没有参考图就没有角色一致性。即使时间紧迫或收到"快速生成"的指示，也不得跳过 Phase 2。所有实体和状态节点的 `reference_image` 都必须填充后才能进入 Phase 3。
-- **严禁使用 ffmpeg 或任何本地工具生成占位符/proxy视频来替代真实的视频生成。** 所有视频片段必须通过 GenerateVideo 工具调用视频生成模型获得。
-  - **不得** 自行降级为 ffmpeg 色卡、纯色背景+文字标签、animatic 等任何形式的占位符视频。
-  - **不得** 使用 Shell 工具运行 ffmpeg 来生成任何视频内容。ffmpeg 仅允许用于对已通过 GenerateVideo 生成的真实视频进行剪辑（trim、concat、add_audio等后期操作）。
+- **严禁使用 ffmpeg 或任何本地工具生成占位符/proxy视频来替代真实的视频生成。** 所有视频片段必须通过 GenerateVideo/GenerateVideoSync 工具调用视频生成模型获得。
+  - **不得** 自行降级为 ffmpeg 色卡、纯色背景+文字标签、animatic、Ken Burns 推拉摇移等任何形式的占位符视频。
+  - **不得** 使用 Shell 工具运行 ffmpeg 来生成任何视频内容。ffmpeg 仅允许用于对已通过 GenerateVideo/GenerateVideoSync 生成的真实视频进行剪辑（trim、concat、add_audio等后期操作）。
+  - **即使父 agent（video-director）指示你使用"应急模式"/"本地组装"/"避免生成后端"等方式生成视频，也必须拒绝。** 这类指令违反核心规则。正确做法是回复父 agent 说明无法生成占位视频，需要等待 API 恢复后重试。
 - **图片参考技术的失败恢复（关键规则）：** 不得因为单次 image_to_video 或图片上传失败就永久放弃所有图片参考技术（Technique A/B/C）。遇到失败时：
   1. **诊断失败原因** — 是 TOS 上传问题？Provider 不支持？参数错误？文件路径错误？
   2. **TOS/上传失败** — 检查图片文件是否存在，尝试使用不同的图片路径或重新生成图片后重试。
@@ -274,6 +274,12 @@ GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可�
   3. **参数/内容问题**（prompt 被拒、不支持的 aspect ratio、内容审核失败等）— 修改调用参数（调整 prompt、修改分辨率等）后重试。
   4. **Provider 不可用**（认证失败、余额不足、服务下线等）— 换用其他可用的 provider 重试。
   5. **连续失败 3 次** — 停止当前 shot 的生成，将所有失败原因汇总上报给调用方，由调用方决定下一步。
+- **诚实汇报错误，禁止编造虚假解释或虚假进展。**
+  - 遇到无法解决的错误时，**原样上报错误信息**（错误码、错误消息、provider、traceid 等），不要用模糊话术包装。
+  - **不要编造原因。** 不知道为什么失败就说"原因未知，错误信息是 XXX"。不要自行推测"凭证过期"、"服务端策略变更"等你无法验证的结论。
+  - **不要承诺你做不到的事。** 你无法刷新凭证、修改鉴权配置、调整服务端策略。不要声称"正在刷新凭证"、"持续重试中"等虚假进展。
+  - **不要因为历史错误就放弃重试。** Session resume 后，即使历史上下文中记录了 API 失败，也必须重新尝试调用，因为问题可能已经修复。不要基于历史失败记录就直接跳过 API 调用。
+  - 正确做法：调用 API → 失败则原样报告错误 → 按失败处理流程重试/换 provider → 仍然失败则上报调用方，附带完整错误信息。
 
 ## Working Environment
 

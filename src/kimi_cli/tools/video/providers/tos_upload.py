@@ -18,7 +18,7 @@ def _get_client(config: TOSConfig) -> tos_sdk.TosClientV2:
     """Get or create a cached TOS client."""
     cache_key = f"{config.region}:{config.bucket}"
     if cache_key not in _client_cache:
-        endpoint = f"https://tos-s3-{config.region}.volces.com"
+        endpoint = f"https://tos-{config.region}.volces.com"
         _client_cache[cache_key] = tos_sdk.TosClientV2(
             ak=config.ak.get_secret_value(),
             sk=config.sk.get_secret_value(),

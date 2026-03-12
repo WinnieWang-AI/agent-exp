@@ -105,7 +105,11 @@ async def read_json_file(file_path: str):
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     if full_path.suffix != ".json":
         raise HTTPException(status_code=403, detail="Only JSON files are served")
-    return FileResponse(str(full_path), media_type="application/json")
+    return FileResponse(
+        str(full_path),
+        media_type="application/json",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 def serialize_wire_message(msg: Any) -> dict:
