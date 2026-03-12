@@ -138,6 +138,87 @@ def _save_session_meta(session_id: str, agent_name: str, mode: str) -> None:
     meta_path.write_text(json.dumps(meta, ensure_ascii=False))
 
 
+def _build_session_summary(session_id: str) -> dict[str, Any]:
+    """Build a summary of an existing session for display on resume."""
+    summary: dict[str, Any] = {"session_id": session_id}
+
+    session_output_dir = Path.cwd() / "output" / session_id
+    if not session_output_dir.is_dir():
+        return summary
+
+    # Find project directory (video project with story-graph.json, etc.)
+    # Scan for key files
+    story_graph_path = None
+    shot_plan_path = None
+    for p in session_output_dir.rglob("story-graph.json"):
+        story_graph_path = p
+        break
+    for p in session_output_dir.rglob("shot-plan.json"):
+        shot_plan_path = p
+        break
+
+    # Story graph summary
+    if story_graph_path and story_graph_path.exists():
+        try:
+            sg_data = json.loads(story_graph_path.read_text(encoding="utf-8"))
+            n_chars = len(sg_data.get("characters", []))
+            n_locs = len(sg_data.get("locations", []))
+            n_events = len(sg_data.get("events", []))
+            n_refs = sum(
+                1 for c in sg_data.get("characters", []) + sg_data.get("locations", []) + sg_data.get("props", [])
+                if c.get("reference_image")
+            )
+            summary["story_graph"] = {
+                "path": str(story_graph_path),
+                "characters": n_chars,
+                "locations": n_locs,
+                "events": n_events,
+                "reference_images": n_refs,
+            }
+        except Exception:
+            pass
+
+    # Shot plan summary
+    if shot_plan_path and shot_plan_path.exists():
+        try:
+            sp_data = json.loads(shot_plan_path.read_text(encoding="utf-8"))
+            n_shots = sp_data.get("total_shots", 0)
+            summary["shot_plan"] = {
+                "path": str(shot_plan_path),
+                "total_shots": n_shots,
+            }
+        except Exception:
+            pass
+
+    # Count generated clips
+    clips = list(session_output_dir.rglob("*.mp4"))
+    if clips:
+        summary["clips"] = len(clips)
+
+    # Count generated images
+    images = list(session_output_dir.rglob("*.png")) + list(session_output_dir.rglob("*.jpg"))
+    if images:
+        summary["images"] = len(images)
+
+    # Last user message from chat log
+    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    if chat_path.exists():
+        last_user_msg = None
+        for line in chat_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                if entry.get("role") == "user":
+                    last_user_msg = entry.get("content", "")
+            except Exception:
+                pass
+        if last_user_msg:
+            summary["last_user_message"] = last_user_msg[:200]
+
+    return summary
+
+
 def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
     """Append a chat entry to the session's chat.jsonl."""
     chat_path = _get_session_dir(session_id) / "chat.jsonl"
@@ -151,30 +232,47 @@ def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> No
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-async def create_cli(agent_name: str, session_id: str | None = None) -> KimiCLI:
-    """Create a KimiCLI instance for the given agent, optionally with a specific session_id.
+async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[KimiCLI, bool]:
+    """Create a KimiCLI instance for the given agent, optionally resuming an existing session.
+
+    Returns (cli, resumed) where resumed=True if an existing session was loaded.
 
     Each session gets its own work_dir under output/{session_id}/ so that
     project files (video clips, scripts, etc.) are isolated per session.
     """
+    work_dir = WORK_DIR
+    agent_file = AGENT_FILES[agent_name]
+    resumed = False
+
+    # Try to resume existing session
+    if session_id:
+        existing = await Session.find(work_dir, session_id)
+        if existing and not existing.is_empty():
+            session_output_dir = Path.cwd() / "output" / session_id
+            session_output_dir.mkdir(parents=True, exist_ok=True)
+            cli = await KimiCLI.create(
+                existing,
+                agent_file=agent_file,
+                session_output_dir=str(session_output_dir),
+                yolo=True,
+            )
+            return cli, True
+
+    # Create new session
     if session_id is None:
         session_id = str(uuid.uuid4())
-    # Create session output directory for generated artifacts
     session_output_dir = Path.cwd() / "output" / session_id
     session_output_dir.mkdir(parents=True, exist_ok=True)
-    # Use project root as work_dir so agents can search files like video_sample/
-    work_dir = WORK_DIR
 
-    agent_file = AGENT_FILES[agent_name]
     session = await Session.create(work_dir, session_id=session_id)
     cli = await KimiCLI.create(
         session,
         agent_file=agent_file,
         session_output_dir=str(session_output_dir),
-        yolo=True,  # auto-approve in web UI
+        yolo=True,
     )
 
-    return cli
+    return cli, False
 
 
 # ─── Session REST APIs ───────────────────────────────────────────────
@@ -254,7 +352,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     requested_session_id = first_raw.get("session_id")
 
     try:
-        cli = await create_cli(agent_name, session_id=requested_session_id)
+        cli, resumed = await create_cli(agent_name, session_id=requested_session_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
@@ -263,13 +361,37 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     session_id = cli.session.id
     _save_session_meta(session_id, agent_name, mode="chat")
     await websocket.send_json({"type": "session", "session_id": session_id})
+
+    resume_context = ""
+    if resumed:
+        summary = _build_session_summary(session_id)
+        await websocket.send_json({"type": "resumed", "summary": summary})
+        # Build a context hint for the agent so it knows the project state
+        hints = []
+        if summary.get("story_graph"):
+            sg = summary["story_graph"]
+            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {sg['reference_images']} ref images (path: {sg['path']})")
+        if summary.get("shot_plan"):
+            hints.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
+        if summary.get("clips"):
+            hints.append(f"Video Clips: {summary['clips']} generated")
+        if summary.get("images"):
+            hints.append(f"Images: {summary['images']} generated")
+        if hints:
+            resume_context = "[Session resumed. Current project state:\n" + "\n".join(f"- {h}" for h in hints) + "\n]\n\n"
+
     await websocket.send_json({"type": "status", "status": "ready"})
 
     pending_questions: dict[int, QuestionRequest] = {}
     incoming_queue: asyncio.Queue = asyncio.Queue()
 
-    # Re-inject the first message into the queue
-    await incoming_queue.put(first_raw)
+    # Re-inject the first message into the queue (only if it has content, skip if resume-only)
+    if not resumed or first_raw.get("content"):
+        if resumed and resume_context and first_raw.get("content"):
+            first_raw = dict(first_raw)
+            first_raw["content"] = resume_context + first_raw["content"]
+            resume_context = ""  # already injected, don't inject again
+        await incoming_queue.put(first_raw)
 
     async def ws_reader():
         """Read from websocket and put messages into the queue."""
@@ -303,6 +425,11 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
             content = raw.get("content", "")
             if not content:
                 continue
+
+            # Inject resume context hint into the first user message after resume
+            if resume_context:
+                content = resume_context + content
+                resume_context = ""  # only inject once
 
             _append_chat_log(session_id, "user", "user", content)
             await websocket.send_json({"type": "status", "status": "thinking"})
@@ -377,7 +504,7 @@ async def ws_auto(websocket: WebSocket):
     requested_session_id = first_raw.get("session_id")
 
     try:
-        cli = await create_cli("video-auto-eval", session_id=requested_session_id)
+        cli, resumed = await create_cli("video-auto-eval", session_id=requested_session_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
@@ -386,6 +513,24 @@ async def ws_auto(websocket: WebSocket):
     session_id = cli.session.id
     _save_session_meta(session_id, "video-auto-eval", mode="auto")
     await websocket.send_json({"type": "session", "session_id": session_id})
+
+    resume_context = ""
+    if resumed:
+        summary = _build_session_summary(session_id)
+        await websocket.send_json({"type": "resumed", "summary": summary})
+        hints = []
+        if summary.get("story_graph"):
+            sg = summary["story_graph"]
+            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {sg['reference_images']} ref images (path: {sg['path']})")
+        if summary.get("shot_plan"):
+            hints.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
+        if summary.get("clips"):
+            hints.append(f"Video Clips: {summary['clips']} generated")
+        if summary.get("images"):
+            hints.append(f"Images: {summary['images']} generated")
+        if hints:
+            resume_context = "[Session resumed. Current project state:\n" + "\n".join(f"- {h}" for h in hints) + "\n]\n\n"
+
     await websocket.send_json({"type": "status", "status": "ready"})
 
     # Process the first message content
@@ -403,6 +548,11 @@ async def ws_auto(websocket: WebSocket):
                     continue
             else:
                 content = messages_to_process.pop(0)
+
+            # Inject resume context hint into the first user message after resume
+            if resume_context:
+                content = resume_context + content
+                resume_context = ""
 
             _append_chat_log(session_id, "user", "user", content)
             await websocket.send_json({"type": "status", "status": "thinking"})
@@ -525,7 +675,8 @@ async def ws_room(websocket: WebSocket):
     clis: dict[str, KimiCLI] = {}
     try:
         for agent_name in AGENT_FILES:
-            clis[agent_name] = await create_cli(agent_name)
+            cli, _ = await create_cli(agent_name)
+            clis[agent_name] = cli
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agents: {e}"})
         await websocket.close()

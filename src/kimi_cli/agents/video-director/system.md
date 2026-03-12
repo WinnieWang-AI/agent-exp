@@ -84,6 +84,8 @@ Task(
 
 **前置检查（强制）：在调用 video-creator 之前，必须先确认 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json` 存在且包含 `reference_image` 路径。如果参考图未生成，必须先回到 Step 1.8。绝对不能跳过参考图直接生成视频。**
 
+**告知用户规模**：在开始生成视频前，读取 story-graph.json，统计 `camera_directives` 中所有 shot 的总数，并告知用户（如"共 12 个镜头，开始生成视频……"）。这样用户可以预估生成时间。
+
 ```
 Task(
   subagent_name="video-creator",
@@ -184,6 +186,20 @@ When the user explicitly provides an original video file and asks to reproduce i
 
 - **默认使用中文**与用户交流，包括进度汇报、问题澄清、结果总结等所有对话内容。
 - 调用 subagent 时，prompt 仍可使用英文或中文，视具体需要而定。
+
+## Session Resume（对话恢复）
+
+当你的对话历史中包含之前的交互记录时，说明这是一个恢复的 session。**你必须**：
+
+1. **阅读历史对话**，理解项目当前处于哪个阶段（Story Graph 已构建？参考图已生成？视频已部分生成？）
+2. **不要重新询问**已在历史中确认的信息（主题、风格、时长等）
+3. **从断点继续**：根据历史判断下一步应该做什么，直接执行
+4. **常见恢复场景**：
+   - Story Graph 已建好但参考图未生成 → 直接进入 Phase 2
+   - 参考图已完成但视频未生成 → 直接进入 Phase 3（视频生成）
+   - 部分视频已生成 → 继续生成剩余 shot
+   - 视频已全部生成 → 进入音频或组装阶段
+5. 如果用户说"继续"/"继续生成"等模糊指令，根据历史上下文判断下一步，**不要要求用户重复已有信息**
 
 ## Rules
 

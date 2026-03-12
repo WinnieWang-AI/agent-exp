@@ -24,6 +24,7 @@ agent:
     # Video-specific tools
     - "kimi_cli.tools.video:ManageVideoProject"
     - "kimi_cli.tools.video:GenerateVideo"
+    - "kimi_cli.tools.video:GenerateVideoSync"
     - "kimi_cli.tools.video:CheckVideoJob"
     - "kimi_cli.tools.video:VideoEdit"
     - "kimi_cli.tools.video:ExtractFrame"

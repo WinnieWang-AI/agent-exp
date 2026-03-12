@@ -111,9 +111,23 @@ LinearizeStoryGraph(
 
 检查 `warnings`，如果有 reference_image 缺失，必须先回到 Phase 2 补充。
 
-#### Step 3b: 逐 Shot 执行
+#### Step 3b: 并行 Shot 执行
 
-读取 `shot-plan.json`，按 `shots` 数组顺序逐个执行。对每个 shot：
+读取 `shot-plan.json`，**尽可能并行生成多个 shot**。
+
+**并行规则**：
+- 没有 Technique C（尾帧接续）依赖的 shot 之间可以并行
+- 有 Technique C 的 shot 必须等其 `prev_clip_path` 对应的 shot 完成后才能执行
+- 使用 `GenerateVideoSync` 工具（submit + poll + download 一体化），在一个 response 中调用多个 `GenerateVideoSync` 实现并行
+- 建议每批并行 3-5 个 shot（取决于依赖关系）
+
+**执行流程**：
+1. 分析依赖图：找出所有无 Technique C 依赖的 shot 作为第一批
+2. 对第一批中的每个 shot，在同一个 response 中并行调用 `GenerateVideoSync`
+3. 第一批完成后，找出依赖已满足的下一批 shot，继续并行执行
+4. 重复直到所有 shot 完成
+
+对每个 shot：
 
 **1. 组装 Prompt**（你负责的部分——用 `prompt_materials` 写出好的自然语言描述）：
 ```
@@ -149,18 +163,19 @@ GenerateImage(
 ```
 将生成的首帧图作为 `reference_image_path`。用 ReadMediaFile 验证，不符合重试（最多 2 次）。
 
-**4. 调用 GenerateVideo**：
+**4. 调用 GenerateVideoSync**（推荐）或 GenerateVideo：
 ```
-GenerateVideo(
+GenerateVideoSync(
   prompt=<组装好的 prompt>,
   mode=recommended_call.mode,
   reference_image_path=<C 的尾帧 或 B 的首帧图>,
   reference_images=recommended_call.reference_images,
   duration_seconds=recommended_call.duration_seconds,
-  aspect_ratio=recommended_call.aspect_ratio
+  aspect_ratio=recommended_call.aspect_ratio,
+  download_path=shot.output_path
 )
 ```
-用 CheckVideoJob 轮询直到完成。保存 clip 到 shot 的 `output_path`。
+GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可在同一个 response 中并行调用。
 
 **5. 验证**：每个 clip 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次/shot）。
 
