@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field, field_serializer, field_validator
 from kimi_cli.tools.display import (
     DiffDisplayBlock,
     ShellDisplayBlock,
+    StoryGraphViewDisplayBlock,
     TodoDisplayBlock,
     TodoDisplayItem,
 )
@@ -465,4 +466,5 @@ __all__ = [
     "TodoDisplayBlock",
     "TodoDisplayItem",
     "ShellDisplayBlock",
+    "StoryGraphViewDisplayBlock",
 ]

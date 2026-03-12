@@ -93,54 +93,78 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 ### Phase 3: Video Generation（逐镜头生成）
 
-**从 story-graph.json 的 `event_sequence` 和 `camera_directives` 读取镜头计划，逐 shot 生成视频。**
+**先调用 LinearizeStoryGraph 生成 shot plan，再按 plan 逐 shot 生成视频。** 不要手动查询 `*_active_during` 映射或判断一致性策略——这些已由 Linearizer 确定性计算完成。
 
-对于每个事件的每个 shot（按 `camera_directives` → `shots` 数组顺序）：
-
-#### Step 3a: 查询 Graph，收集该 shot 所需信息
+#### Step 3a: 生成 Shot Plan
 
 ```
-camera_directive.shots[i].focus_on → 找到对应的状态参考图路径
-appearance_active_during           → 该事件中角色的外形状态（用于 prompt 描述）
-mind_active_during                 → 该事件中角色的心态（用于表演描述）
-location_active_during             → 该事件的环境状态参考图
-prop_active_during                 → 该事件的道具状态参考图
-event.interactions                 → 角色互动方式
-event_sequence                     → 前一事件是否同场景（决定是否尾帧接续）
+LinearizeStoryGraph(
+  story_graph_path="{project_dir}/story-graph.json",
+  style_guide_path="{project_dir}/style_guide.json"
+)
 ```
 
-#### Step 3b: 自动推导一致性策略
+输出 `shot-plan.json`，包含每个 shot 的：
+- `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、interactions、relationships
+- `techniques`：已推导的一致性策略（A/B/C 哪些启用、参考图列表、原因）
+- `recommended_call`：预填的 GenerateVideo 参数
 
-不再由 LLM 判断，而是从 graph 结构推导：
+检查 `warnings`，如果有 reference_image 缺失，必须先回到 Phase 2 补充。
 
-1. **Technique A（参考图）**：`focus_on` 中列出的所有状态节点的 `reference_image`，加上对应实体的身份参考图（`reference_images` 最多 4 张，优先级：角色状态图 > 角色身份图 > 环境状态图）
-2. **Technique C（尾帧接续）**：如果前一事件与当前事件的 `happens_at` 相同（同场景连续），ExtractFrame 取上一 clip 尾帧
-3. **Technique B（首帧图）**：如果 shot 是 `close_up` / `extreme_close` / `over_shoulder`，或 `focus_on` 包含 2+ 角色状态节点，则先 GenerateImage 生成首帧图
+#### Step 3b: 逐 Shot 执行
 
-#### Step 3c: 组装 Prompt
+读取 `shot-plan.json`，按 `shots` 数组顺序逐个执行。对每个 shot：
 
+**1. 组装 Prompt**（你负责的部分——用 `prompt_materials` 写出好的自然语言描述）：
 ```
 style_prefix
 + shot.intent（镜头意图）
-+ event.description（事件描述）
-+ appearance.visual 描述（角色当前外形）
-+ mind.emotion + mind.behavior（角色表演指导）
-+ location_state.appearance 描述（环境氛围）
-+ "<<<image_1>>> ... <<<image_N>>>"（引用参考图）
++ prompt_materials.event_description（事件描述）
++ appearances[].visual（角色当前外形）
++ minds[].emotion + minds[].behavior（角色表演指导）
++ location_state.appearance（环境氛围）
++ interactions（互动方式）
++ "<<<image_1>>> ... <<<image_N>>>"（引用参考图，按 techniques.A_reference_images.images 顺序）
 + negative_prefix
 ```
 
-#### Step 3d: 调用 GenerateVideo
+**2. 执行 Technique C（尾帧接续）**——如果 `techniques.C_tail_frame.enabled`：
+```
+ExtractFrame(
+  video_path=techniques.C_tail_frame.prev_clip_path,
+  output_path="assets/frames/{shot_id}_tail.png",
+  position="last"
+)
+```
+将截取的帧作为 `reference_image_path`。
 
-- 有首帧图（Technique B 或 C）→ `mode="image_to_video"` + `reference_image_path`
-- 无首帧图 → `mode="text_to_video"`
-- 始终传入 `reference_images`（Technique A）
-- 用 CheckVideoJob 轮询直到完成
-- 保存 clip 到 `assets/clips/{event_id}_shot_{order}.mp4`
+**3. 执行 Technique B（首帧图）**——如果 `techniques.B_first_frame.enabled`（且 C 未启用）：
+```
+GenerateImage(
+  prompt=<用 prompt_materials 组装的首帧描述>,
+  reference_image_paths=techniques.B_first_frame.generate_image_spec.reference_image_paths,
+  aspect_ratio=techniques.B_first_frame.generate_image_spec.aspect_ratio,
+  output_path="assets/frames/{shot_id}_first.png"
+)
+```
+将生成的首帧图作为 `reference_image_path`。用 ReadMediaFile 验证，不符合重试（最多 2 次）。
 
-#### Step 3e: 验证
+**4. 调用 GenerateVideo**：
+```
+GenerateVideo(
+  prompt=<组装好的 prompt>,
+  mode=recommended_call.mode,
+  reference_image_path=<C 的尾帧 或 B 的首帧图>,
+  reference_images=recommended_call.reference_images,
+  duration_seconds=recommended_call.duration_seconds,
+  aspect_ratio=recommended_call.aspect_ratio
+)
+```
+用 CheckVideoJob 轮询直到完成。保存 clip 到 shot 的 `output_path`。
 
-每个 clip 生成后验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次/shot）。
+**5. 验证**：每个 clip 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次/shot）。
+
+**优先级规则**：当 Technique B 和 C 同时启用时，**C 优先**（尾帧接续优先于生成首帧图，因为尾帧提供了真实的场景连续性）。B 的首帧图仍可作为额外的 `reference_images` 之一传入。
 
 **STOP**: 所有 clip 生成完成后，等待确认再进入 Phase 4。
 
@@ -179,38 +203,38 @@ style_prefix
 
 ## Consistency Toolkit
 
-你有三种核心技术来维持镜头间的视觉一致性。**在 Phase 3 中，一致性策略从 Story Graph 结构自动推导，不需要手动标注。**
+你有三种核心技术来维持镜头间的视觉一致性。**在 Phase 3 中，LinearizeStoryGraph 已确定性推导出每个 shot 该用哪些技术，你只需按 `shot-plan.json` 中的 `techniques` 字段执行即可。**
 
 ### Technique A: Reference-to-Video（参考图生视频）
 
 将角色/环境/道具的参考图传入 GenerateVideo 的 `reference_images` 参数（最多 4 张）。
 
-- **来源**：`camera_directive.shots[i].focus_on` 中列出的状态节点的 `reference_image`，以及对应实体节点的 `reference_image`
+- **来源**：`techniques.A_reference_images.images`（已由 Linearizer 从 `focus_on` 收集并按优先级排序）
 - **Prompt 中引用**：`<<<image_1>>>` 对应第一张参考图，以此类推
-- **优先级**（当超过 4 张时）：角色状态图 > 角色身份图 > 环境状态图 > 道具状态图
+- **优先级**：角色状态图 > 角色身份图 > 环境状态图 > 道具状态图（Linearizer 已排好序）
 
 ### Technique B: First-Frame-to-Video（首帧图生视频）
 
 先用 GenerateImage 生成精确的首帧图，再用 `image_to_video` 模式生成视频。
 
-- **自动触发条件**：`shot_type` 为 `close_up` / `extreme_close` / `over_shoulder`，或 `focus_on` 包含 2+ 角色状态节点
-- **GenerateImage 的 `reference_image_paths`**：该 shot 涉及的所有角色身份图 + 状态图 + 环境状态图
+- **触发条件**：`techniques.B_first_frame.enabled == true`（Linearizer 在 close-up/extreme_close/over_shoulder 或 2+ 角色同框时自动启用）
+- **GenerateImage 参数**：`techniques.B_first_frame.generate_image_spec` 提供了 `reference_image_paths` 和 `aspect_ratio`
 - 生成后用 ReadMediaFile 验证，不符合重试（最多 2 次）
 
 ### Technique C: Tail-Frame Continuity（尾帧接续）
 
 截取上一个 clip 的最后一帧，作为当前 clip 的起始帧。
 
-- **自动触发条件**：当前事件的 `happens_at` 与前一事件相同（同场景连续）
+- **触发条件**：`techniques.C_tail_frame.enabled == true`（Linearizer 在前后 shot 同场景时自动启用）
+- **来源 clip**：`techniques.C_tail_frame.prev_clip_path`
 - 用 ExtractFrame 截取尾帧，作为 `reference_image_path`
 
-### 自动推导规则（Phase 3 中强制执行）
+### 执行规则
 
-1. **`focus_on` 包含状态节点 → 必须用 A**。收集所有 `reference_image`，传入 `reference_images`。
-2. **前一事件同场景 → 必须用 C**。截取尾帧作为起始帧。
-3. **特写 / 多角色同框 → 必须用 B**。先生成首帧图。
-4. **所有 shot → 始终应用 `style_prefix` 和 `negative_prefix`**。
-5. 多条规则同时触发时，**全部叠加**。
+1. **按 `techniques` 字段执行**。不要自己重新判断是否需要某个 technique。
+2. **B 和 C 同时启用时，C 优先**。B 的首帧图可作为额外 `reference_images` 传入。
+3. **所有 shot → 始终应用 `style_prefix` 和 `negative_prefix`**（在 `prompt_materials` 中已提供）。
+4. **多条规则同时触发时，全部叠加**。
 
 ## Rules
 

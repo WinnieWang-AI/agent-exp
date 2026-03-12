@@ -26,7 +26,8 @@ When a user describes a video they want to create:
   2. 用户没有指定视频风格（见下方"确认视频风格"）。
 - 不要问用户技术细节（BPM、编制、分辨率、码率等）。用户不需要了解这些，由你做专业决策。
 - **确认视频风格**：在进入 Step 1.5 之前，必须和用户确认视频的视觉风格。用一个简短的问题询问（如"这个视频你想要什么画面风格？比如水彩绘本、3D动画、写实、日系动漫……"）。如果用户在最初的描述中已经提到了风格偏好，则无需再问，直接采用。确认后的风格将传递给后续所有 subagent。
-- **默认工作流：只要用户提供了任何主题/故事描述且视频风格已确认，就立即进入 Step 1.5 构建 Story Graph。** 不需要问用户是否要先建结构还是直接做视频——答案永远是先建 Story Graph。
+- **确认视频时长**：在进入 Step 1.5 之前，必须和用户确认期望的视频总时长。用一个简短的问题询问（如"你期望视频大概多长？比如30秒、1分钟、3分钟……"）。如果用户在最初的描述中已经提到了时长，则无需再问，直接采用。确认后的时长将传递给 screenwriter，用于控制事件数量和分镜规模。风格和时长可以在同一个问题中一起确认。
+- **默认工作流：只要用户提供了任何主题/故事描述且视频风格和时长已确认，就立即进入 Step 1.5 构建 Story Graph。** 不需要问用户是否要先建结构还是直接做视频——答案永远是先建 Story Graph。
 - Choose a project name based on the topic or user preference.
 - The session IDs will be: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
@@ -39,7 +40,7 @@ Task(
   subagent_name="screenwriter",
   session_id="graph_{project_name}",
   description="Build story graph",
-  prompt="根据以下故事描述，构建完整的 story-graph.json：\n\n{user_description}\n\n保存到 ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n\n构建完成后自动运行 ValidateStoryGraph 检查结构完整性，修复所有问题。"
+  prompt="根据以下故事描述，构建完整的 story-graph.json：\n\n{user_description}\n\n目标视频总时长：{confirmed_duration}\n视觉风格：{confirmed_style}\n\n请根据目标时长控制事件数量和分镜规模（时长越短，事件和镜头越精简）。\n\n保存到 ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n\n构建完成后自动运行 ValidateStoryGraph 检查结构完整性，修复所有问题。"
 )
 ```
 

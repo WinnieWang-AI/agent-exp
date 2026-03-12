@@ -12,19 +12,47 @@ from kimi_cli.tools.video.providers.image_base import (
     ImageProvider,
 )
 
-_DEFAULT_MODEL = "gemini-2.0-flash-exp"
+_DEFAULT_MODEL = "gemini-2.5-flash-image"
 
 
 class GeminiImageProvider(ImageProvider):
-    """Image generation provider using Google Gemini API."""
+    """Image generation provider using Google Gemini API.
+
+    Supports two authentication modes:
+    - API key: Simple Gemini Developer API access
+    - Vertex AI: Service account credentials with project/location
+    """
 
     def __init__(self, config: ImageProviderConfig) -> None:
-        api_key = config.api_key.get_secret_value()
-        http_options: types.HttpOptionsDict | None = None
-        if config.base_url:
-            http_options = {"base_url": config.base_url}
-        self._client = genai.Client(api_key=api_key, http_options=http_options)
         self._model = config.model_name or _DEFAULT_MODEL
+
+        if config.credentials_json and config.project_id:
+            # Vertex AI mode with service account
+            from google.oauth2 import service_account
+
+            credentials = service_account.Credentials.from_service_account_file(
+                config.credentials_json,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            self._client = genai.Client(
+                vertexai=True,
+                credentials=credentials,
+                project=config.project_id,
+                location=config.location or "global",
+            )
+        elif config.api_key.get_secret_value():
+            # Simple API key mode
+            http_options: types.HttpOptionsDict | None = None
+            if config.base_url:
+                http_options = {"base_url": config.base_url}
+            self._client = genai.Client(
+                api_key=config.api_key.get_secret_value(),
+                http_options=http_options,
+            )
+        else:
+            raise ValueError(
+                "Image provider requires either api_key or credentials_json + project_id"
+            )
 
     async def generate_image(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         parts: list[types.Part] = []

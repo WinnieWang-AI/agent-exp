@@ -169,9 +169,15 @@ class ImageProviderConfig(BaseModel):
     api_key: SecretStr = SecretStr("")
     """API key."""
     model_name: str = ""
-    """Model name (e.g. "gemini-2.0-flash-exp")."""
+    """Model name (e.g. "gemini-2.5-flash-image")."""
     base_url: str = ""
-    """Optional base URL (e.g. for Vertex AI)."""
+    """Optional base URL."""
+    project_id: str = ""
+    """Google Cloud project ID (for Vertex AI)."""
+    location: str = "global"
+    """Vertex AI location."""
+    credentials_json: str = ""
+    """Path to service account JSON file (for Vertex AI)."""
     custom_headers: dict[str, str] | None = None
     """Custom headers to include in API requests."""
 
@@ -601,6 +607,16 @@ def _merge_nacos_configs(config: Config) -> None:
                     credentials_json=credentials_json,
                 )
                 logger.debug("Nacos: merged gemini into vlm_providers['gemini']")
+
+                # Also configure Gemini as image provider (using same Vertex AI credentials)
+                if "gemini" not in config.image_providers:
+                    config.image_providers["gemini"] = ImageProviderConfig(
+                        type="gemini",
+                        project_id=project_id,
+                        location=location,
+                        credentials_json=credentials_json,
+                    )
+                    logger.debug("Nacos: merged gemini into image_providers['gemini']")
 
     # --- suno_config → music_providers["suno"] (type=suno) ---
     if "suno" not in config.music_providers:

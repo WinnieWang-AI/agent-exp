@@ -10,6 +10,10 @@ import {
   CircleDashedIcon,
   CircleIcon,
 } from "lucide-react";
+import {
+  StoryGraphView,
+  type StoryGraphViewData,
+} from "./story-graph-view";
 import type { ComponentProps } from "react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
@@ -1172,6 +1176,14 @@ const DisplayItemRenderer = ({ item }: { item: DisplayItem }) => {
       const todoData = (item.data ?? item) as unknown as TodoDisplayData;
       if (todoData.items && Array.isArray(todoData.items)) {
         return <TodoContent data={todoData} />;
+      }
+      return <JSONContent data={item.data} />;
+    }
+
+    case "story_graph_view": {
+      const sgData = (item.data ?? item) as unknown as StoryGraphViewData;
+      if (sgData.entities || sgData.timeline) {
+        return <StoryGraphView data={sgData} />;
       }
       return <JSONContent data={item.data} />;
     }

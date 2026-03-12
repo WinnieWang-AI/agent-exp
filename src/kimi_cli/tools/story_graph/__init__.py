@@ -5,7 +5,11 @@ from typing import Any, override
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_cli.tools.story_graph.linearize import LinearizeStoryGraph
+from kimi_cli.tools.story_graph.view import build_story_graph_view
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+
+__all__ = ["ValidateStoryGraph", "LinearizeStoryGraph"]
 
 
 class Params(BaseModel):
@@ -313,6 +317,15 @@ class ValidateStoryGraph(CallableTool2[Params]):
             return builder.error(f"Invalid JSON: {e}", brief="JSON parse error")
 
         issues = validate_story_graph(data)
+
+        # Emit story graph view display block
+        has_refs = any(
+            c.get("reference_image")
+            for c in data.get("characters", []) + data.get("locations", []) + data.get("props", [])
+        )
+        phase = "references" if has_refs else "skeleton"
+        view_block = build_story_graph_view(data, phase=phase)
+        builder.display(view_block)
 
         if not issues:
             builder.write("No issues found. The story graph is structurally valid.")

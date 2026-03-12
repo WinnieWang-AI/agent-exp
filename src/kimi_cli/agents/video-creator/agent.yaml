@@ -19,6 +19,8 @@ agent:
     - "kimi_cli.tools.file:StrReplaceFile"
     - "kimi_cli.tools.web:SearchWeb"
     - "kimi_cli.tools.web:FetchURL"
+    # Story graph tools
+    - "kimi_cli.tools.story_graph:LinearizeStoryGraph"
     # Video-specific tools
     - "kimi_cli.tools.video:ManageVideoProject"
     - "kimi_cli.tools.video:GenerateVideo"
