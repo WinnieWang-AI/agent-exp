@@ -23,7 +23,61 @@ Story Graph 是 Operation Graph 的**输入之一**——agent 读取 story grap
 
 ## 2. 数据模型
 
-### 2.1 资源节点（Resource Node）
+### 2.1 任务节点（Task Node）
+
+任务是 Operation Graph 的最高层抽象。每个任务代表一个有明确目的的工作单元，包含执行标准和验证机制。
+
+```json
+{
+  "id": "task_gen_ref_images",
+  "name": "生成角色参考图",
+  "purpose": "为所有角色生成风格一致的参考图，用于后续视频生成时保持角色一致性",
+  "check_criteria": [
+    "每张参考图的画风必须与 style_guide 一致（水彩绘本风格）",
+    "角色外貌必须与 story-graph.json 中的描述匹配",
+    "图片质量清晰，无明显畸变（如多余手指、扭曲五官）",
+    "所有角色都有对应的参考图，不能遗漏"
+  ],
+  "status": "planned | running | done | failed | verified | rejected",
+  "operations": ["op_gen_char_red", "op_gen_char_wolf"],
+  "inputs": ["res_story_graph", "res_style_guide"],
+  "outputs": ["res_char_red_img", "res_char_wolf_img"],
+  "depends_on": [],
+  "verification": {
+    "status": "pending | passed | failed",
+    "method": "ReadMediaFile 逐张检查",
+    "checked_at": 1710000050,
+    "issues": [
+      {
+        "resource": "res_char_wolf_img",
+        "issue": "大灰狼图片生成失败，content_policy 拦截",
+        "severity": "critical"
+      }
+    ],
+    "summary": "4/5 通过，1 张生成失败需重试"
+  }
+}
+```
+
+任务状态流转：
+
+```
+planned → running → done → verified（验证通过）
+                  ↘ failed（执行失败）
+                        done → rejected（验证不通过）→ running（重试）
+```
+
+- `planned`：已规划，未开始执行
+- `running`：正在执行内部操作
+- `done`：所有操作执行完毕，等待验证
+- `verified`：验证通过，任务真正完成
+- `rejected`：验证不通过，需要重试或调整
+- `failed`：执行失败且无法恢复
+
+**任务层（第一层）** 展示任务节点及其依赖关系，可以快速看到整体进度。
+**执行层（第二层）** 点击任务节点后展开，展示内部的具体操作链路（资源节点 + 操作边）。
+
+### 2.2 资源节点（Resource Node）
 
 图中的节点代表资源——用户输入、中间产物、最终输出。
 

@@ -20,80 +20,31 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- **直接执行，绝对不要给用户提供选项让他们选择。** 不要问"你想做什么？"、不要列出"制作短视频/先建故事结构/讲述故事"等选项。用户说了一个主题，你就直接开始执行。
-- **不要使用 AskUserQuestion 工具来提供工作流选项。** 除以下两种情况外，永远不要调用 AskUserQuestion：
-  1. 用户的消息完全没有任何主题信息（比如只说"帮我做个视频"），这时可以问一个简短的问题来了解主题。
-  2. 用户没有指定视频风格（见下方"确认视频风格"）。
-- 不要问用户技术细节（BPM、编制、分辨率、码率等）。用户不需要了解这些，由你做专业决策。
-- **确认视频风格**：在进入 Step 1.5 之前，必须和用户确认视频的视觉风格。用一个简短的问题询问（如"这个视频你想要什么画面风格？比如水彩绘本、3D动画、写实、日系动漫……"）。如果用户在最初的描述中已经提到了风格偏好，则无需再问，直接采用。确认后的风格将传递给后续所有 subagent。
-- **确认视频时长**：在进入 Step 1.5 之前，必须和用户确认期望的视频总时长。用一个简短的问题询问（如"你期望视频大概多长？比如30秒、1分钟、3分钟……"）。如果用户在最初的描述中已经提到了时长，则无需再问，直接采用。确认后的时长将传递给 screenwriter，用于控制事件数量和分镜规模。风格和时长可以在同一个问题中一起确认。
-- **默认工作流：只要用户提供了任何主题/故事描述且视频风格和时长已确认，就立即进入 Step 1.5 构建 Story Graph。** 不需要问用户是否要先建结构还是直接做视频——答案永远是先建 Story Graph。
-- Choose a project name based on the topic or user preference.
-- The session IDs will be: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
+- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格或时长时，用一个简短问题确认（风格和时长可合并为一个问题）。确认后立即进入 Step 1.5。
+- 如果用户已在描述中提到了风格和时长，无需再问，直接采用。
+- Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
 ### Step 1.5: Build Story Graph
 
-**在视频生成之前，先用 screenwriter agent 构建故事结构图。**
+调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格，保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`，构建完成后自动运行 ValidateStoryGraph。
 
-```
-Task(
-  subagent_name="screenwriter",
-  session_id="graph_{project_name}",
-  description="Build story graph",
-  prompt="根据以下故事描述，构建完整的 story-graph.json：\n\n{user_description}\n\n目标视频总时长：{confirmed_duration}\n视觉风格：{confirmed_style}\n\n请根据目标时长控制事件数量和分镜规模（时长越短，事件和镜头越精简）。\n\n保存到 ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n\n构建完成后自动运行 ValidateStoryGraph 检查结构完整性，修复所有问题。"
-)
-```
+向用户展示构建结果摘要（角色数、事件数、时间线结构），等用户确认后再进入视频生成。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
 
-向用户展示构建结果摘要（角色数、事件数、时间线结构），等用户确认后再进入视频生成。
-
-**严禁向用户展示以下内容：**
-- 文件路径（如 `/home/.../story-graph.json`、`${SESSION_OUTPUT_DIR}/...`）
-- session ID（如 `graph_xxx`、`create_xxx`）
-- 内部技术变量名、工具名
-- subagent 返回的原始日志或调试信息
-
-**只向用户展示人类可读的摘要**（角色、事件、场景、时长等），不要暴露任何系统内部细节。如果 subagent 的输出包含文件路径，你必须在汇报时过滤掉。
-
-如果用户要求修改故事（如"把主角改成少年"、"加一个场景"），重新调用 screenwriter agent 做局部更新：
-
-```
-Task(
-  subagent_name="screenwriter",
-  session_id="graph_{project_name}",
-  description="Edit story graph",
-  prompt="修改现有的 story-graph.json：{user_edit_instruction}\n\n文件在 ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n修改后运行 ValidateStoryGraph 确认无问题。"
-)
-```
+如果用户要求修改故事，重新调用 screenwriter 做局部更新。
 
 ### Step 1.8: Generate Reference Images
 
-**Story Graph 确认后，先调用 video-creator 只执行 Phase 1-2（生成两层参考图），不生成视频。**
+Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}`），只执行 Phase 1-2（init 项目 + 生成两层参考图），传入确认的视觉风格，保存到 `${SESSION_OUTPUT_DIR}/{project_name}/`。**不要执行 Phase 3/4/5。**
 
-```
-Task(
-  subagent_name="video-creator",
-  session_id="create_{project_name}",
-  description="Generate reference images",
-  prompt="Read the story graph at ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n\nVisual style (user confirmed): {confirmed_style}\nUse this style to create style_guide.json (style_prefix and negative_prefix).\n\nOnly execute Phase 1 and Phase 2:\n1. Init project and create style_guide.json based on the confirmed visual style\n2. Generate all reference images (entity images first, then state images)\n3. Update story-graph.json with reference_image paths\n\nDo NOT proceed to Phase 3/4/5 (video/audio/assembly). Stop after Phase 2.\n\nSave the project to ${SESSION_OUTPUT_DIR}/{project_name}/"
-)
-```
-
-向用户展示参考图摘要（前端会在 Story Graph 预览中自动显示参考图缩略图）。等用户确认角色和环境形象后再进入视频生成。
+向用户展示参考图摘要。等用户确认角色和环境形象后再进入视频生成。
 
 ### Step 2: Create Video (Round 1)
 
-**前置检查（强制）：在调用 video-creator 之前，必须先确认 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json` 存在且包含 `reference_image` 路径。如果参考图未生成，必须先回到 Step 1.8。绝对不能跳过参考图直接生成视频。**
+**前置检查**：确认 story-graph.json 中 `reference_image` 已填充。未填充则先回到 Step 1.8。
 
-**告知用户规模**：在开始生成视频前，读取 story-graph.json，统计 `camera_directives` 中所有 shot 的总数，并告知用户（如"共 12 个镜头，开始生成视频……"）。这样用户可以预估生成时间。
+**告知用户规模**：统计 shot 总数并告知用户（如"共 12 个镜头，开始生成视频……"）。
 
-```
-Task(
-  subagent_name="video-creator",
-  session_id="create_{project_name}",
-  description="Generate video",
-  prompt="Read the story graph at ${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json\n\nReference images are already generated (Phase 2 completed). Execute Phase 3 → 4 → 5:\n3. Generate video clips based on camera_directives\n4. Generate audio based on audio_states\n5. Assemble final video\n\nSave the final output to ${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4"
-)
-```
+调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3→4→5，输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
 
 ### Step 3: Auto-Evaluate (mandatory after every generation)
 
