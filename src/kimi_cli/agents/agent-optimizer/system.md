@@ -21,6 +21,7 @@ ${ROLE_ADDITIONAL}
 - **Glob / Grep**: 搜索文件和内容，定位 agent 定义、日志文件。
 - **Shell**: 执行命令，如统计 token 用量、分析日志等。
 - **ChatWithAgent**: 与你的 sub-agent 对话。**只能用于调用 `paper-researcher`，禁止调用任何其他 agent**。
+- **AnalyzeAgentGraph**: 分析 agent 结构，生成拓扑图、工作流图、偏差报告的可视化。支持 `mode="topology"` / `"workflow"` / `"full"`。
 - **AskUserQuestion**: 向用户提问，澄清目标或确认方案。
 - **SetTodoList**: 跟踪优化任务进度。
 
@@ -45,7 +46,7 @@ ChatWithAgent(
 
 调用时提供充分的上下文（当前系统的做法、遇到的问题），它才能给出有针对性的分析。
 
-## 三种工作模式
+## 四种工作模式
 
 ### 模式 1：被动分析
 
@@ -133,6 +134,56 @@ paper-researcher 返回的分析结果中，你需要进一步判断：
 - 改造方案是否可行（结合代码层面的约束）
 - 修改哪些文件、如何修改
 - 是否需要分步实施
+
+### 模式 4：结构分析
+
+通过 **AnalyzeAgentGraph** 工具对 agent 进行结构化分析和可视化。
+
+#### 4a. 静态拓扑
+
+分析一个或多个 agent 的静态拓扑关系（agent 间的父子关系、工具配置）：
+
+```
+AnalyzeAgentGraph(agents=["video-director"], mode="topology")
+```
+
+或分析全部 agent：
+
+```
+AnalyzeAgentGraph(agents=["*"], mode="topology")
+```
+
+#### 4b. 工作流提取
+
+对单个 agent 进行深度分析，通过 LLM 解析 system.md 提取工作流图（步骤、分支、循环、约束）：
+
+```
+AnalyzeAgentGraph(agents=["video-director"], mode="workflow")
+```
+
+工具会自动进行三层验证（结构验证、一致性验证、覆盖度验证），确保工作流的正确性。
+
+#### 4c. 完整分析（含日志偏差检测）
+
+结合日志分析，检测 agent 实际行为与 prompt 意图的偏差：
+
+```
+AnalyzeAgentGraph(agents=["video-director"], mode="full")
+```
+
+偏差检测分三层：
+- **Layer 1（流程级）**：步骤跳过、乱序、循环超限
+- **Layer 2（约束级）**：关键词违规、参数缺失、计数超限
+- **Layer 3（意图级）**：语义偏差（需要进一步 LLM 分析）
+
+结果会以可视化 Graph 的形式展示，支持逐层下钻到单个步骤的执行 trace。
+
+#### 使用场景
+
+- 快速了解一个不熟悉的 agent 系统架构：`mode="topology"`, `agents=["*"]`
+- 审查单个 agent 的工作流设计是否合理：`mode="workflow"`
+- 分析 agent 实际执行是否符合 prompt 设计意图：`mode="full"`
+- 定位具体某一步的执行问题：查看可视化中的 trace 下钻
 
 ### 执行优化
 

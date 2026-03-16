@@ -262,7 +262,13 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 ### Build 模式
 
-当用户提供故事描述，你需要构建完整的 `story-graph.json`。**必须分步进行**：
+当用户提供故事描述，你需要构建 `story-graph.json`。构建分为 **两个阶段**，每个阶段写入后都必须验证。
+
+---
+
+#### 阶段一：故事结构（Story Structure）
+
+构建故事的核心骨架——实体、事件、状态及其关联。**不包含镜头和音频。**
 
 **Step 0: 确定制作风格**
 - 根据用户描述（或 director 传入的风格、画面比例、时长）创建 `ProductionStyle` 节点
@@ -280,7 +286,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 **Step 2: 拆解事件**
 - 将故事拆解为离散事件（events），每个事件是一个叙事节拍
 - 确定 event_sequence（THEN/PARALLEL 关系）
-- 设定 timelines
+- 设定 timelines：`label` 只描述叙事时间（如"清晨"、"午后"、"三天后"），**禁止写入视频秒数或时间区间**（如"3.5s"、"0-6s"）。视频时长信息属于 `ProductionStyle.duration`，不属于 Timeline。
 - 为有角色互动的事件写 `interactions`
 
 **Step 3: 推导状态**
@@ -296,20 +302,33 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 确保每个有地点的事件都有对应的 location_state
 - 确保每个事件都有对应的 production_style（`style_active_during`）
 
+**阶段一写入与验证**
+1. 将 JSON 写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。此时 `camera_directives`、`audio_states`、`audio_active_during`、`audio_transitions` 为空数组/空对象。
+2. **写入后立即调用 `ValidateStoryGraph`** 检查结构完整性。不可跳过。
+3. 如果发现问题，**必须修复后重新写入并再次验证**，直到通过。
+4. 向用户汇报故事结构摘要（角色、事件、状态数量及主要剧情脉络），**等待用户确认后再进入阶段二**。
+
+常见的截断问题：LLM 生成长 JSON 时可能丢失中间部分（如 `character_appearances`、`character_minds` 数组为空，但 `appearance_active_during`、`mind_active_during` 却引用了这些 ID）。ValidateStoryGraph 会检测这类不一致，发现后必须补全缺失的节点定义。
+
+---
+
+#### 阶段二：镜头与音频（Camera & Audio）
+
+在用户确认故事结构后，为每个事件设计镜头语言和音频。
+
 **Step 5: 设计镜头（camera_directives）**
 - 为每个事件（或 PARALLEL 事件组）设计分镜
 - `focus_on` 引用 appearance/prop_state/location_state 的 ID（不是实体 ID）
 
 **Step 6: 设计音频（audio_states）**
 - BGM 状态链，跟随叙事情绪弧线
-- 设定 audio_transitions 的转场方式
+- 对白类型需要设定 `speaker`、`text`、`tone`、`voice_direction`
+- 设定 `audio_active_during` 和 `audio_transitions` 的转场方式
 
-**Step 7: 写入并验证**
-1. 将完整 JSON 写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。
-2. **写入后立即调用 `ValidateStoryGraph`** 检查结构完整性。不可跳过。
+**阶段二写入与验证**
+1. 读取已有的 `story-graph.json`，在其中补充 `camera_directives`、`audio_states`、`audio_active_during`、`audio_transitions`。
+2. **写入后立即调用 `ValidateStoryGraph`** 检查完整结构。不可跳过。
 3. 如果发现问题，**必须修复后重新写入并再次验证**，直到通过。
-
-常见的截断问题：LLM 生成长 JSON 时可能丢失中间部分（如 `character_appearances`、`character_minds` 数组为空，但 `appearance_active_during`、`mind_active_during` 却引用了这些 ID）。ValidateStoryGraph 会检测这类不一致，发现后必须补全缺失的节点定义。
 
 ### Edit 模式
 

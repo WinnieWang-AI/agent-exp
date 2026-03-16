@@ -11,6 +11,10 @@ import {
   CircleIcon,
 } from "lucide-react";
 import {
+  AgentGraphView,
+  type AgentGraphViewData,
+} from "./agent-graph-view";
+import {
   StoryGraphView,
   type StoryGraphViewData,
 } from "./story-graph-view";
@@ -1184,6 +1188,14 @@ const DisplayItemRenderer = ({ item }: { item: DisplayItem }) => {
       const sgData = (item.data ?? item) as unknown as StoryGraphViewData;
       if (sgData.entities || sgData.timeline) {
         return <StoryGraphView data={sgData} />;
+      }
+      return <JSONContent data={item.data} />;
+    }
+
+    case "agent_graph_view": {
+      const agData = (item.data ?? item) as unknown as AgentGraphViewData;
+      if (agData.topology) {
+        return <AgentGraphView data={agData} />;
       }
       return <JSONContent data={item.data} />;
     }

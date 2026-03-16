@@ -30,9 +30,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 | Location | `fixed_traits` | 无角色、纯环境 | 16:9 | `assets/images/{location_id}.png` |
 | Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `assets/images/{prop_id}.png` |
 
-每张图用 ReadMediaFile 验证，不符合重试（最多 2 次）。
-
-**并行策略（并行度 ≤ 2）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **2 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 2 个，等当前批完成后再发下一批。
+**并行策略（并行度 ≤ 3）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
 
 #### 第 2 层：状态参考图（基于实体图派生）
 
@@ -44,17 +42,33 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 | LocationState | `appearance.lighting/weather/condition/atmosphere` | 16:9 | `assets/images/{location_state_id}.png` |
 | PropState | `appearance.visual` + `appearance.condition` | 1:1 | `assets/images/{prop_state_id}.png` |
 
-每张图用 ReadMediaFile 验证。
-
-**并行策略（并行度 ≤ 2）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **2 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 2 个并行生成。
+**并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
 #### 即时回填 reference_image 路径
 
 **每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
 
+#### Phase 2 批量校验
+
+所有参考图生成完毕后，执行一轮批量校验：
+
+1. 用 ReadMediaFile **逐张查看**所有已生成的参考图（实体图 + 状态图）。
+2. 对每张图检查：
+   - **角色图**：是否与 `fixed_traits` 描述一致（体型、种族、关键特征），是否全身可见、背景干净
+   - **环境图**：是否与 `fixed_traits` 描述一致（场景类型、氛围），是否无角色出现
+   - **道具图**：是否与 `fixed_traits` 描述一致
+   - **状态图**：是否与对应状态节点的 `visual` / `appearance` 描述一致，是否与实体身份图保持角色一致性
+3. 将检查结果分为三类：
+   - **通过**：符合描述
+   - **需重试**：主体偏差较大（如角色特征明显不符、场景类型错误），标记后重新生成（最多重试 2 次/张）
+   - **可接受**：存在细微差异但不影响整体一致性，记录但不重试
+4. 重试生成的图片需再次校验，直到全部通过或达到重试上限。
+5. 输出校验报告摘要（通过数 / 重试数 / 可接受数）。
+
 #### Phase 2 完成标志
 
 - 所有实体节点和状态节点的 `reference_image` 字段均已填充
+- 批量校验完成，所有图片状态为"通过"或"可接受"
 - **STOP**：等待用户确认角色和环境形象后再进入 Phase 3
 
 ### Phase 3: Video Generation（逐镜头生成）

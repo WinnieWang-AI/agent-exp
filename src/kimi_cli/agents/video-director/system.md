@@ -25,15 +25,21 @@ When a user describes a video they want to create:
 - 确认后的画面比例（16:9 / 9:16）和视觉风格将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
-### Step 1.5: Build Story Graph
+### Step 1.5: Build Story Graph — 阶段一（故事结构）
 
-调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`，构建完成后自动运行 ValidateStoryGraph。
+调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16），指示其执行**阶段一**：构建故事结构（实体、事件、状态及关联），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。screenwriter 写入后会自动运行 ValidateStoryGraph。
 
 **重要**：明确告知 screenwriter 用户确认的风格和画面比例，screenwriter 会将其写入 `production_styles` 节点（包含 `style_prefix`、`negative_prefix`、`aspect_ratio`），后续 video-creator 和 linearizer 直接从图中读取。
 
-向用户展示构建结果摘要（角色数、事件数、时间线结构），等用户确认后再进入视频生成。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
+向用户展示故事结构摘要（角色数、事件数、时间线结构、主要剧情脉络），等用户确认后再进入 Step 1.6。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
 
-如果用户要求修改故事，重新调用 screenwriter 做局部更新。
+如果用户要求修改故事，重新调用 screenwriter 做局部更新，用户确认后再继续。
+
+### Step 1.6: Build Story Graph — 阶段二（镜头与音频）
+
+用户确认故事结构后，再次调用 screenwriter（session_id=`graph_{project_name}`），指示其执行**阶段二**：为每个事件设计镜头语言（camera_directives）和音频（audio_states），补充到已有的 `story-graph.json` 中。screenwriter 写入后会自动运行 ValidateStoryGraph。
+
+向用户展示镜头与音频设计摘要（镜头总数、音频层次），确认后进入 Step 1.8。
 
 ### Step 1.8: Generate Reference Images
 
@@ -60,7 +66,7 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 
 ## Workflow: Story Editing (without regenerating video)
 
-用户想修改故事结构时，调用 screenwriter（session_id=`graph_{project_name}`）做局部更新。用户满意后再进入 Step 2。
+用户想修改故事结构时，调用 screenwriter（session_id=`graph_{project_name}`）做局部更新。如果修改影响了故事结构（角色/事件/状态），镜头和音频可能需要重新设计（回到 Step 1.6）。用户满意后再进入 Step 2。
 
 ## Workflow: Audio-Only Tasks
 
@@ -89,7 +95,8 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 2. **扫描项目目录确定真实状态**：调用 video-creator 检查项目目录，报告 story-graph.json（含 production_styles 节点）、参考图数量、clips 数量及大小、shot-plan.json、成片是否存在。只报告事实，不做生成操作。
 3. **根据扫描结果判断阶段**：
    - 无 story-graph.json → 从 Step 1.5 开始
-   - 有 story-graph 但参考图不完整 → 从 Step 1.8 开始
+   - 有 story-graph 但 `camera_directives` 为空 → 故事结构已完成但镜头/音频未设计，从 Step 1.6 开始
+   - 有 story-graph（含镜头/音频）但参考图不完整 → 从 Step 1.8 开始
    - 参考图完整但 clips 不完整 → 从 Step 2 开始（注意：小于 1MB 的 clip 文件可能是占位视频，需要重新生成）
    - clips 完整但无成片 → 进入音频/组装阶段
 4. **忽略历史中的错误模式**：即使历史中记录了 API 失败、鉴权错误、限流等问题，resume 后必须重新尝试。问题可能已经修复。

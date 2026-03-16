@@ -11,6 +11,7 @@ from kimi_cli.tools.display import (
     StoryGraphEntity,
     StoryGraphEvent,
     StoryGraphInteraction,
+    StoryGraphMind,
     StoryGraphOutput,
     StoryGraphProductionStyle,
     StoryGraphShot,
@@ -67,19 +68,19 @@ def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState
         states[a.get("entity", "")].append(StoryGraphState(
             id=a["id"],
             phase=a.get("phase", ""),
-            reference_image=a.get("reference_image", ""),
+            reference_image=a.get("reference_image") or "",
         ))
     for ls in data.get("location_states", []):
         states[ls.get("entity", "")].append(StoryGraphState(
             id=ls["id"],
             phase=ls.get("phase", ""),
-            reference_image=ls.get("reference_image", ""),
+            reference_image=ls.get("reference_image") or "",
         ))
     for ps in data.get("prop_states", []):
         states[ps.get("entity", "")].append(StoryGraphState(
             id=ps["id"],
             phase=ps.get("phase", ""),
-            reference_image=ps.get("reference_image", ""),
+            reference_image=ps.get("reference_image") or "",
         ))
     return dict(states)
 
@@ -115,6 +116,38 @@ def _build_audio_by_event(
                 text=anode.get("text", ""),
                 speaker=anode.get("speaker", ""),
                 audio_file=audio_file,
+            ))
+        result[eid] = items
+    return result
+
+
+def _build_minds_by_event(
+    data: dict[str, Any],
+    char_names: dict[str, str],
+) -> dict[str, list[StoryGraphMind]]:
+    """Build event_id -> list of active character minds."""
+    mind_nodes: dict[str, dict[str, Any]] = {}
+    for m in data.get("character_minds", []):
+        mind_nodes[m["id"]] = m
+
+    minds_by_event: dict[str, list[str]] = defaultdict(list)
+    for mind_id, evt_list in data.get("mind_active_during", {}).items():
+        for eid in evt_list:
+            minds_by_event[eid].append(mind_id)
+
+    result: dict[str, list[StoryGraphMind]] = {}
+    for eid, mind_ids in minds_by_event.items():
+        items: list[StoryGraphMind] = []
+        for mid in mind_ids:
+            mnode = mind_nodes.get(mid, {})
+            entity_id = mnode.get("entity", "")
+            items.append(StoryGraphMind(
+                id=mid,
+                entity=entity_id,
+                entity_name=char_names.get(entity_id, entity_id),
+                phase=mnode.get("phase", ""),
+                emotion=mnode.get("emotion", ""),
+                behavior=mnode.get("behavior", ""),
             ))
         result[eid] = items
     return result
@@ -189,7 +222,7 @@ def build_story_graph_view(
             id=c["id"],
             name=c.get("name", c["id"]),
             kind="character",
-            reference_image=c.get("reference_image", ""),
+            reference_image=c.get("reference_image") or "",
             states=entity_states.get(c["id"], []),
         ))
     for loc in data.get("locations", []):
@@ -197,7 +230,7 @@ def build_story_graph_view(
             id=loc["id"],
             name=loc.get("name", loc["id"]),
             kind="location",
-            reference_image=loc.get("reference_image", ""),
+            reference_image=loc.get("reference_image") or "",
             states=entity_states.get(loc["id"], []),
         ))
     for p in data.get("props", []):
@@ -205,7 +238,7 @@ def build_story_graph_view(
             id=p["id"],
             name=p.get("name", p["id"]),
             kind="prop",
-            reference_image=p.get("reference_image", ""),
+            reference_image=p.get("reference_image") or "",
             states=entity_states.get(p["id"], []),
         ))
 
@@ -222,6 +255,14 @@ def build_story_graph_view(
     # --- Audio by event ---
     audio_by_event = _build_audio_by_event(data, project_dir)
 
+    # --- Character name lookup (for mind/audio speaker display) ---
+    char_names: dict[str, str] = {}
+    for c in data.get("characters", []):
+        char_names[c["id"]] = c.get("name", c["id"])
+
+    # --- Minds by event ---
+    minds_by_event = _build_minds_by_event(data, char_names)
+
     # --- Shot lookup from shot_plan ---
     shots_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
     if shot_plan:
@@ -232,11 +273,6 @@ def build_story_graph_view(
     sorted_event_ids = _topo_sort_events(data)
     events_by_id = {e["id"]: e for e in data.get("events", [])}
 
-    # --- Character name lookup (for audio speaker display) ---
-    char_names: dict[str, str] = {}
-    for c in data.get("characters", []):
-        char_names[c["id"]] = c.get("name", c["id"])
-
     # --- Timeline ---
     timeline: list[StoryGraphEvent] = []
     for eid in sorted_event_ids:
@@ -245,6 +281,7 @@ def build_story_graph_view(
             continue
 
         char_ids = _extract_character_ids_for_event(event, appear_by_event, appear_entity)
+        active_appear_ids = appear_by_event.get(eid, [])
 
         # Interactions
         interactions = [
@@ -321,6 +358,8 @@ def build_story_graph_view(
             description=event.get("description", ""),
             happens_at=event.get("happens_at", ""),
             character_ids=char_ids,
+            active_appearance_ids=active_appear_ids,
+            minds=minds_by_event.get(eid, []),
             shots=shots,
             interactions=interactions,
             audio_states=event_audio,

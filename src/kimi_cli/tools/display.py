@@ -87,6 +87,17 @@ class StoryGraphAudioState(BaseModel):
     audio_file: str = ""
 
 
+class StoryGraphMind(BaseModel):
+    """Character mind/emotion state active during an event."""
+
+    id: str
+    entity: str = ""
+    entity_name: str = ""
+    phase: str = ""
+    emotion: str = ""
+    behavior: str = ""
+
+
 class StoryGraphInteraction(BaseModel):
     """Interaction between characters within an event."""
 
@@ -107,6 +118,8 @@ class StoryGraphEvent(BaseModel):
     description: str = ""
     happens_at: str = ""
     character_ids: list[str] = []
+    active_appearance_ids: list[str] = []
+    minds: list[StoryGraphMind] = []
     shots: list[StoryGraphShot] = []
     interactions: list[StoryGraphInteraction] = []
     audio_states: list[StoryGraphAudioState] = []
@@ -123,3 +136,139 @@ class StoryGraphViewDisplayBlock(DisplayBlock):
     parallel_groups: list[list[str]] = []
     summary: dict[str, Any] = {}
     outputs: list[StoryGraphOutput] = []
+
+
+# ---------------------------------------------------------------------------
+# Agent Graph View
+# ---------------------------------------------------------------------------
+
+
+class AgentGraphNode(BaseModel):
+    """A node in the agent topology graph."""
+
+    id: str
+    name: str
+    tools: list[str] = []
+    tool_count: int = 0
+    subagent_count: int = 0
+
+
+class AgentGraphEdge(BaseModel):
+    """An edge between agents in the topology graph."""
+
+    source: str
+    target: str
+    edge_type: Literal["SUBAGENT", "CHAT_WITH"]
+    description: str = ""
+
+
+class AgentGraphTopology(BaseModel):
+    """Full agent topology."""
+
+    nodes: list[AgentGraphNode]
+    edges: list[AgentGraphEdge]
+
+
+class WorkflowStep(BaseModel):
+    """A step in an agent's workflow."""
+
+    id: str
+    label: str
+    kind: Literal["begin", "end", "task", "decision", "user_confirm"]
+    agent_call: str | None = None
+    description: str = ""
+
+
+class WorkflowEdge(BaseModel):
+    """A connection between workflow steps."""
+
+    source: str
+    target: str
+    label: str = ""
+    is_loop: bool = False
+
+
+class WorkflowConstraint(BaseModel):
+    """An explicit constraint extracted from the agent's prompt."""
+
+    id: str
+    rule: str
+    applies_to: list[str] = []
+    check_type: Literal["keyword", "parameter", "count", "semantic"] = "semantic"
+
+
+class AgentWorkflow(BaseModel):
+    """An agent's extracted workflow."""
+
+    agent_id: str
+    steps: list[WorkflowStep]
+    edges: list[WorkflowEdge]
+    constraints: list[WorkflowConstraint] = []
+    max_loops: dict[str, int] = {}
+    warnings: list[str] = []
+
+
+class TraceDeviation(BaseModel):
+    """A deviation annotated on a specific trace call."""
+
+    constraint_id: str = ""
+    rule: str
+    severity: Literal["info", "warning", "error"]
+    expected: str = ""
+    actual: str = ""
+    evidence: str = ""
+
+
+class TraceCall(BaseModel):
+    """A single call in a step trace."""
+
+    seq: int
+    role: Literal["assistant", "tool", "user"]
+    thinking: str = ""
+    tool_name: str = ""
+    tool_args: dict[str, Any] = {}
+    tool_result: str = ""
+    token_usage: int = 0
+    deviations: list[TraceDeviation] = []
+
+
+class StepTrace(BaseModel):
+    """Execution trace for one iteration of a workflow step."""
+
+    step_id: str
+    iteration: int = 1
+    calls: list[TraceCall]
+    expected_intent: str = ""
+    applicable_rules: list[str] = []
+    total_tool_calls: int = 0
+    total_tokens: int = 0
+
+
+class StepDeviation(BaseModel):
+    """A step-level deviation (Layer 1: flow ordering)."""
+
+    step_id: str
+    deviation_type: Literal["skipped", "out_of_order", "loop_exceeded", "missing", "unexpected"]
+    severity: Literal["info", "warning", "error"]
+    description: str
+    expected: str = ""
+    actual: str = ""
+
+
+class DeviationReport(BaseModel):
+    """Full deviation report combining all layers."""
+
+    agent_id: str
+    step_deviations: list[StepDeviation] = []
+    summary: dict[str, int] = {}
+
+
+class AgentGraphViewDisplayBlock(DisplayBlock):
+    """Display block for the Agent Graph visualization."""
+
+    type: str = "agent_graph_view"
+    topology: AgentGraphTopology = AgentGraphTopology(nodes=[], edges=[])
+    workflow: AgentWorkflow | None = None
+    deviation_report: DeviationReport | None = None
+    traces: dict[str, list[StepTrace]] = {}
+    summary: dict[str, Any] = {}

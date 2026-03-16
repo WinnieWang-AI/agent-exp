@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import {
+  BrainIcon,
   ChevronDownIcon,
   ClockIcon,
   FilmIcon,
@@ -67,6 +68,15 @@ type StoryGraphAudioState = {
   audio_file?: string;
 };
 
+type StoryGraphMind = {
+  id: string;
+  entity?: string;
+  entity_name?: string;
+  phase?: string;
+  emotion?: string;
+  behavior?: string;
+};
+
 type StoryGraphInteraction = {
   between?: string[];
   style?: string;
@@ -83,6 +93,8 @@ type StoryGraphEventData = {
   description?: string;
   happens_at?: string;
   character_ids?: string[];
+  active_appearance_ids?: string[];
+  minds?: StoryGraphMind[];
   shots?: StoryGraphShot[];
   interactions?: StoryGraphInteraction[];
   audio_states?: StoryGraphAudioState[];
@@ -506,6 +518,49 @@ const AudioSection = ({ audioStates }: { audioStates: StoryGraphAudioState[] }) 
   );
 };
 
+// --- Mind Section (per-event character emotions) ---
+
+const MindSection = ({ minds }: { minds: StoryGraphMind[] }) => {
+  if (minds.length === 0) return null;
+
+  return (
+    <div className="px-3 py-1.5 space-y-1 border-b border-border/20">
+      <div className="text-[9px] text-muted-foreground/50 flex items-center gap-1">
+        <BrainIcon className="size-2.5" />
+        <span>内心状态</span>
+      </div>
+      {minds.map((mind) => (
+        <div
+          key={mind.id}
+          className="flex items-start gap-1.5 text-[10px] text-muted-foreground"
+        >
+          <UserIcon className="size-3 shrink-0 mt-0.5 text-purple-500/60" />
+          <div className="min-w-0">
+            <span className="font-medium text-foreground/80">
+              {mind.entity_name || mind.entity}
+            </span>
+            {mind.phase && (
+              <span className="ml-1 text-muted-foreground/70">
+                ({mind.phase})
+              </span>
+            )}
+            {mind.emotion && (
+              <div className="text-muted-foreground/80 truncate" title={mind.emotion}>
+                {mind.emotion}
+              </div>
+            )}
+            {mind.behavior && (
+              <div className="text-muted-foreground/60 truncate" title={mind.behavior}>
+                {mind.behavior}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // --- Event Card ---
 
 const EventCard = ({
@@ -521,7 +576,20 @@ const EventCard = ({
   const shots = event.shots ?? [];
   const interactions = event.interactions ?? [];
   const audioStates = event.audio_states ?? [];
-  const hasDetails = shots.length > 0 || interactions.length > 0 || audioStates.length > 0;
+  const activeAppearanceIds = new Set(event.active_appearance_ids ?? []);
+
+  // Build per-event character entities with only active states
+  const eventCharacters = (event.character_ids ?? []).map((id) => {
+    const entity = entityMap.get(id);
+    if (!entity) return null;
+    const activeStates = (entity.states ?? []).filter((s) =>
+      activeAppearanceIds.has(s.id),
+    );
+    return { ...entity, states: activeStates };
+  }).filter(Boolean) as StoryGraphEntity[];
+  const minds = event.minds ?? [];
+
+  const hasDetails = shots.length > 0 || interactions.length > 0 || audioStates.length > 0 || eventCharacters.length > 0 || minds.length > 0;
 
   const locationName = event.happens_at
     ? (entityMap.get(event.happens_at)?.name ?? event.happens_at)
@@ -605,6 +673,20 @@ const EventCard = ({
       {/* Expanded details */}
       {expanded && hasDetails && (
         <div className="border-t border-border/40">
+          {/* Character appearances active during this event */}
+          {eventCharacters.length > 0 && (
+            <div className="px-3 py-1.5 border-b border-border/20">
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {eventCharacters.map((entity) => (
+                  <EntityCard key={entity.id} entity={entity} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Character minds active during this event */}
+          <MindSection minds={minds} />
+
           {/* Interactions */}
           {interactions.length > 0 && (
             <div className="px-3 py-1.5 space-y-0.5 border-b border-border/20">

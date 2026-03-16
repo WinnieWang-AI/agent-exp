@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import Any, override
 
@@ -334,6 +335,37 @@ def _validate_reference_image_placeholders(data: dict[str, Any], project_dir: st
     return issues
 
 
+_TIMESTAMP_PATTERN = re.compile(r'\d+\.?\d*\s*s(?:ec)?|\d+\s*-\s*\d+\s*s')
+
+
+def _validate_timelines(data: dict[str, Any], ids: dict[str, set[str]]) -> list[str]:
+    """Check timeline definitions and usage."""
+    issues: list[str] = []
+
+    # Check if any event uses happens_during but timelines is missing/empty
+    events_with_timeline = [
+        e for e in data.get("events", []) if e.get("happens_during")
+    ]
+    if events_with_timeline and not ids["timeline"]:
+        issues.append(
+            f'timelines array is missing or empty, but {len(events_with_timeline)} event(s) '
+            f'reference happens_during (e.g. "{events_with_timeline[0].get("happens_during")}"). '
+            f'Add timelines definitions or remove happens_during from events.'
+        )
+
+    # Check label does not contain production timestamps (e.g. "3.5s", "0-6s")
+    for tl in data.get("timelines", []):
+        label = tl.get("label", "")
+        if _TIMESTAMP_PATTERN.search(label):
+            issues.append(
+                f'timeline {tl["id"]}: label "{label}" contains production timestamps. '
+                f'Timeline labels should describe narrative time (e.g. "清晨", "午后"), '
+                f'not video durations or second ranges.'
+            )
+
+    return issues
+
+
 def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[str, list[str]]:
     """Run all validations and return issues grouped by category."""
     ids = _collect_ids(data)
@@ -350,6 +382,10 @@ def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[st
     dag_issues = _validate_event_dag(data, ids)
     if dag_issues:
         result["event_sequence"] = dag_issues
+
+    timeline_issues = _validate_timelines(data, ids)
+    if timeline_issues:
+        result["timelines"] = timeline_issues
 
     placeholder_issues = _validate_reference_image_placeholders(data, project_dir)
     if placeholder_issues:

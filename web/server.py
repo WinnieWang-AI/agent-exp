@@ -54,6 +54,14 @@ app = FastAPI(title="Video Agent Web UI")
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+
+@app.middleware("http")
+async def no_cache_static(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
 WORK_DIR = KaosPath.unsafe_from_local_path(Path.cwd())
 
 # Directory for web session metadata (chat logs, session info)
