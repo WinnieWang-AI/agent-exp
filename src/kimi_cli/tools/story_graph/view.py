@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from kimi_cli.tools.display import (
+    StoryGraphAudioState,
     StoryGraphEntity,
     StoryGraphEvent,
+    StoryGraphInteraction,
+    StoryGraphOutput,
+    StoryGraphProductionStyle,
     StoryGraphShot,
+    StoryGraphState,
     StoryGraphViewDisplayBlock,
 )
 
@@ -29,60 +35,8 @@ def _extract_character_ids_for_event(
     return char_ids
 
 
-def build_story_graph_view(
-    data: dict[str, Any],
-    *,
-    phase: str = "skeleton",
-    shot_plan: dict[str, Any] | None = None,
-) -> StoryGraphViewDisplayBlock:
-    """Build a StoryGraphViewDisplayBlock from raw story-graph data.
-
-    Args:
-        data: The parsed story-graph.json dict.
-        phase: One of "skeleton", "references", "shots", "videos".
-        shot_plan: Optional parsed shot-plan.json for enriching shot data.
-    """
-    # --- Entities ---
-    entities: list[StoryGraphEntity] = []
-    for c in data.get("characters", []):
-        entities.append(StoryGraphEntity(
-            id=c["id"],
-            name=c.get("name", c["id"]),
-            kind="character",
-            reference_image=c.get("reference_image", ""),
-        ))
-    for loc in data.get("locations", []):
-        entities.append(StoryGraphEntity(
-            id=loc["id"],
-            name=loc.get("name", loc["id"]),
-            kind="location",
-            reference_image=loc.get("reference_image", ""),
-        ))
-    for p in data.get("props", []):
-        entities.append(StoryGraphEntity(
-            id=p["id"],
-            name=p.get("name", p["id"]),
-            kind="prop",
-            reference_image=p.get("reference_image", ""),
-        ))
-
-    # --- Build reverse map: event -> appearance state ids ---
-    appear_by_event: dict[str, list[str]] = defaultdict(list)
-    for state_id, evt_list in data.get("appearance_active_during", {}).items():
-        for eid in evt_list:
-            appear_by_event[eid].append(state_id)
-
-    appear_entity: dict[str, str] = {}
-    for a in data.get("character_appearances", []):
-        appear_entity[a["id"]] = a.get("entity", "")
-
-    # --- Build shot lookup from shot_plan ---
-    shots_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if shot_plan:
-        for s in shot_plan.get("shots", []):
-            shots_by_event[s["event_id"]].append(s)
-
-    # --- Topological event order ---
+def _topo_sort_events(data: dict[str, Any]) -> list[str]:
+    """Topological sort of events by event_sequence edges."""
     event_ids = {e["id"] for e in data.get("events", [])}
     edges = data.get("event_sequence", [])
     adj: dict[str, list[str]] = {eid: [] for eid in event_ids}
@@ -93,18 +47,195 @@ def build_story_graph_view(
             adj[f].append(t)
             in_deg[t] = in_deg.get(t, 0) + 1
     queue = sorted(eid for eid, d in in_deg.items() if d == 0)
-    sorted_event_ids: list[str] = []
+    result: list[str] = []
     while queue:
         node = queue.pop(0)
-        sorted_event_ids.append(node)
+        result.append(node)
         for nb in sorted(adj[node]):
             in_deg[nb] -= 1
             if in_deg[nb] == 0:
                 queue.append(nb)
-    for eid in sorted(event_ids - set(sorted_event_ids)):
-        sorted_event_ids.append(eid)
+    for eid in sorted(event_ids - set(result)):
+        result.append(eid)
+    return result
 
+
+def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState]]:
+    """Build entity_id -> list of child state nodes."""
+    states: dict[str, list[StoryGraphState]] = defaultdict(list)
+    for a in data.get("character_appearances", []):
+        states[a.get("entity", "")].append(StoryGraphState(
+            id=a["id"],
+            phase=a.get("phase", ""),
+            reference_image=a.get("reference_image", ""),
+        ))
+    for ls in data.get("location_states", []):
+        states[ls.get("entity", "")].append(StoryGraphState(
+            id=ls["id"],
+            phase=ls.get("phase", ""),
+            reference_image=ls.get("reference_image", ""),
+        ))
+    for ps in data.get("prop_states", []):
+        states[ps.get("entity", "")].append(StoryGraphState(
+            id=ps["id"],
+            phase=ps.get("phase", ""),
+            reference_image=ps.get("reference_image", ""),
+        ))
+    return dict(states)
+
+
+def _build_audio_by_event(
+    data: dict[str, Any],
+    project_dir: str,
+) -> dict[str, list[StoryGraphAudioState]]:
+    """Build event_id -> list of active audio states."""
+    audio_nodes: dict[str, dict[str, Any]] = {}
+    for a in data.get("audio_states", []):
+        audio_nodes[a["id"]] = a
+
+    audio_by_event: dict[str, list[str]] = defaultdict(list)
+    for state_id, evt_list in data.get("audio_active_during", {}).items():
+        for eid in evt_list:
+            audio_by_event[eid].append(state_id)
+
+    result: dict[str, list[StoryGraphAudioState]] = {}
+    for eid, state_ids in audio_by_event.items():
+        items: list[StoryGraphAudioState] = []
+        for aid in state_ids:
+            anode = audio_nodes.get(aid, {})
+            audio_file = ""
+            if project_dir:
+                candidate = Path(project_dir) / "assets" / "audio" / f"{aid}.mp3"
+                if candidate.exists():
+                    audio_file = str(candidate)
+            items.append(StoryGraphAudioState(
+                id=aid,
+                layer=anode.get("layer", ""),
+                phase=anode.get("phase", ""),
+                text=anode.get("text", ""),
+                speaker=anode.get("speaker", ""),
+                audio_file=audio_file,
+            ))
+        result[eid] = items
+    return result
+
+
+def _build_outputs(project_dir: str) -> list[StoryGraphOutput]:
+    """Scan project output directory for assembled videos."""
+    if not project_dir:
+        return []
+    output_dir = Path(project_dir) / "output"
+    if not output_dir.exists():
+        return []
+
+    stage_labels = {
+        "picture_lock": "画面定版",
+        "temp_bgm": "叠加 BGM",
+        "final": "最终成片",
+    }
+    outputs: list[StoryGraphOutput] = []
+    for mp4 in sorted(output_dir.glob("*.mp4")):
+        stem = mp4.stem
+        outputs.append(StoryGraphOutput(
+            stage=stem,
+            video_path=str(mp4),
+            label=stage_labels.get(stem, stem),
+        ))
+    return outputs
+
+
+def _resolve_path(project_dir: str, relative_path: str) -> str:
+    """Resolve a relative asset path to absolute, or return as-is."""
+    if not project_dir or not relative_path:
+        return relative_path
+    absolute = Path(project_dir) / relative_path
+    return str(absolute)
+
+
+def build_story_graph_view(
+    data: dict[str, Any],
+    *,
+    phase: str = "skeleton",
+    shot_plan: dict[str, Any] | None = None,
+    project_dir: str = "",
+) -> StoryGraphViewDisplayBlock:
+    """Build a StoryGraphViewDisplayBlock from raw story-graph data.
+
+    Args:
+        data: The parsed story-graph.json dict.
+        phase: One of "skeleton", "references", "shots", "videos".
+        shot_plan: Optional parsed shot-plan.json for enriching shot data.
+        project_dir: Absolute path to the project directory (for resolving asset paths).
+    """
+    # --- Production Styles ---
+    production_styles: list[StoryGraphProductionStyle] = []
+    for ps in data.get("production_styles", []):
+        production_styles.append(StoryGraphProductionStyle(
+            id=ps["id"],
+            description=ps.get("description", ""),
+            style_prefix=ps.get("style_prefix", ""),
+            negative_prefix=ps.get("negative_prefix", ""),
+            aspect_ratio=ps.get("aspect_ratio", "16:9"),
+            duration=ps.get("duration", ""),
+        ))
+
+    # --- Entity states ---
+    entity_states = _build_entity_states(data)
+
+    # --- Entities (with child states) ---
+    entities: list[StoryGraphEntity] = []
+    for c in data.get("characters", []):
+        entities.append(StoryGraphEntity(
+            id=c["id"],
+            name=c.get("name", c["id"]),
+            kind="character",
+            reference_image=c.get("reference_image", ""),
+            states=entity_states.get(c["id"], []),
+        ))
+    for loc in data.get("locations", []):
+        entities.append(StoryGraphEntity(
+            id=loc["id"],
+            name=loc.get("name", loc["id"]),
+            kind="location",
+            reference_image=loc.get("reference_image", ""),
+            states=entity_states.get(loc["id"], []),
+        ))
+    for p in data.get("props", []):
+        entities.append(StoryGraphEntity(
+            id=p["id"],
+            name=p.get("name", p["id"]),
+            kind="prop",
+            reference_image=p.get("reference_image", ""),
+            states=entity_states.get(p["id"], []),
+        ))
+
+    # --- Reverse map: event -> appearance state ids (for character_ids) ---
+    appear_by_event: dict[str, list[str]] = defaultdict(list)
+    for state_id, evt_list in data.get("appearance_active_during", {}).items():
+        for eid in evt_list:
+            appear_by_event[eid].append(state_id)
+
+    appear_entity: dict[str, str] = {}
+    for a in data.get("character_appearances", []):
+        appear_entity[a["id"]] = a.get("entity", "")
+
+    # --- Audio by event ---
+    audio_by_event = _build_audio_by_event(data, project_dir)
+
+    # --- Shot lookup from shot_plan ---
+    shots_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    if shot_plan:
+        for s in shot_plan.get("shots", []):
+            shots_by_event[s["event_id"]].append(s)
+
+    # --- Topological event order ---
+    sorted_event_ids = _topo_sort_events(data)
     events_by_id = {e["id"]: e for e in data.get("events", [])}
+
+    # --- Character name lookup (for audio speaker display) ---
+    char_names: dict[str, str] = {}
+    for c in data.get("characters", []):
+        char_names[c["id"]] = c.get("name", c["id"])
 
     # --- Timeline ---
     timeline: list[StoryGraphEvent] = []
@@ -115,6 +246,28 @@ def build_story_graph_view(
 
         char_ids = _extract_character_ids_for_event(event, appear_by_event, appear_entity)
 
+        # Interactions
+        interactions = [
+            StoryGraphInteraction(
+                between=[char_names.get(cid, cid) for cid in i.get("between", [])],
+                style=i.get("style", ""),
+            )
+            for i in event.get("interactions", [])
+        ]
+
+        # Audio states for this event (resolve speaker id -> name)
+        event_audio: list[StoryGraphAudioState] = []
+        for a in audio_by_event.get(eid, []):
+            event_audio.append(StoryGraphAudioState(
+                id=a.id,
+                layer=a.layer,
+                phase=a.phase,
+                text=a.text,
+                speaker=char_names.get(a.speaker, a.speaker),
+                audio_file=a.audio_file,
+            ))
+
+        # Shots
         shots: list[StoryGraphShot] = []
         for sp in shots_by_event.get(eid, []):
             techs: list[str] = []
@@ -125,6 +278,31 @@ def build_story_graph_view(
                 techs.append("B")
             if techniques.get("C_tail_frame", {}).get("enabled"):
                 techs.append("C")
+
+            # Reference images (already absolute paths from shot-plan)
+            tech_a_images = [
+                img["path"]
+                for img in techniques.get("A_reference_images", {}).get("images", [])
+                if img.get("path")
+            ]
+
+            shot_id = sp["shot_id"]
+
+            # Frames: resolve to absolute paths
+            first_frame = ""
+            if techniques.get("B_first_frame", {}).get("enabled"):
+                first_frame = _resolve_path(
+                    project_dir, f"assets/frames/{shot_id}_first.png"
+                )
+            tail_frame = ""
+            if techniques.get("C_tail_frame", {}).get("enabled"):
+                tail_frame = _resolve_path(
+                    project_dir, f"assets/frames/{shot_id}_tail.png"
+                )
+
+            # Video clip: resolve to absolute path
+            video_clip = _resolve_path(project_dir, sp.get("output_path", ""))
+
             shots.append(StoryGraphShot(
                 shot_id=sp["shot_id"],
                 order=sp.get("order", 0),
@@ -132,7 +310,10 @@ def build_story_graph_view(
                 intent=sp.get("intent", ""),
                 focus_on=sp.get("focus_on", []),
                 techniques=techs,
-                video_clip=sp.get("output_path", ""),
+                video_clip=video_clip,
+                reference_images=tech_a_images,
+                first_frame=first_frame,
+                tail_frame=tail_frame,
             ))
 
         timeline.append(StoryGraphEvent(
@@ -141,13 +322,15 @@ def build_story_graph_view(
             happens_at=event.get("happens_at", ""),
             character_ids=char_ids,
             shots=shots,
+            interactions=interactions,
+            audio_states=event_audio,
         ))
 
     # --- Parallel groups ---
+    edges = data.get("event_sequence", [])
     parallel_groups: list[list[str]] = []
     for e in edges:
         if e.get("type") == "PARALLEL":
-            # Collect connected PARALLEL components (simple union)
             found = False
             f, t = e["from"], e["to"]
             for group in parallel_groups:
@@ -161,6 +344,9 @@ def build_story_graph_view(
             if not found:
                 parallel_groups.append([f, t])
 
+    # --- Outputs ---
+    outputs = _build_outputs(project_dir)
+
     # --- Summary ---
     n_chars = sum(1 for e in entities if e.kind == "character")
     n_locs = sum(1 for e in entities if e.kind == "location")
@@ -168,6 +354,8 @@ def build_story_graph_view(
     n_events = len(timeline)
     n_shots = sum(len(ev.shots) for ev in timeline)
     n_with_ref = sum(1 for e in entities if e.reference_image)
+    n_states = sum(len(e.states) for e in entities)
+    n_audio = len(data.get("audio_states", []))
 
     summary = {
         "characters": n_chars,
@@ -176,12 +364,17 @@ def build_story_graph_view(
         "events": n_events,
         "shots": n_shots,
         "entities_with_reference_images": n_with_ref,
+        "states": n_states,
+        "audio_states": n_audio,
+        "outputs": len(outputs),
     }
 
     return StoryGraphViewDisplayBlock(
         phase=phase,
+        production_styles=production_styles,
         entities=entities,
         timeline=timeline,
         parallel_groups=parallel_groups,
         summary=summary,
+        outputs=outputs,
     )

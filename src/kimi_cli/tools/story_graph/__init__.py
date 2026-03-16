@@ -22,7 +22,7 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         "character": set(),
         "prop": set(),
         "location": set(),
-        "timepoint": set(),
+        "timeline": set(),
         "event": set(),
         "character_appearance": set(),
         "character_mind": set(),
@@ -30,6 +30,7 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         "location_state": set(),
         "audio_state": set(),
         "camera_directive": set(),
+        "production_style": set(),
     }
     for c in data.get("characters", []):
         ids["character"].add(c["id"])
@@ -37,8 +38,8 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         ids["prop"].add(p["id"])
     for loc in data.get("locations", []):
         ids["location"].add(loc["id"])
-    for tp in data.get("timepoints", []):
-        ids["timepoint"].add(tp["id"])
+    for tp in data.get("timelines", []):
+        ids["timeline"].add(tp["id"])
     for e in data.get("events", []):
         ids["event"].add(e["id"])
     for a in data.get("character_appearances", []):
@@ -53,6 +54,8 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         ids["audio_state"].add(aus["id"])
     for cd in data.get("camera_directives", []):
         ids["camera_directive"].add(cd["id"])
+    for ps in data.get("production_styles", []):
+        ids["production_style"].add(ps["id"])
     return ids
 
 
@@ -99,7 +102,7 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
     for e in data.get("events", []):
         if e.get("happens_at") and e["happens_at"] not in ids["location"]:
             issues.append(f'event {e["id"]}: happens_at "{e["happens_at"]}" not found')
-        if e.get("happens_during") and e["happens_during"] not in ids["timepoint"]:
+        if e.get("happens_during") and e["happens_during"] not in ids["timeline"]:
             issues.append(f'event {e["id"]}: happens_during "{e["happens_during"]}" not found')
 
     # event_sequence
@@ -111,7 +114,7 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
 
     # *_active_during maps
     for map_name in ["appearance_active_during", "mind_active_during", "prop_active_during",
-                      "location_active_during", "audio_active_during"]:
+                      "location_active_during", "audio_active_during", "style_active_during"]:
         mapping = data.get(map_name, {})
         for state_id, event_list in mapping.items():
             if state_id not in all_ids:
@@ -121,7 +124,7 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
                     issues.append(f'{map_name}[{state_id}]: event "{evt}" not found')
 
     # transitions
-    for trans_name in ["appearance_transitions", "mind_transitions", "audio_transitions"]:
+    for trans_name in ["appearance_transitions", "mind_transitions", "audio_transitions", "style_transitions"]:
         for t in data.get(trans_name, []):
             if t.get("from") not in all_ids:
                 issues.append(f'{trans_name}: from "{t.get("from")}" not defined')
@@ -168,10 +171,24 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
     """Check that events have proper state coverage."""
     issues: list[str] = []
 
-    # Build reverse maps: event -> which states are active
-    loc_active = data.get("location_active_during", {})
+    # Check for truncated output: active_during maps reference IDs but definition arrays are empty
     appear_active = data.get("appearance_active_during", {})
     mind_active = data.get("mind_active_during", {})
+    if appear_active and not data.get("character_appearances"):
+        issues.append(
+            "CRITICAL: appearance_active_during references IDs but character_appearances array is empty or missing. "
+            "This usually means the JSON was truncated during generation. "
+            "Regenerate the full story graph with all character_appearances defined."
+        )
+    if mind_active and not data.get("character_minds"):
+        issues.append(
+            "CRITICAL: mind_active_during references IDs but character_minds array is empty or missing. "
+            "This usually means the JSON was truncated during generation. "
+            "Regenerate the full story graph with all character_minds defined."
+        )
+
+    # Build reverse maps: event -> which states are active
+    loc_active = data.get("location_active_during", {})
 
     # event -> location_states active
     evt_loc: dict[str, list[str]] = {}
@@ -226,9 +243,19 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
                 if not has_mind:
                     issues.append(f'event {eid}: character {char_id} in interactions but no mind active')
 
+    # Check every event has a production_style active
+    style_active = data.get("style_active_during", {})
+    evt_has_style: set[str] = set()
+    for _sid, evts in style_active.items():
+        for e in evts:
+            evt_has_style.add(e)
+    for e in data.get("events", []):
+        if e["id"] not in evt_has_style:
+            issues.append(f'event {e["id"]}: no production_style active (style_active_during)')
+
     # Check no state has empty active_during
     for map_name in ["appearance_active_during", "mind_active_during", "prop_active_during",
-                      "location_active_during", "audio_active_during"]:
+                      "location_active_during", "audio_active_during", "style_active_during"]:
         mapping = data.get(map_name, {})
         for state_id, evts in mapping.items():
             if not evts:
@@ -279,7 +306,35 @@ def _validate_event_dag(data: dict[str, Any], ids: dict[str, set[str]]) -> list[
     return issues
 
 
-def validate_story_graph(data: dict[str, Any]) -> dict[str, list[str]]:
+def _validate_reference_image_placeholders(data: dict[str, Any], project_dir: str = "") -> list[str]:
+    """Check that reference_image fields are either null or real existing file paths."""
+    issues: list[str] = []
+    for key in ("characters", "props", "locations",
+                "character_appearances", "prop_states", "location_states"):
+        for node in data.get(key, []):
+            ref = node.get("reference_image")
+            if ref is None:
+                continue
+            nid = node["id"]
+            if ref == "":
+                issues.append(
+                    f'{nid}: reference_image is empty string "" — must be null '
+                    f"(to be filled by video-creator) or a real file path"
+                )
+                continue
+            # Resolve relative paths against project directory
+            ref_path = Path(ref)
+            if not ref_path.is_absolute() and project_dir:
+                ref_path = Path(project_dir) / ref
+            if not ref_path.is_file():
+                issues.append(
+                    f'{nid}: reference_image "{ref}" does not exist on disk — '
+                    f"must be null (to be filled by video-creator) or a real file path"
+                )
+    return issues
+
+
+def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[str, list[str]]:
     """Run all validations and return issues grouped by category."""
     ids = _collect_ids(data)
     result: dict[str, list[str]] = {}
@@ -295,6 +350,10 @@ def validate_story_graph(data: dict[str, Any]) -> dict[str, list[str]]:
     dag_issues = _validate_event_dag(data, ids)
     if dag_issues:
         result["event_sequence"] = dag_issues
+
+    placeholder_issues = _validate_reference_image_placeholders(data, project_dir)
+    if placeholder_issues:
+        result["reference_image_placeholders"] = placeholder_issues
 
     return result
 
@@ -316,7 +375,8 @@ class ValidateStoryGraph(CallableTool2[Params]):
         except json.JSONDecodeError as e:
             return builder.error(f"Invalid JSON: {e}", brief="JSON parse error")
 
-        issues = validate_story_graph(data)
+        project_dir = str(path.parent)
+        issues = validate_story_graph(data, project_dir)
 
         # Emit story graph view display block
         has_refs = any(
@@ -324,7 +384,8 @@ class ValidateStoryGraph(CallableTool2[Params]):
             for c in data.get("characters", []) + data.get("locations", []) + data.get("props", [])
         )
         phase = "references" if has_refs else "skeleton"
-        view_block = build_story_graph_view(data, phase=phase)
+        project_dir = str(path.parent)
+        view_block = build_story_graph_view(data, phase=phase, project_dir=project_dir)
         builder.display(view_block)
 
         if not issues:

@@ -152,11 +152,13 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 - `interactions` 描述**具体互动方式**（动作层面），与 `relationships`（身份关系）不同。
 
-#### TimePoint（时间锚点）
+#### TimeLine（故事时间线）
 
 ```json
 {"id": "time_morning", "label": "清晨"}
 ```
+
+表示故事内部的叙事时间（如"清晨"、"午后"、"三天后"），**不是视频的秒数区间**。不要写成"0-3秒"这样的制片时间轴。
 
 #### CameraDirective（镜头语言）
 
@@ -176,6 +178,26 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   ]
 }
 ```
+
+#### ProductionStyle（制作风格 + 画面比例）
+
+全局或分段的视觉风格与画面比例。大多数视频只需要一个节点，所有事件共享。风格切换（闪回、梦境）时才需要多个节点。
+
+```json
+{
+  "id": "style_main",            // style_ 前缀
+  "description": "手绘插画风格，暖色调，儿童绘本质感",
+  "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+  "negative_prefix": "photorealistic, dark, horror, oversaturated",
+  "aspect_ratio": "16:9",        // "16:9" / "9:16" / "1:1"
+  "duration": "2min"             // 目标视频总时长，如 "30s" / "1min" / "2min"
+}
+```
+- `description`：风格的自然语言描述（给人类看）
+- `style_prefix`：注入视频/图片生成 prompt 前缀（英文）
+- `negative_prefix`：注入 negative prompt（英文）
+- `aspect_ratio`：画面比例，影响视频生成和首帧图生成
+- `duration`：目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），由 director 传入
 
 #### AudioState（音频状态）
 
@@ -212,7 +234,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "mind_active_during":       { "mind_red_innocent": ["evt_farewell", "evt_forest_walk", ...] },
   "prop_active_during":       { "pstate_basket_full": ["evt_farewell", ...] },
   "location_active_during":   { "lstate_forest_bright": ["evt_forest_walk"] },
-  "audio_active_during":      { "astate_bgm_pastoral": ["evt_farewell", "evt_forest_walk"] }
+  "audio_active_during":      { "astate_bgm_pastoral": ["evt_farewell", "evt_forest_walk"] },
+  "style_active_during":      { "style_main": ["evt_farewell", "evt_forest_walk", ...] }
 }
 ```
 
@@ -228,7 +251,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   ],
   "audio_transitions": [
     {"from": "astate_bgm_pastoral", "to": "astate_bgm_uneasy", "trigger": "evt_wolf_encounter", "method": "crossfade_3s"}
-  ]
+  ],
+  "style_transitions": []
 }
 ```
 
@@ -240,6 +264,14 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 当用户提供故事描述，你需要构建完整的 `story-graph.json`。**必须分步进行**：
 
+**Step 0: 确定制作风格**
+- 根据用户描述（或 director 传入的风格、画面比例、时长）创建 `ProductionStyle` 节点
+- 大多数情况只需一个 `style_main` 节点，`style_active_during` 指向所有事件
+- 如果故事含有风格切换（闪回、梦境），创建多个节点并设定 `style_transitions`
+- `style_prefix` / `negative_prefix` 用英文，要具体可执行（如 "hand-drawn illustration, warm color palette" 而非 "好看的风格"）
+- 未指定画面比例时默认 `"16:9"`
+- `duration` 记录目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），未指定时默认 `"1min"`
+
 **Step 1: 提取实体**
 - 识别所有角色（characters）、物品（props）、场所（locations）
 - 为每个角色写 `fixed_traits`（不变的体貌特征）
@@ -248,7 +280,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 **Step 2: 拆解事件**
 - 将故事拆解为离散事件（events），每个事件是一个叙事节拍
 - 确定 event_sequence（THEN/PARALLEL 关系）
-- 设定 timepoints
+- 设定 timelines
 - 为有角色互动的事件写 `interactions`
 
 **Step 3: 推导状态**
@@ -262,6 +294,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 为每个状态指定它在哪些事件期间生效
 - 确保每个事件中出现的角色都有对应的 appearance + mind
 - 确保每个有地点的事件都有对应的 location_state
+- 确保每个事件都有对应的 production_style（`style_active_during`）
 
 **Step 5: 设计镜头（camera_directives）**
 - 为每个事件（或 PARALLEL 事件组）设计分镜
@@ -271,11 +304,12 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - BGM 状态链，跟随叙事情绪弧线
 - 设定 audio_transitions 的转场方式
 
-**Step 7: 验证**
-- 调用 `ValidateStoryGraph` 工具检查结构完整性
-- 修复发现的问题
+**Step 7: 写入并验证**
+1. 将完整 JSON 写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。
+2. **写入后立即调用 `ValidateStoryGraph`** 检查结构完整性。不可跳过。
+3. 如果发现问题，**必须修复后重新写入并再次验证**，直到通过。
 
-完成后将完整 JSON 写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。
+常见的截断问题：LLM 生成长 JSON 时可能丢失中间部分（如 `character_appearances`、`character_minds` 数组为空，但 `appearance_active_during`、`mind_active_during` 却引用了这些 ID）。ValidateStoryGraph 会检测这类不一致，发现后必须补全缺失的节点定义。
 
 ### Edit 模式
 
@@ -325,7 +359,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 - **输出路径**：`${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。绝对不要保存到其他位置。
 - 输出的 JSON 必须完整、合法，可以直接被可视化工具加载
-- ID 命名规范：`char_`, `prop_`, `loc_`, `time_`, `evt_`, `appear_`, `mind_`, `pstate_`, `lstate_`, `astate_`, `cam_`
+- **`reference_image` 字段必须为 `null`**。禁止写入占位符（如 `"ref_char_xxx"`）、空字符串或任何非真实文件路径的值。该字段由 video-creator 在生成参考图后回填真实路径，screenwriter 永远只写 `null`。
+- ID 命名规范：`char_`, `prop_`, `loc_`, `time_`, `evt_`, `appear_`, `mind_`, `pstate_`, `lstate_`, `style_`, `astate_`, `cam_`
 - 所有文本内容使用中文（除 music_prompt、voice_direction 等需要英文的字段）
 - 使用 WriteFile 将 graph 写入文件时，确保 JSON 格式化（缩进 2 空格）
 

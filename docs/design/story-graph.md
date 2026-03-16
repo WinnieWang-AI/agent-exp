@@ -254,24 +254,26 @@ Story Graph 用图结构替代线性列表，以 **Event（事件）** 为中心
 |------|------|------|
 | `description` | string | 事件描述 |
 | `happens_at` | location_id | 发生地点 |
-| `happens_during` | timepoint_id | 发生时间 |
+| `happens_during` | timeline_id | 发生时间 |
 | `interactions` | list | 该事件中角色间的互动方式（动作层面） |
 
 `interactions` 和 `relationships` 的区别：
 - `relationships`（在 Character 上）：他们**是什么关系** — "母女"、"宿敌"、"猎物与捕食者"
 - `interactions`（在 Event 上）：他们在这个事件中**具体怎么互动** — "狼蹲下平视小红帽"
 
-### 2.4 TimePoint（时间锚点）
+### 2.4 TimeLine（故事时间线）
 
 ```json
 {
   "id": "time_morning",
-  "type": "timepoint",
+  "type": "timeline",
   "label": "清晨"
 }
 ```
 
-轻量节点，仅作为时间维度的锚点。
+表示**故事内部的叙事时间**，用自然语言描述故事中的时间阶段（如"清晨"、"午后"、"三天后"、"深夜"）。多个事件可以共享同一个 TimeLine 节点，表示它们发生在同一个故事时间段内。
+
+**注意：TimeLine 不是制片时间轴。** 不要写成视频的秒数区间（如"0-3秒"、"10-22秒"）。每个镜头的时长由 `production_styles.duration` 和 Linearizer 的分配逻辑决定，与 TimeLine 无关。
 
 ### 2.5 CameraDirective（镜头语言）
 
@@ -327,7 +329,66 @@ movement:   static | pan_left | pan_right | tilt_up | tilt_down
             | whip_pan | zoom_in | zoom_out | fast_tracking
 ```
 
-### 2.6 AudioLayer + AudioState（音频）
+### 2.6 ProductionStyle（制作风格 + 画面比例）
+
+全局或分段的视觉风格与画面比例。作为图中的一等节点，通过 `style_active_during` 关联到事件，支持风格中途切换（如闪回用不同风格、梦境用不同比例）。
+
+```json
+{
+  "id": "style_main",
+  "type": "production_style",
+  "description": "手绘插画风格，暖色调，儿童绘本质感",
+  "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+  "negative_prefix": "photorealistic, dark, horror, oversaturated",
+  "aspect_ratio": "16:9"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 唯一标识符，`style_` 前缀 |
+| `description` | string | 风格的自然语言描述（给人类和 LLM 看） |
+| `style_prefix` | string | 注入视频/图片生成 prompt 前缀的英文风格描述 |
+| `negative_prefix` | string | 注入 negative prompt 的英文排除项 |
+| `aspect_ratio` | string | 画面比例，如 `"16:9"`、`"9:16"`、`"1:1"` |
+
+**多风格场景示例**（闪回/梦境）：
+
+```json
+{
+  "production_styles": [
+    {
+      "id": "style_main",
+      "type": "production_style",
+      "description": "写实风格，自然光",
+      "style_prefix": "photorealistic, natural lighting, cinematic",
+      "negative_prefix": "cartoon, anime, oversaturated",
+      "aspect_ratio": "16:9"
+    },
+    {
+      "id": "style_flashback",
+      "type": "production_style",
+      "description": "泛黄复古回忆风格",
+      "style_prefix": "sepia tone, soft focus, vintage film grain, nostalgic",
+      "negative_prefix": "modern, sharp, vibrant colors",
+      "aspect_ratio": "16:9"
+    }
+  ],
+  "style_active_during": {
+    "style_main": ["evt_farewell", "evt_forest_walk", "evt_wolf_encounter"],
+    "style_flashback": ["evt_memory_scene"]
+  },
+  "style_transitions": [
+    {"from": "style_main", "to": "style_flashback", "trigger": "evt_memory_scene", "method": "crossfade_2s"}
+  ]
+}
+```
+
+> **大多数视频只需要一个 `style_main` 节点**，`style_active_during` 指向所有事件即可。只有风格切换（闪回、梦境、画风突变）才需要多个节点。
+
+> **替代 `style_guide.json`**：之前由 video-creator 在 Phase 1 创建的 `style_guide.json` 现在由 ProductionStyle 节点承担。Linearizer 直接从图中读取每个 shot 的 style，不再需要外部文件。
+
+### 2.7 AudioLayer + AudioState（音频）
 
 音频采用 **Layer（层）+ State chain（状态链）** 结构，和视觉实体同构。
 
@@ -449,7 +510,7 @@ movement:   static | pan_left | pan_right | tilt_up | tilt_down
 | 边 | 方向 | 含义 |
 |---|---|---|
 | `HAPPENS_AT` | Event → Location | 事件发生地 |
-| `HAPPENS_DURING` | Event → TimePoint | 事件发生时间 |
+| `HAPPENS_DURING` | Event → TimeLine | 事件发生时间 |
 | `BASED_ON` | State → State | 视觉基于某个基准状态微调，生成时参考基准状态的参考图 |
 
 这两种边直接作为 Event 的字段（`happens_at`、`happens_during`），不需要单独的边对象。
@@ -493,7 +554,16 @@ RELATIONSHIP 边不持久存储在图数据中，而是根据 `Character.relatio
 
 直接作为 CameraDirective 的字段（`for_event`、`shots[].focus_on`）。
 
-### 3.5 音频边
+### 3.5 风格边
+
+| 边 | 方向 | 含义 |
+|---|---|---|
+| `STYLE_ACTIVE_DURING` | ProductionStyle → Event | 该风格在此事件期间生效 |
+| `STYLE_TRANSITIONS_TO` | ProductionStyle → ProductionStyle | 风格切换（携带 `trigger` 和 `method`） |
+
+风格边使用与其他状态相同的 `*_active_during` / `*_transitions` 模式，存储在 `style_active_during` 和 `style_transitions` 中。
+
+### 3.6 音频边
 
 音频状态使用与视觉状态相同的 `HAS_STATE`、`TRANSITIONS_TO`、`ACTIVE_DURING` 边。
 
@@ -526,7 +596,7 @@ method:  hard_cut         # 硬切，瞬间切换
 ## 4. 图的全貌
 
 ```
-                            TimePoint
+                            TimeLine
                                ^ HAPPENS_DURING
                                |
   +------- Character -HAS_STATE-> Appearance -HAS_MIND-> Mind      Event <-HAPPENS_AT- Location
@@ -544,8 +614,13 @@ method:  hard_cut         # 硬切，瞬间切换
   |        movement)                                                  |
   |                                                                   |
   +---- AudioLayer -HAS_STATE-> AudioState -ACTIVE_DURING------------+
-          (bgm/ambience/          (style, tempo,
-           dialogue/sfx)           music_prompt)
+  |       (bgm/ambience/          (style, tempo,                     |
+  |        dialogue/sfx)           music_prompt)                     |
+  |                                                                  |
+  +---- ProductionStyle --------STYLE_ACTIVE_DURING-----------------+
+          (style_prefix,
+           negative_prefix,
+           aspect_ratio)
 ```
 
 **以 Event 为中心的查询：**
@@ -555,11 +630,12 @@ evt_fight
   |-- WHO:    CharacterAppearance (视觉外形) + CharacterMind (情绪/行为)
   |-- WITH:   PropState (物品当前状态)
   |-- WHERE:  LocationState (环境当前状态)
-  |-- WHEN:   TimePoint
+  |-- WHEN:   TimeLine
   |-- BETWEEN: Character.relationships (查当前生效的关系)
   |-- HOW:    interactions (具体互动方式)
   |-- CAMERA: CameraDirective.shots (镜头语言)
-  +-- SOUND:  AudioState per layer (BGM + 环境音 + 对白)
+  |-- SOUND:  AudioState per layer (BGM + 环境音 + 对白)
+  +-- STYLE:  ProductionStyle (视觉风格 + 画面比例)
 ```
 
 ---
@@ -691,7 +767,7 @@ Appearance→Mind 的 HAS_MIND 边根据 `appearance_active_during` 和 `mind_ac
 
 ```json
 {
-  "timepoints": [
+  "timelines": [
     {"id": "time_morning", "label": "清晨"},
     {"id": "time_midday", "label": "正午前后"},
     {"id": "time_afternoon", "label": "午后"}
@@ -1257,7 +1333,7 @@ query_event_context(event_id) -> {
     characters:   [{character, appearance, mind, relationship_to_others}],
     props:        [{prop, state}],
     location:     {location, state},
-    timepoint:    TimePoint,
+    timeline:     TimeLine,
     interactions: [{between, style}],
     camera:       CameraDirective,
     audio:        {bgm: AudioState, ambience: AudioState, dialogue: [AudioState]},
@@ -1312,7 +1388,7 @@ query_continuity(current_event, prev_event) -> {
 | Location | 3 |
 | LocationState | 7 |
 | Event | 13 |
-| TimePoint | 3 |
+| TimeLine | 3 |
 | CameraDirective | 8（含 23 个 shot） |
 | AudioState | 7 bgm |
 | Event edges (THEN/PARALLEL) | 14 |

@@ -12,23 +12,17 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 1. Read the `story-graph.json` file provided in the prompt.
 2. Use ManageVideoProject(action="init") to set up the project directory.
-3. Create `style_guide.json` based on the **visual style specified in the prompt** (由 director 从用户确认的风格传入)。将用户确认的风格转化为具体的 prompt 前缀：
-   ```json
-   {
-     "style_prefix": "<根据用户确认的风格生成，如 'hand-drawn illustration, warm color palette, children's storybook style'>",
-     "negative_prefix": "<根据风格生成对应的排除项，如 'photorealistic, dark, horror, oversaturated'>"
-   }
-   ```
-   如果 prompt 中没有明确指定风格，则根据故事的情绪和场景自行推断合适的风格。
-   This locks the global visual style for all subsequent image and video generation.
+3. 从 `story-graph.json` 的 `production_styles` 节点读取视觉风格（`style_prefix`、`negative_prefix`）和画面比例（`aspect_ratio`）。这些信息由 screenwriter 在构建 Story Graph 时写入。
 
 ### Phase 2: Reference Image Generation（两层参考图）
 
 **从 story-graph.json 读取实体和状态节点，按两层策略生成参考图。**
 
+从 `production_styles` 节点读取 `style_prefix`、`negative_prefix` 和 `aspect_ratio`，用于所有图片/视频生成。
+
 #### 第 1 层：实体参考图（身份锚点）
 
-为每个实体节点生成身份参考图。生成顺序：Character → Location → Prop（可并行）。始终加 `style_prefix` 和 `negative_prefix`。
+为每个实体节点生成身份参考图。始终加 `style_prefix` 和 `negative_prefix`（来自 ProductionStyle 节点）。
 
 | 类型 | Prompt 来源 | 要求 | 比例 | 路径 |
 |---|---|---|---|---|
@@ -37,6 +31,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 | Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `assets/images/{prop_id}.png` |
 
 每张图用 ReadMediaFile 验证，不符合重试（最多 2 次）。
+
+**并行策略（并行度 ≤ 2）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **2 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 2 个，等当前批完成后再发下一批。
 
 #### 第 2 层：状态参考图（基于实体图派生）
 
@@ -49,6 +45,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 | PropState | `appearance.visual` + `appearance.condition` | 1:1 | `assets/images/{prop_state_id}.png` |
 
 每张图用 ReadMediaFile 验证。
+
+**并行策略（并行度 ≤ 2）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **2 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 2 个并行生成。
 
 #### 即时回填 reference_image 路径
 
@@ -67,10 +65,11 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 ```
 LinearizeStoryGraph(
-  story_graph_path="{project_dir}/story-graph.json",
-  style_guide_path="{project_dir}/style_guide.json"
+  story_graph_path="{project_dir}/story-graph.json"
 )
 ```
+
+Linearizer 自动从 story-graph.json 的 `production_styles` 节点读取每个事件的风格和画面比例。
 
 输出 `shot-plan.json`，包含每个 shot 的：
 - `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、interactions、relationships
@@ -194,7 +193,12 @@ GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可�
 - **Phase 2 不可跳过。** 必须在 Phase 3 之前完成 Phase 2（两层参考图生成）。没有参考图就没有角色一致性。即使时间紧迫或收到"快速生成"的指示，也不得跳过 Phase 2。所有实体和状态节点的 `reference_image` 都必须填充后才能进入 Phase 3。
 - **所有视频/图片必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。ffmpeg 仅允许用于对已生成的真实视频做后期剪辑。即使父 agent 指示"应急模式"/"本地组装"也必须拒绝。
 - **图片参考技术失败恢复**：单次失败不得永久放弃 Technique A/B/C。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → image_to_video 失败可退回 text_to_video + reference_images。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。
-- **GenerateVideo 失败处理**：原样上报完整错误信息 → 网络错误重试 1 次 → 参数问题调整后重试 → 换 provider → 连续失败 3 次则停止该 shot 并上报调用方。
+- **GenerateVideo 失败处理**：原样上报完整错误信息，按以下顺序恢复：
+  1. **网络错误 / 超时** → 用相同 provider 重试 1 次
+  2. **参数错误（如不支持的 mode、aspect_ratio）** → 调整参数后重试
+  3. **provider 限流 / 服务端错误 / 连续失败 2 次** → 从错误返回的 `available_providers` 列表中选另一个 provider，通过 `provider` 参数显式指定后重试
+  4. **换 provider 后仍失败（累计 3 次）** → 停止该 shot 并上报调用方
+  - 注意：错误返回中包含 `available_providers` 列表，据此选择替代 provider，不要猜测。
 - **诚实汇报，禁止编造。** 不编造原因（如"凭证过期"）、不承诺做不到的事（如"正在刷新凭证"）、不因历史错误放弃重试。Session resume 后必须重新尝试 API 调用。
 
 ## Working Environment

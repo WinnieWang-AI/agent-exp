@@ -20,10 +20,6 @@ from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
 class Params(BaseModel):
     story_graph_path: str = Field(description="Absolute path to the story-graph.json file.")
-    style_guide_path: str = Field(
-        default="",
-        description="Absolute path to style_guide.json. If empty, looks for it next to the story graph.",
-    )
     output_path: str = Field(
         default="",
         description="Absolute path for the output shot-plan.json. Defaults to shot-plan.json next to the story graph.",
@@ -46,7 +42,7 @@ class _GraphIndex:
             "characters", "props", "locations",
             "character_appearances", "character_minds",
             "prop_states", "location_states", "audio_states",
-            "camera_directives",
+            "camera_directives", "production_styles",
         ):
             for node in data.get(key, []):
                 self.nodes[node["id"]] = node
@@ -70,7 +66,7 @@ class _GraphIndex:
         for map_name in (
             "appearance_active_during", "mind_active_during",
             "prop_active_during", "location_active_during",
-            "audio_active_during",
+            "audio_active_during", "style_active_during",
         ):
             rev: dict[str, list[str]] = defaultdict(list)
             for state_id, evt_list in data.get(map_name, {}).items():
@@ -116,6 +112,23 @@ class _GraphIndex:
 
     def set_event_order(self, order: dict[str, int]) -> None:
         self._event_order = order
+
+    def get_style_for_event(self, event_id: str) -> dict[str, str]:
+        """Return the production style active during *event_id*.
+
+        Returns a dict with keys: style_prefix, negative_prefix, aspect_ratio, description.
+        Returns empty strings / default aspect_ratio if no style node is found.
+        """
+        style_nodes = self.get_active("style_active_during", event_id)
+        if style_nodes:
+            s = style_nodes[0]
+            return {
+                "style_prefix": s.get("style_prefix", ""),
+                "negative_prefix": s.get("negative_prefix", ""),
+                "aspect_ratio": s.get("aspect_ratio", "16:9"),
+                "description": s.get("description", ""),
+            }
+        return {"style_prefix": "", "negative_prefix": "", "aspect_ratio": "16:9", "description": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +273,12 @@ def _extract_prompt_materials(
     event: dict[str, Any],
     shot: dict[str, Any],
     g: _GraphIndex,
-    style_guide: dict[str, str],
 ) -> dict[str, Any]:
     """Extract all prompt-relevant information for a shot from the graph."""
     event_id = event["id"]
+
+    # Read style from ProductionStyle nodes in the graph
+    effective_style = g.get_style_for_event(event_id)
 
     # Active appearances
     appearances = []
@@ -337,8 +352,9 @@ def _extract_prompt_materials(
                             })
 
     return {
-        "style_prefix": style_guide.get("style_prefix", ""),
-        "negative_prefix": style_guide.get("negative_prefix", ""),
+        "style_prefix": effective_style.get("style_prefix", ""),
+        "negative_prefix": effective_style.get("negative_prefix", ""),
+        "aspect_ratio": effective_style.get("aspect_ratio", "16:9"),
         "event_description": event.get("description", ""),
         "happens_at": event.get("happens_at", ""),
         "happens_during": event.get("happens_during", ""),
@@ -365,6 +381,7 @@ def _derive_techniques(
     prev_shot_info: dict[str, Any] | None,
     ref_images: list[dict[str, Any]],
     g: _GraphIndex,
+    aspect_ratio: str = "16:9",
 ) -> dict[str, Any]:
     """Derive which consistency techniques to use for this shot."""
 
@@ -431,7 +448,7 @@ def _derive_techniques(
             "reason": "; ".join(reasons),
             "generate_image_spec": {
                 "reference_image_paths": gen_img_refs,
-                "aspect_ratio": "16:9",
+                "aspect_ratio": aspect_ratio,
             },
         }
     else:
@@ -452,6 +469,7 @@ def _build_recommended_call(
     techniques: dict[str, Any],
     ref_images: list[dict[str, Any]],
     shot: dict[str, Any],
+    aspect_ratio: str = "16:9",
 ) -> dict[str, Any]:
     """Build recommended GenerateVideo parameters."""
     tech_c = techniques["C_tail_frame"]
@@ -466,7 +484,7 @@ def _build_recommended_call(
     call: dict[str, Any] = {
         "mode": mode,
         "duration_seconds": 5,
-        "aspect_ratio": "16:9",
+        "aspect_ratio": aspect_ratio,
     }
 
     # reference_images (Technique A)
@@ -487,7 +505,7 @@ def _build_recommended_call(
 # Main linearization
 # ---------------------------------------------------------------------------
 
-def linearize(data: dict[str, Any], style_guide: dict[str, str]) -> dict[str, Any]:
+def linearize(data: dict[str, Any]) -> dict[str, Any]:
     """Linearize a story graph into a shot plan. Pure function, no I/O."""
     g = _GraphIndex(data)
 
@@ -529,14 +547,15 @@ def linearize(data: dict[str, Any], style_guide: dict[str, str]) -> dict[str, An
                 if node and not node.get("reference_image") and not sid.startswith("mind_"):
                     warnings.append(f"{shot_id}: focus_on '{sid}' has no reference_image")
 
-            # Derive techniques
-            techniques = _derive_techniques(shot, event, prev_shot_info, ref_images, g)
+            # Extract prompt materials (includes per-event style from graph)
+            materials = _extract_prompt_materials(event, shot, g)
+            shot_aspect_ratio = materials.get("aspect_ratio", "16:9")
 
-            # Extract prompt materials
-            materials = _extract_prompt_materials(event, shot, g, style_guide)
+            # Derive techniques
+            techniques = _derive_techniques(shot, event, prev_shot_info, ref_images, g, shot_aspect_ratio)
 
             # Build recommended call
-            recommended_call = _build_recommended_call(techniques, ref_images, shot)
+            recommended_call = _build_recommended_call(techniques, ref_images, shot, shot_aspect_ratio)
 
             shot_plan = {
                 "shot_id": shot_id,
@@ -571,7 +590,6 @@ def linearize(data: dict[str, Any], style_guide: dict[str, str]) -> dict[str, An
         "shots": shots,
         "parallel_groups": parallel_groups,
         "total_shots": len(shots),
-        "style_guide": style_guide,
         "warnings": warnings,
     }
     return plan
@@ -599,29 +617,19 @@ class LinearizeStoryGraph(CallableTool2[Params]):
         except json.JSONDecodeError as e:
             return builder.error(f"Invalid JSON: {e}", brief="JSON parse error")
 
-        # Load style guide
-        style_guide: dict[str, str] = {}
-        sg_dir = sg_path.parent
-        style_path_str = params.style_guide_path or str(sg_dir / "style_guide.json")
-        style_path = Path(style_path_str)
-        if style_path.exists():
-            try:
-                style_guide = json.loads(style_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                warnings_pre = [f"style_guide.json parse error, proceeding without style"]
-                builder.write(f"Warning: {warnings_pre[0]}\n")
-
-        # Linearize
-        plan = linearize(data, style_guide)
+        # Linearize (style is read from production_styles nodes in the graph)
+        plan = linearize(data)
 
         # Write output
+        sg_dir = sg_path.parent
         out_path_str = params.output_path or str(sg_dir / "shot-plan.json")
         out_path = Path(out_path_str)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # Emit story graph view display block
-        view_block = build_story_graph_view(data, phase="shots", shot_plan=plan)
+        project_dir = str(sg_path.parent)
+        view_block = build_story_graph_view(data, phase="shots", shot_plan=plan, project_dir=project_dir)
         builder.display(view_block)
 
         # Summary

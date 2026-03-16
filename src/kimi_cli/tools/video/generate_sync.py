@@ -125,7 +125,7 @@ class GenerateVideoSync(CallableTool2[Params]):
             record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
                          prompt=params.prompt, error=str(e))
             return builder.error(
-                message=f"Failed to submit job.\n  provider: {provider_name}\n  error: {e}",
+                message=f"Failed to submit job.\n  provider: {provider_name}\n  error: {e}\n  available_providers: {available}",
                 brief="Submission failed",
             )
 
@@ -146,7 +146,7 @@ class GenerateVideoSync(CallableTool2[Params]):
                 record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
                              job_id=job_id, error=str(e))
                 return builder.error(
-                    message=f"Failed to check job status.\n  job_id: {job_id}\n  error: {e}",
+                    message=f"Failed to check job status.\n  job_id: {job_id}\n  error: {e}\n  available_providers: {available}",
                     brief="Check failed",
                 )
 
@@ -154,7 +154,7 @@ class GenerateVideoSync(CallableTool2[Params]):
                 record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
                              job_id=job_id, error=status.error_message or "unknown")
                 return builder.error(
-                    message=f"Job failed.\n  job_id: {job_id}\n  error: {status.error_message}",
+                    message=f"Job failed.\n  job_id: {job_id}\n  error: {status.error_message}\n  available_providers: {available}",
                     brief="Job failed",
                 )
 
@@ -169,7 +169,7 @@ class GenerateVideoSync(CallableTool2[Params]):
 
             if asyncio.get_event_loop().time() > deadline:
                 return builder.error(
-                    message=f"Timed out after {params.timeout_seconds}s.\n  job_id: {job_id}\n  progress: {status.progress_percent:.0f}%",
+                    message=f"Timed out after {params.timeout_seconds}s.\n  job_id: {job_id}\n  progress: {status.progress_percent:.0f}%\n  available_providers: {available}",
                     brief="Timeout",
                 )
 
@@ -181,7 +181,7 @@ class GenerateVideoSync(CallableTool2[Params]):
             record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
                          job_id=job_id, error=f"Download failed: {e}")
             return builder.error(
-                message=f"Job completed but download failed.\n  job_id: {job_id}\n  error: {e}",
+                message=f"Job completed but download failed.\n  job_id: {job_id}\n  error: {e}\n  available_providers: {available}",
                 brief="Download failed",
             )
 

@@ -22,12 +22,14 @@ When a user describes a video they want to create:
 
 - **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长或画面比例时，用一个简短问题确认（可合并为一个问题，如"风格、时长、横屏还是竖屏？"）。确认后立即进入 Step 1.5。
 - 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏）。
-- 确认后的画面比例（16:9 / 9:16）将传递给 screenwriter（影响分镜设计）和 video-creator（影响视频生成的 aspect_ratio）。
+- 确认后的画面比例（16:9 / 9:16）和视觉风格将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
 ### Step 1.5: Build Story Graph
 
-调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格，保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`，构建完成后自动运行 ValidateStoryGraph。
+调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`，构建完成后自动运行 ValidateStoryGraph。
+
+**重要**：明确告知 screenwriter 用户确认的风格和画面比例，screenwriter 会将其写入 `production_styles` 节点（包含 `style_prefix`、`negative_prefix`、`aspect_ratio`），后续 video-creator 和 linearizer 直接从图中读取。
 
 向用户展示构建结果摘要（角色数、事件数、时间线结构），等用户确认后再进入视频生成。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
 
@@ -84,7 +86,7 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 ### Resume 步骤
 
 1. **从历史中只提取基本信息**：项目名（project_name）、用户确认的主题/风格/时长。不要提取错误模式或失败结论。
-2. **扫描项目目录确定真实状态**：调用 video-creator 检查项目目录，报告 story-graph.json、style_guide.json、参考图数量、clips 数量及大小、shot-plan.json、成片是否存在。只报告事实，不做生成操作。
+2. **扫描项目目录确定真实状态**：调用 video-creator 检查项目目录，报告 story-graph.json（含 production_styles 节点）、参考图数量、clips 数量及大小、shot-plan.json、成片是否存在。只报告事实，不做生成操作。
 3. **根据扫描结果判断阶段**：
    - 无 story-graph.json → 从 Step 1.5 开始
    - 有 story-graph 但参考图不完整 → 从 Step 1.8 开始

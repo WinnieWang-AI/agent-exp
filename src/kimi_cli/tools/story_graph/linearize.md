@@ -1,6 +1,6 @@
 Linearize a Story Graph into a shot-by-shot execution plan for video generation.
 
-Reads `story-graph.json` and an optional `style_guide.json`, then deterministically produces a `shot-plan.json` containing:
+Reads `story-graph.json` and deterministically produces a `shot-plan.json` containing:
 
 - **Topologically sorted shots** derived from `event_sequence` and `camera_directives`.
 - **Prompt materials** for each shot: all active appearances, minds, location states, prop states, audio states, interactions, and current relationships — extracted via graph queries so the LLM does not need to cross-reference `*_active_during` maps manually.
@@ -12,5 +12,7 @@ Reads `story-graph.json` and an optional `style_guide.json`, then deterministica
 - **Parallel groups** with suggested interleave order for cross-cutting.
 - **Validation warnings** if any required reference images are missing.
 
-Input: path to `story-graph.json`, optional path to `style_guide.json`.
+Style information (style_prefix, negative_prefix, aspect_ratio) is read from `production_styles` nodes in the story graph via `style_active_during`.
+
+Input: path to `story-graph.json`.
 Output: writes `shot-plan.json` next to the story graph and returns a summary.
