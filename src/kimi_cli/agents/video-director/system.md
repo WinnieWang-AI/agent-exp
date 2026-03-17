@@ -20,8 +20,8 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言时，用一个简短问题确认（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。确认后立即进入 Step 1.5。
-- 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏），未指定语言时默认中文。
+- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。**语言是必填项，不可省略或默认——必须由用户明确指定。** 确认后立即进入 Step 1.5。
+- 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏）。
 - 确认后的画面比例（16:9 / 9:16）、视觉风格和语言将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点（包含 `language` 字段）。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 

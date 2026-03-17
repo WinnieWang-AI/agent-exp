@@ -244,6 +244,15 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
                 if not has_mind:
                     issues.append(f'event {eid}: character {char_id} in interactions but no mind active')
 
+    # Check production_styles have required fields (language, aspect_ratio, duration)
+    for ps in data.get("production_styles", []):
+        if not ps.get("language"):
+            issues.append(f'production_style {ps["id"]}: missing required "language" field')
+        if not ps.get("aspect_ratio"):
+            issues.append(f'production_style {ps["id"]}: missing required "aspect_ratio" field')
+        if not ps.get("duration"):
+            issues.append(f'production_style {ps["id"]}: missing required "duration" field')
+
     # Check every event has a production_style active
     style_active = data.get("style_active_during", {})
     evt_has_style: set[str] = set()

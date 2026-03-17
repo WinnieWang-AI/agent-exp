@@ -94,6 +94,7 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.head("/files/{file_path:path}")
 @app.get("/files/{file_path:path}")
 async def serve_local_file(file_path: str):
     """Serve a local file (images, videos, etc.) so the frontend can display them."""

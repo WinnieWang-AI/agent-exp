@@ -67,7 +67,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 **CharacterAppearance（外形状态）**
 
-描述角色的**视觉外形**。只有外形发生重要变化时（换装、受伤、变装等）才创建新节点。每个节点生成一张形象参考图。
+描述角色的**视觉外形**。只有外形发生重要变化时（换装、受伤、变装等）才创建新节点。每个节点生成一张形象参考图。**如果角色全程外形不变，只需一个 appearance 节点，且其 `visual` 必须和 entity 的 `fixed_traits` 有明确可见的差异描述（不同服装/姿态/状态）；如果确实无差异，`visual` 各字段写"same as entity default"以便 video-creator 跳过重复生成。**
 
 ```json
 {
@@ -199,7 +199,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - `negative_prefix`：注入 negative prompt（英文）
 - `aspect_ratio`：画面比例，影响视频生成和首帧图生成
 - `duration`：目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），由 director 传入
-- `language`：视频内容语言（如 `"zh"`、`"en"`、`"ja"`），影响对白、字幕、旁白的语言。未指定时默认 `"zh"`
+- `language`：视频内容语言（如 `"zh"`、`"en"`、`"ja"`），影响对白、字幕、旁白的语言。**必填**，由 director 传入，不可自行默认
 
 #### AudioState（音频状态）
 

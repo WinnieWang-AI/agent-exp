@@ -44,6 +44,10 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 | LocationState | `appearance.lighting/weather/condition/atmosphere` | 16:9 | `assets/images/{location_state_id}.png` |
 | PropState | `appearance.visual` + `appearance.condition` | 1:1 | `assets/images/{prop_state_id}.png` |
 
+**去重规则**：生成第 2 层前，先将每个状态的 prompt 与其所属实体的 prompt 对比。如果状态描述的视觉外观与实体默认外观**没有实质差异**（如角色只有一个外观状态、或状态仅描述"自然/默认"姿态），则**跳过生成**，直接将该状态的 `reference_image` 设为其所属实体的参考图路径（如 `assets/images/{character_id}.png`）。只有当状态在服装、发型、体态、光照、氛围等方面与实体有**明确可见的差异**时，才生成新的参考图。
+
+**不要重复生成已存在的图片**：生成前先检查目标路径的文件是否已存在。如果文件已存在且 `reference_image` 字段已填充，跳过该节点。
+
 **并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
 #### 即时回填 reference_image 和 generation_prompt
