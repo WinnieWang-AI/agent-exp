@@ -190,7 +190,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
   "negative_prefix": "photorealistic, dark, horror, oversaturated",
   "aspect_ratio": "16:9",        // "16:9" / "9:16" / "1:1"
-  "duration": "2min"             // 目标视频总时长，如 "30s" / "1min" / "2min"
+  "duration": "2min",            // 目标视频总时长，如 "30s" / "1min" / "2min"
+  "language": "zh"               // 视频语言，如 "zh" / "en" / "ja"
 }
 ```
 - `description`：风格的自然语言描述（给人类看）
@@ -198,6 +199,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - `negative_prefix`：注入 negative prompt（英文）
 - `aspect_ratio`：画面比例，影响视频生成和首帧图生成
 - `duration`：目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），由 director 传入
+- `language`：视频内容语言（如 `"zh"`、`"en"`、`"ja"`），影响对白、字幕、旁白的语言。未指定时默认 `"zh"`
 
 #### AudioState（音频状态）
 
@@ -319,6 +321,17 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 **Step 5: 设计镜头（camera_directives）**
 - 为每个事件（或 PARALLEL 事件组）设计分镜
 - `focus_on` 引用 appearance/prop_state/location_state 的 ID（不是实体 ID）
+
+**镜头时长约束——匹配视频生成能力**
+
+视频生成工具每次调用产出一个连续片段，可选时长 **5s–10s**。工具本身不具备镜头内转场能力，最终视频是多个片段拼接而成。因此：
+
+- **每个 shot 的 `duration` 必须在 5s–10s 之间**。低于 5s 的片段拼接后画面细碎、观感极差；超过 10s 超出生成工具能力。
+- **默认每个事件只用 1 个 shot**（duration 5–10s），用运镜（tracking、push_in 等）在单片段内完成叙事变化。
+- 只在以下情况才拆为 2 个 shot：对话正反打、需要特写插入揭示关键细节、同一事件内有明确的情绪转折。
+- 拆分后每个 shot 仍须 ≥5s，因此拆分意味着该事件需要 ≥10s 的时间预算。
+- **短视频（≤30s）全片 shot 总数不超过 4–6 个；1min 视频不超过 8–12 个。**
+- `duration` 按叙事节奏分配，不要机械均分。核心戏剧事件给 8–10s，过渡事件给 5s。
 
 **Step 6: 设计音频（audio_states）**
 - BGM 状态链，跟随叙事情绪弧线

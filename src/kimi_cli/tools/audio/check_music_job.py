@@ -17,6 +17,11 @@ class Params(BaseModel):
         default="",
         description="If provided, download all completed songs to this directory",
     )
+    download_filename: str = Field(
+        default="",
+        description="Custom filename for the downloaded song (e.g. 'astate_bgm_warm_start.mp3'). "
+        "If empty, defaults to 'song_{index}.mp3'. Only used when download_dir is set.",
+    )
 
 
 class CheckMusicJob(CallableTool2[Params]):
@@ -78,7 +83,14 @@ class CheckMusicJob(CallableTool2[Params]):
             download_dir.mkdir(parents=True, exist_ok=True)
             builder.write(f"\nDownloading {len(status.songs)} song(s)...\n")
             for i, song in enumerate(status.songs):
-                filename = f"song_{i}.mp3"
+                if params.download_filename and len(status.songs) == 1:
+                    filename = params.download_filename
+                elif params.download_filename:
+                    stem = Path(params.download_filename).stem
+                    suffix = Path(params.download_filename).suffix or ".mp3"
+                    filename = f"{stem}_{i}{suffix}"
+                else:
+                    filename = f"song_{i}.mp3"
                 output_path = str(download_dir / filename)
                 try:
                     await provider.download_audio(song.audio_url, output_path)

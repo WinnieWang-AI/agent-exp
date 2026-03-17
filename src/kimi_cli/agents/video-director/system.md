@@ -20,16 +20,16 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长或画面比例时，用一个简短问题确认（可合并为一个问题，如"风格、时长、横屏还是竖屏？"）。确认后立即进入 Step 1.5。
-- 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏）。
-- 确认后的画面比例（16:9 / 9:16）和视觉风格将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
+- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言时，用一个简短问题确认（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。确认后立即进入 Step 1.5。
+- 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏），未指定语言时默认中文。
+- 确认后的画面比例（16:9 / 9:16）、视觉风格和语言将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点（包含 `language` 字段）。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
 ### Step 1.5: Build Story Graph — 阶段一（故事结构）
 
-调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16），指示其执行**阶段一**：构建故事结构（实体、事件、状态及关联），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。screenwriter 写入后会自动运行 ValidateStoryGraph。
+调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16）、**语言**（如中文/英文），指示其执行**阶段一**：构建故事结构（实体、事件、状态及关联），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。screenwriter 写入后会自动运行 ValidateStoryGraph。
 
-**重要**：明确告知 screenwriter 用户确认的风格和画面比例，screenwriter 会将其写入 `production_styles` 节点（包含 `style_prefix`、`negative_prefix`、`aspect_ratio`），后续 video-creator 和 linearizer 直接从图中读取。
+**重要**：明确告知 screenwriter 用户确认的风格、画面比例和语言，screenwriter 会将其写入 `production_styles` 节点（包含 `style_prefix`、`negative_prefix`、`aspect_ratio`、`language`），后续 video-creator 和 linearizer 直接从图中读取。
 
 向用户展示故事结构摘要（角色数、事件数、时间线结构、主要剧情脉络），等用户确认后再进入 Step 1.6。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
 
@@ -88,7 +88,7 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 ### 核心原则
 
 1. **直接使用消息中的状态信息**，不需要调用 subagent 扫描文件。状态已经从磁盘读取并注入到消息中。
-2. **按 "Resume from" 指示的步骤直接执行**，不要重新询问用户已确认的信息（主题、风格、时长、画面比例）。
+2. **按 "Resume from" 指示的步骤直接执行**，不要重新询问用户已确认的信息（主题、风格、时长、画面比例、语言）。
 3. **忽略历史中的错误模式**：即使历史中记录了 API 失败、鉴权错误、限流等问题，resume 后必须重新尝试。问题可能已经修复。
 4. **使用消息中提供的 session IDs**（`graph_{project_name}`、`create_{project_name}`、`eval_{project_name}`）调用 subagent。
 5. 如果用户附加了"继续"/"继续生成"等模糊指令，按 resume step 直接执行。

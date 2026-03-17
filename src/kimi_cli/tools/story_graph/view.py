@@ -183,6 +183,8 @@ def _build_outputs(project_dir: str) -> list[StoryGraphOutput]:
     outputs: list[StoryGraphOutput] = []
     for mp4 in sorted(output_dir.glob("*.mp4")):
         stem = mp4.stem
+        if stem.startswith("tmp_"):
+            continue
         outputs.append(StoryGraphOutput(
             stage=stem,
             video_path=str(mp4),
@@ -224,6 +226,7 @@ def build_story_graph_view(
             negative_prefix=ps.get("negative_prefix", ""),
             aspect_ratio=ps.get("aspect_ratio", "16:9"),
             duration=ps.get("duration", ""),
+            language=ps.get("language", "zh"),
         ))
 
     # --- Entity states ---

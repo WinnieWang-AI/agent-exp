@@ -34,6 +34,8 @@ export type SubagentStep =
       status: "running" | "success" | "error";
       output?: string;
       errorText?: string;
+      /** Display blocks from the tool result (e.g. story_graph_view) */
+      display?: Array<{ type: string; data: unknown }>;
     };
 
 /**

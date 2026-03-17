@@ -316,6 +316,7 @@ export function useSessionStream(
   const lastStatusSeqRef = useRef<number | null>(null);
   const lastWsMessageTimeRef = useRef<number>(0); // Last time a WS message was received
   const watchdogIntervalRef = useRef<number | null>(null); // Stale connection watchdog
+  const heartbeatIntervalRef = useRef<number | null>(null); // Client-side keepalive ping
   const statusRef = useRef<ChatStatus>("ready"); // Synced copy of status for watchdog
 
   // First turn tracking for auto-rename (simplified: backend reads from wire.jsonl)
@@ -903,6 +904,7 @@ export function useSessionStream(
                 is_error: boolean;
                 output: Array<{ text?: string }> | string;
                 message: string;
+                display?: Array<{ type: string; data: unknown }>;
               };
             };
             for (let i = steps.length - 1; i >= 0; i--) {
@@ -917,6 +919,7 @@ export function useSessionStream(
                       .filter(Boolean)
                       .join("\n")
                   : tr.return_value.output;
+                const display = tr.return_value.display;
                 steps[i] = {
                   ...step,
                   status: tr.return_value.is_error ? "error" : "success",
@@ -924,6 +927,7 @@ export function useSessionStream(
                   errorText: tr.return_value.is_error
                     ? tr.return_value.message || undefined
                     : undefined,
+                  display: display && display.length > 0 ? display : undefined,
                 };
                 break;
               }
@@ -1771,6 +1775,10 @@ export function useSessionStream(
       try {
         console.log("[SessionStream] Received raw message:", data);
         const message: WireMessage = JSON.parse(data);
+
+        // Ignore server heartbeat pings
+        if ((message as any).type === "ping") return;
+
         console.log("[SessionStream] Parsed message:", message);
 
         // Check for JSON-RPC error response
@@ -2219,6 +2227,16 @@ export function useSessionStream(
         }, 10_000);
         watchdogIntervalRef.current = watchdogIntervalId;
 
+        // Start client-side heartbeat to keep connection alive
+        if (heartbeatIntervalRef.current !== null) {
+          window.clearInterval(heartbeatIntervalRef.current);
+        }
+        heartbeatIntervalRef.current = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ jsonrpc: "2.0", method: "ping" }));
+          }
+        }, 30_000);
+
         // Send initialize message to get slash commands
         sendInitialize(ws);
 
@@ -2318,6 +2336,11 @@ export function useSessionStream(
     if (watchdogIntervalRef.current !== null) {
       window.clearInterval(watchdogIntervalRef.current);
       watchdogIntervalRef.current = null;
+    }
+
+    if (heartbeatIntervalRef.current !== null) {
+      window.clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
     }
 
     if (wsRef.current) {
@@ -2585,6 +2608,9 @@ export function useSessionStream(
       }
       if (watchdogIntervalRef.current !== null) {
         window.clearInterval(watchdogIntervalRef.current);
+      }
+      if (heartbeatIntervalRef.current !== null) {
+        window.clearInterval(heartbeatIntervalRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();

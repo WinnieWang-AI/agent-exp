@@ -45,6 +45,7 @@ class StoryGraphProductionStyle(BaseModel):
     negative_prefix: str = ""
     aspect_ratio: str = "16:9"
     duration: str = ""
+    language: str = "zh"
 
 
 class StoryGraphState(BaseModel):

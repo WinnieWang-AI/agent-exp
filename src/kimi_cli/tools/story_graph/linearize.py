@@ -126,9 +126,11 @@ class _GraphIndex:
                 "style_prefix": s.get("style_prefix", ""),
                 "negative_prefix": s.get("negative_prefix", ""),
                 "aspect_ratio": s.get("aspect_ratio", "16:9"),
+                "duration": s.get("duration", ""),
+                "language": s.get("language", "zh"),
                 "description": s.get("description", ""),
             }
-        return {"style_prefix": "", "negative_prefix": "", "aspect_ratio": "16:9", "description": ""}
+        return {"style_prefix": "", "negative_prefix": "", "aspect_ratio": "16:9", "duration": "", "language": "zh", "description": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +242,7 @@ def _collect_reference_images(
     g: _GraphIndex,
     max_images: int = 4,
 ) -> list[dict[str, Any]]:
-    """Collect reference images from focus_on nodes + their parent entities."""
+    """Collect reference images from focus_on state nodes."""
     seen: set[str] = set()
     candidates: list[dict[str, Any]] = []
 
@@ -252,14 +254,6 @@ def _collect_reference_images(
         if ref and state_id not in seen:
             seen.add(state_id)
             candidates.append({"id": state_id, "path": ref, "priority": _id_priority(state_id)})
-        # Also add parent entity's reference image
-        entity = g.entity_of(node)
-        if entity:
-            ent_id = entity.get("id", "")
-            ent_ref = entity.get("reference_image")
-            if ent_ref and ent_id not in seen:
-                seen.add(ent_id)
-                candidates.append({"id": ent_id, "path": ent_ref, "priority": _id_priority(ent_id)})
 
     candidates.sort(key=lambda c: c["priority"])
     return candidates[:max_images]
@@ -355,6 +349,7 @@ def _extract_prompt_materials(
         "style_prefix": effective_style.get("style_prefix", ""),
         "negative_prefix": effective_style.get("negative_prefix", ""),
         "aspect_ratio": effective_style.get("aspect_ratio", "16:9"),
+        "language": effective_style.get("language", "zh"),
         "event_description": event.get("description", ""),
         "happens_at": event.get("happens_at", ""),
         "happens_during": event.get("happens_during", ""),
@@ -424,18 +419,12 @@ def _derive_techniques(
 
     tech_b: dict[str, Any]
     if needs_first_frame:
-        # Collect reference_image_paths for GenerateImage
+        # Collect reference_image_paths for GenerateImage (state nodes only)
         gen_img_refs: list[str] = []
         for sid in shot.get("focus_on", []):
             node = g.nodes.get(sid)
             if node and node.get("reference_image"):
                 gen_img_refs.append(node["reference_image"])
-            if node:
-                entity = g.entity_of(node)
-                if entity and entity.get("reference_image"):
-                    ent_ref = entity["reference_image"]
-                    if ent_ref not in gen_img_refs:
-                        gen_img_refs.append(ent_ref)
 
         reasons = []
         if shot_type in _CLOSE_SHOT_TYPES:
@@ -471,32 +460,68 @@ def _build_recommended_call(
     shot: dict[str, Any],
     aspect_ratio: str = "16:9",
 ) -> dict[str, Any]:
-    """Build recommended GenerateVideo parameters."""
+    """Build recommended GenerateVideo parameters.
+
+    Four generation modes:
+      - text_to_video:             pure text prompt, no image input
+      - reference_to_video:        text prompt + reference images for consistency
+      - first_frame_to_video:      single starting frame (from B or C, not both)
+      - first_last_frame_to_video: first frame (C tail) + last frame (B generated)
+    """
     tech_c = techniques["C_tail_frame"]
     tech_b = techniques["B_first_frame"]
 
+    has_b = tech_b["enabled"]
+    has_c = tech_c["enabled"]
+    has_refs = len(ref_images) > 0
+
     # Determine mode
-    if tech_c["enabled"] or tech_b["enabled"]:
-        mode = "image_to_video"
+    if has_b and has_c:
+        # Both available: C provides continuity start frame, B provides target
+        # end composition → use first-last-frame generation
+        mode = "first_last_frame_to_video"
+    elif has_b or has_c:
+        # Single frame source → first-frame generation
+        mode = "first_frame_to_video"
+    elif has_refs:
+        # No starting frame but has reference images for consistency
+        mode = "reference_to_video"
     else:
+        # Pure text
         mode = "text_to_video"
+
+    # Parse duration from shot (e.g. "5.0s" -> 5.0), default to 5
+    shot_dur = shot.get("duration", "")
+    dur_seconds = 5
+    if isinstance(shot_dur, str) and shot_dur:
+        try:
+            dur_seconds = float(shot_dur.replace("s", ""))
+        except ValueError:
+            pass
+    elif isinstance(shot_dur, (int, float)):
+        dur_seconds = float(shot_dur)
 
     call: dict[str, Any] = {
         "mode": mode,
-        "duration_seconds": 5,
+        "duration_seconds": dur_seconds,
         "aspect_ratio": aspect_ratio,
     }
 
-    # reference_images (Technique A)
+    # reference_images (Technique A) — passed in all modes for consistency
     if ref_images:
         call["reference_images"] = [img["path"] for img in ref_images]
 
-    # reference_image_path source priority: C (tail frame) > B (first frame)
-    if tech_c["enabled"]:
-        call["reference_image_source"] = "tail_frame"
+    # Frame sources
+    if has_b and has_c:
+        # FLF: C tail frame = first_frame (continuity), B generated = last_frame (target)
+        call["first_frame_source"] = "tail_frame"
         call["tail_frame_clip"] = tech_c["prev_clip_path"]
-    elif tech_b["enabled"]:
-        call["reference_image_source"] = "generated_first_frame"
+        call["last_frame_source"] = "generated_first_frame"
+    elif has_c:
+        call["first_frame_source"] = "tail_frame"
+        call["tail_frame_clip"] = tech_c["prev_clip_path"]
+    elif has_b:
+        call["first_frame_source"] = "generated_first_frame"
 
     return call
 

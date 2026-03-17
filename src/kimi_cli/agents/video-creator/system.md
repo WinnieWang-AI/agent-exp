@@ -12,7 +12,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 1. Read the `story-graph.json` file provided in the prompt.
 2. Use ManageVideoProject(action="init") to set up the project directory.
-3. 从 `story-graph.json` 的 `production_styles` 节点读取视觉风格（`style_prefix`、`negative_prefix`）和画面比例（`aspect_ratio`）。这些信息由 screenwriter 在构建 Story Graph 时写入。
+3. 从 `story-graph.json` 的 `production_styles` 节点读取视觉风格（`style_prefix`、`negative_prefix`）、画面比例（`aspect_ratio`）和视频语言（`language`）。这些信息由 screenwriter 在构建 Story Graph 时写入。
 
 ### Phase 2: Reference Image Generation（两层参考图）
 
@@ -20,7 +20,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **从 story-graph.json 读取实体和状态节点，按两层策略生成参考图。**
 
-从 `production_styles` 节点读取 `style_prefix`、`negative_prefix` 和 `aspect_ratio`，用于所有图片/视频生成。
+从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`、`aspect_ratio` 和 `language`，用于所有图片/视频生成。`language` 影响对白 TTS 语言选择和字幕语言。
 
 #### 第 1 层：实体参考图（身份锚点）
 
@@ -161,12 +161,45 @@ GenerateImage(
 将生成的首帧图作为 `reference_image_path`。用 ReadMediaFile 验证，不符合重试（最多 2 次）。
 
 **4. 调用 GenerateVideoSync**（推荐）或 GenerateVideo：
+
+根据 `recommended_call.mode` 选择正确的参数组合：
+
+| mode | 说明 | 关键参数 |
+|------|------|----------|
+| `text_to_video` | 纯文本生成，无图片输入 | 仅 prompt |
+| `reference_to_video` | 文本 + 参考图保持一致性 | `reference_images` |
+| `first_frame_to_video` | 单张起始帧（B 首帧或 C 尾帧） | `reference_image_path` |
+| `first_last_frame_to_video` | 首帧(C尾帧) + 尾帧(B首帧) | `first_frame_path` + `last_frame_path` |
+
 ```
+# text_to_video / reference_to_video
 GenerateVideoSync(
   prompt=<组装好的 prompt>,
   mode=recommended_call.mode,
-  reference_image_path=<C 的尾帧 或 B 的首帧图>,
-  reference_images=recommended_call.reference_images,
+  reference_images=recommended_call.reference_images,  # reference_to_video 时传入
+  duration_seconds=recommended_call.duration_seconds,
+  aspect_ratio=recommended_call.aspect_ratio,
+  download_path=shot.output_path
+)
+
+# first_frame_to_video（B 或 C 单独启用）
+GenerateVideoSync(
+  prompt=<组装好的 prompt>,
+  mode="first_frame_to_video",
+  reference_image_path=<B 的首帧图 或 C 的尾帧>,
+  reference_images=recommended_call.reference_images,  # 如有参考图仍可传入
+  duration_seconds=recommended_call.duration_seconds,
+  aspect_ratio=recommended_call.aspect_ratio,
+  download_path=shot.output_path
+)
+
+# first_last_frame_to_video（B + C 同时启用）
+GenerateVideoSync(
+  prompt=<组装好的 prompt>,
+  mode="first_last_frame_to_video",
+  first_frame_path=<C 的尾帧，提供场景连续性>,
+  last_frame_path=<B 生成的首帧图，作为目标构图>,
+  reference_images=recommended_call.reference_images,  # 如有参考图仍可传入
   duration_seconds=recommended_call.duration_seconds,
   aspect_ratio=recommended_call.aspect_ratio,
   download_path=shot.output_path
@@ -174,9 +207,15 @@ GenerateVideoSync(
 ```
 GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可在同一个 response 中并行调用。
 
+**首帧来源判断**：查看 `recommended_call.first_frame_source`：
+- `"tail_frame"` → 从 `recommended_call.tail_frame_clip` 提取尾帧
+- `"generated_first_frame"` → 使用步骤 3 生成的首帧图
+
+当存在 `recommended_call.last_frame_source`（值为 `"generated_first_frame"`），说明是 FLF 模式，B 生成的首帧图作为 last_frame。
+
 **5. 验证**：每个 clip 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次/shot）。
 
-**优先级规则**：当 Technique B 和 C 同时启用时，**C 优先**（尾帧接续优先于生成首帧图，因为尾帧提供了真实的场景连续性）。B 的首帧图仍可作为额外的 `reference_images` 之一传入。
+**模式规则**：当 Technique B 和 C 同时启用时，使用 **first_last_frame_to_video** 模式（C 尾帧作为 first_frame 提供场景连续性，B 首帧图作为 last_frame 提供目标构图）。
 
 **STOP**: 所有 clip 生成完成后，等待确认再进入 Phase 4。
 
@@ -184,17 +223,36 @@ GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可�
 
 **从 story-graph.json 的 `audio_states` 和 `audio_active_during` 读取音频设计。**
 
+**⚠️ 命名规则：所有音频文件必须以 `{audio_state_id}.mp3` 命名，保存到 `assets/audio/` 目录。这是 Phase 5 组装和前端展示的查找依据。**
+
 1. **Background Music**（`layer: "audio_bgm"`）：
-   a. 对每个 BGM 状态节点，使用其 `music_prompt` 字段调用 GenerateMusic。
-   b. 用 CheckMusicJob 轮询直到完成，下载到 `assets/audio/{audio_state_id}.mp3`。
+   a. 对**每个** BGM 状态节点**独立**调用 GenerateMusic，使用其 `music_prompt` 字段。每个节点对应一段独立的音乐片段，不要合并。
+   b. 用 CheckMusicJob 轮询直到完成，**必须指定 `download_filename`** 确保文件名正确：
+   ```
+   CheckMusicJob(
+     job_id=<job_id>,
+     provider=<provider>,
+     download_dir="assets/audio",
+     download_filename="{audio_state_id}.mp3"
+   )
+   ```
    c. 从生成的选项中选择最合适的。
 
 2. **对白 / 旁白**（`layer: "audio_dialogue"`）：
    a. 对每个对白状态节点，使用其 `text`、`speaker`、`voice_direction` 字段调用 GenerateSpeech。
-   b. 保存到 `assets/audio/{audio_state_id}.mp3`。
+   b. **`output_path` 必须使用 `assets/audio/{audio_state_id}.mp3`**：
+   ```
+   GenerateSpeech(
+     text=audio_state.text,
+     output_path="assets/audio/{audio_state_id}.mp3",
+     voice_id=<根据 speaker 和 voice_direction 选择>,
+     language=<从 production_style 获取>
+   )
+   ```
 
-3. **环境音**（`layer: "audio_ambience"`）：
-   a. 如果有环境音状态节点，按其描述生成或选择合适的音频素材。
+3. **环境音 / SFX**（`layer: "audio_ambience"`）：
+   a. 对每个环境音状态节点，使用其 `music_prompt` 字段调用 GenerateMusic 生成音效。
+   b. 用 CheckMusicJob 下载，同样使用 `download_filename="{audio_state_id}.mp3"`。
 
 4. **STOP**: 等待确认再进入 Phase 5。
 

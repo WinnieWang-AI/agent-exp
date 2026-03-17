@@ -49,6 +49,19 @@ from kimi_cli.wire.types import (
 
 enable_logging()
 
+WS_HEARTBEAT_INTERVAL = 30  # seconds
+
+
+async def _ws_heartbeat(websocket: WebSocket, stop_event: asyncio.Event):
+    """Send application-level ping periodically to keep the connection alive."""
+    try:
+        while not stop_event.is_set():
+            await asyncio.sleep(WS_HEARTBEAT_INTERVAL)
+            await websocket.send_json({"type": "ping"})
+    except Exception:
+        pass  # connection already closed
+
+
 app = FastAPI(title="Video Agent Web UI")
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -118,6 +131,21 @@ async def read_json_file(file_path: str):
         media_type="application/json",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
+
+
+@app.get("/list-dir/{dir_path:path}")
+async def list_directory(dir_path: str, suffix: str = ""):
+    """List files in a directory, optionally filtered by suffix (e.g. '.mp4')."""
+    full_path = Path("/") / dir_path
+    if not full_path.is_dir():
+        full_path = (Path.cwd() / dir_path).resolve()
+    if not full_path.is_dir():
+        return {"files": []}
+    files = []
+    for f in sorted(full_path.iterdir()):
+        if f.is_file() and (not suffix or f.suffix == suffix):
+            files.append({"name": f.name, "stem": f.stem, "path": str(f)})
+    return {"files": files}
 
 
 def serialize_wire_message(msg: Any) -> dict:
@@ -513,6 +541,8 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
             await incoming_queue.put(None)  # sentinel
 
     reader_task = asyncio.create_task(ws_reader())
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_ws_heartbeat(websocket, heartbeat_stop))
 
     try:
         while True:
@@ -588,6 +618,8 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     except WebSocketDisconnect:
         pass
     finally:
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
         reader_task.cancel()
 
 
@@ -647,6 +679,9 @@ async def ws_auto(websocket: WebSocket):
     first_content = first_raw.get("content", "") if first_raw.get("type") == "message" else ""
     messages_to_process = [first_content] if first_content else []
 
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_ws_heartbeat(websocket, heartbeat_stop))
+
     try:
         while True:
             if not messages_to_process:
@@ -703,6 +738,9 @@ async def ws_auto(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
+    finally:
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
 
 
 # Chat room: build @mention mapping from AGENT_FILES
@@ -808,6 +846,8 @@ async def ws_room(websocket: WebSocket):
     # Background task management: agents run in background so user is never blocked
     running_tasks: set[asyncio.Task] = set()
     send_lock = asyncio.Lock()
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(_ws_heartbeat(websocket, heartbeat_stop))
 
     async def safe_send(data: dict):
         """Send JSON to websocket with a lock to prevent interleaved writes."""
@@ -891,6 +931,9 @@ async def ws_room(websocket: WebSocket):
         for task in running_tasks:
             task.cancel()
         await asyncio.gather(*running_tasks, return_exceptions=True)
+    finally:
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,10 @@
 
 import { cn } from "@/lib/utils";
 import type { SubagentStep } from "@/hooks/types";
+import {
+  DisplayContent,
+  type DisplayItem,
+} from "@/features/tool/components/display-content";
 import type { ComponentProps } from "react";
 import { memo, useState } from "react";
 import {
@@ -167,6 +171,8 @@ const SubToolCallItem = ({
   const [expanded, setExpanded] = useState(false);
   const primaryParam = getPrimaryParam(step.input);
   const hasExpandableContent = Boolean(step.output || step.errorText);
+  const displayItems = step.display as DisplayItem[] | undefined;
+  const hasDisplay = displayItems && displayItems.length > 0;
 
   return (
     <div>
@@ -201,6 +207,11 @@ const SubToolCallItem = ({
           />
         )}
       </div>
+      {hasDisplay && (
+        <div className="mt-1 ml-4">
+          <DisplayContent display={displayItems} />
+        </div>
+      )}
       {expanded && (
         <div className="ml-4 mt-0.5">
           {step.errorText && (
