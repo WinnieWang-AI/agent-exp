@@ -16,6 +16,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 ### Phase 2: Reference Image Generation（两层参考图）
 
+**开始前必须执行**：用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-refimage.md`，按其中的规范和示例写 prompt。不要跳过此步骤。
+
 **从 story-graph.json 读取实体和状态节点，按两层策略生成参考图。**
 
 从 `production_styles` 节点读取 `style_prefix`、`negative_prefix` 和 `aspect_ratio`，用于所有图片/视频生成。
@@ -44,9 +46,18 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
-#### 即时回填 reference_image 路径
+#### 即时回填 reference_image 和 generation_prompt
 
-**每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
+**每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径，同时在该节点添加 `"generation_prompt"` 字段，记录你传给 GenerateImage 的完整 prompt 文本。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
+
+示例（StrReplaceFile 替换前后）：
+```json
+// 替换前
+"reference_image": null
+// 替换后
+"reference_image": "assets/images/char_red.png",
+"generation_prompt": "hand-drawn illustration, warm color palette ... full-body character reference sheet ..."
+```
 
 #### Phase 2 批量校验
 
@@ -72,6 +83,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 - **STOP**：等待用户确认角色和环境形象后再进入 Phase 3
 
 ### Phase 3: Video Generation（逐镜头生成）
+
+**开始前必须执行**：用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-video.md`，按其中的规范和示例写 prompt。不要跳过此步骤。
 
 **先调用 LinearizeStoryGraph 生成 shot plan，再按 plan 逐 shot 生成视频。** 不要手动查询 `*_active_during` 映射或判断一致性策略——这些已由 Linearizer 确定性计算完成。
 
@@ -110,18 +123,21 @@ Linearizer 自动从 story-graph.json 的 `production_styles` 节点读取每个
 
 对每个 shot：
 
-**1. 组装 Prompt**（你负责的部分——用 `prompt_materials` 写出好的自然语言描述）：
+**1. 组装 Prompt**（你负责的部分——用 `prompt_materials` 写出流畅的自然语言描述，参考 `prompt-guide-video.md` 的示例和写作要点）：
 ```
 style_prefix
++ shot_type + angle + movement（镜头语言）
 + shot.intent（镜头意图）
 + prompt_materials.event_description（事件描述）
-+ appearances[].visual（角色当前外形）
-+ minds[].emotion + minds[].behavior（角色表演指导）
-+ location_state.appearance（环境氛围）
++ appearances[].visual（角色当前外形——用最显著特征标识，不需重复所有细节）
++ minds[].emotion + minds[].behavior（角色表演指导——视频 prompt 的核心）
++ location_state.appearance（环境氛围：lighting/weather/condition/atmosphere）
 + interactions（互动方式）
++ relationships（角色关系——融入氛围描写，不要直接写关系名称）
++ prop_states（道具——按需提及，只在画面中有重要作用时）
 + "<<<image_1>>> ... <<<image_N>>>"（引用参考图，按 techniques.A_reference_images.images 顺序）
-+ negative_prefix
 ```
+style_prefix 放在 prompt 开头，negative_prefix 通过 `negative_prompt` 参数传入（不要拼进 prompt 正文）。
 
 **2. 执行 Technique C（尾帧接续）**——如果 `techniques.C_tail_frame.enabled`：
 ```

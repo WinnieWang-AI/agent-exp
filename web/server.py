@@ -162,12 +162,19 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
     # Scan for key files
     story_graph_path = None
     shot_plan_path = None
+    project_name = None
     for p in session_output_dir.rglob("story-graph.json"):
         story_graph_path = p
+        # project_name = parent directory name (e.g. output/{session_id}/{project_name}/story-graph.json)
+        if p.parent != session_output_dir:
+            project_name = p.parent.name
         break
     for p in session_output_dir.rglob("shot-plan.json"):
         shot_plan_path = p
         break
+
+    if project_name:
+        summary["project_name"] = project_name
 
     # Story graph summary
     if story_graph_path and story_graph_path.exists():
@@ -176,16 +183,47 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
             n_chars = len(sg_data.get("characters", []))
             n_locs = len(sg_data.get("locations", []))
             n_events = len(sg_data.get("events", []))
-            n_refs = sum(
-                1 for c in sg_data.get("characters", []) + sg_data.get("locations", []) + sg_data.get("props", [])
-                if c.get("reference_image")
+
+            # Count entity reference images (characters, locations, props)
+            all_entities = sg_data.get("characters", []) + sg_data.get("locations", []) + sg_data.get("props", [])
+            n_entity_refs = sum(1 for c in all_entities if c.get("reference_image"))
+
+            # Count state reference images
+            all_states = (
+                sg_data.get("character_appearances", [])
+                + sg_data.get("location_states", [])
+                + sg_data.get("prop_states", [])
             )
+            n_state_refs = sum(1 for s in all_states if s.get("reference_image"))
+            n_total_entities = len(all_entities)
+            n_total_states = len(all_states)
+
+            # Check if camera_directives and audio_states are populated
+            has_camera = bool(sg_data.get("camera_directives"))
+            has_audio = bool(sg_data.get("audio_states"))
+
+            # Extract production style info
+            prod_styles = sg_data.get("production_styles", [])
+            style_info = None
+            if prod_styles:
+                ps = prod_styles[0]
+                style_info = {
+                    "style_prefix": ps.get("style_prefix", ""),
+                    "aspect_ratio": ps.get("aspect_ratio", "16:9"),
+                }
+
             summary["story_graph"] = {
                 "path": str(story_graph_path),
                 "characters": n_chars,
                 "locations": n_locs,
                 "events": n_events,
-                "reference_images": n_refs,
+                "entity_reference_images": n_entity_refs,
+                "state_reference_images": n_state_refs,
+                "total_entities": n_total_entities,
+                "total_states": n_total_states,
+                "has_camera_directives": has_camera,
+                "has_audio_states": has_audio,
+                "production_style": style_info,
             }
         except Exception:
             pass
@@ -202,15 +240,22 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
         except Exception:
             pass
 
-    # Count generated clips
+    # Count generated clips (exclude small placeholders < 1MB)
     clips = list(session_output_dir.rglob("*.mp4"))
+    real_clips = [c for c in clips if c.stat().st_size > 1_000_000]  # > 1MB
     if clips:
-        summary["clips"] = len(clips)
+        summary["clips"] = {"total": len(clips), "valid": len(real_clips)}
 
     # Count generated images
     images = list(session_output_dir.rglob("*.png")) + list(session_output_dir.rglob("*.jpg"))
     if images:
         summary["images"] = len(images)
+
+    # Check for final output
+    output_dir = session_output_dir / (project_name or "") / "output"
+    final_videos = list(output_dir.glob("*.mp4")) if output_dir.is_dir() else []
+    if final_videos:
+        summary["final_video"] = str(final_videos[0])
 
     # Last user message from chat log
     chat_path = _get_session_dir(session_id) / "chat.jsonl"
@@ -229,6 +274,63 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
             summary["last_user_message"] = last_user_msg[:200]
 
     return summary
+
+
+def _build_resume_context(summary: dict[str, Any]) -> str:
+    """Build an actionable resume context string from a session summary.
+
+    This tells the director agent exactly what exists on disk and which step to resume from,
+    so it doesn't need to call subagents just to scan the project state.
+    """
+    if not summary.get("story_graph") and not summary.get("project_name"):
+        return ""
+
+    lines = ["[Session resumed. Project state scanned from disk — no need to call subagents to check files.]"]
+
+    project_name = summary.get("project_name", "unknown")
+    lines.append(f"Project name: {project_name}")
+    lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, eval_{project_name}")
+
+    sg = summary.get("story_graph")
+    if sg:
+        lines.append(f"Story Graph: {sg['path']}")
+        lines.append(f"  - {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events")
+        lines.append(f"  - camera_directives: {'present' if sg['has_camera_directives'] else 'EMPTY'}")
+        lines.append(f"  - audio_states: {'present' if sg['has_audio_states'] else 'EMPTY'}")
+        if sg.get("production_style"):
+            ps = sg["production_style"]
+            lines.append(f"  - style: {ps.get('style_prefix', '')[:80]}, aspect_ratio: {ps.get('aspect_ratio', '16:9')}")
+        lines.append(f"  - Entity reference images: {sg['entity_reference_images']}/{sg['total_entities']}")
+        lines.append(f"  - State reference images: {sg['state_reference_images']}/{sg['total_states']}")
+
+    if summary.get("shot_plan"):
+        lines.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots (path: {summary['shot_plan']['path']})")
+
+    clips = summary.get("clips")
+    if clips:
+        lines.append(f"Video Clips: {clips['total']} files, {clips['valid']} valid (>1MB)")
+
+    if summary.get("final_video"):
+        lines.append(f"Final video: {summary['final_video']}")
+
+    # Determine the resume step
+    if not sg:
+        resume_step = "Step 1.5 (build story structure)"
+    elif not sg["has_camera_directives"]:
+        resume_step = "Step 1.6 (design camera directives & audio — story structure is done)"
+    elif sg["entity_reference_images"] < sg["total_entities"] or sg["state_reference_images"] < sg["total_states"]:
+        resume_step = "Step 1.8 (generate reference images — story graph is complete)"
+    elif not clips or clips["valid"] == 0:
+        resume_step = "Step 2 (generate video clips — reference images are ready)"
+    elif summary.get("final_video"):
+        resume_step = "Complete — final video exists. Ask user what they want to do next."
+    else:
+        resume_step = "Step 2 (continue video generation / assembly)"
+
+    lines.append(f"\nResume from: {resume_step}")
+    lines.append("Do NOT re-ask the user for topic/style/duration — these are already confirmed in chat history.")
+
+    return "\n".join(lines) + "\n\n"
 
 
 def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
@@ -378,31 +480,27 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     if resumed:
         summary = _build_session_summary(session_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
-        # Build a context hint for the agent so it knows the project state
-        hints = []
-        if summary.get("story_graph"):
-            sg = summary["story_graph"]
-            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {sg['reference_images']} ref images (path: {sg['path']})")
-        if summary.get("shot_plan"):
-            hints.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
-        if summary.get("clips"):
-            hints.append(f"Video Clips: {summary['clips']} generated")
-        if summary.get("images"):
-            hints.append(f"Images: {summary['images']} generated")
-        if hints:
-            resume_context = "[Session resumed. Current project state:\n" + "\n".join(f"- {h}" for h in hints) + "\n]\n\n"
+        # Build a rich context hint so the agent knows exactly where to resume
+        resume_context = _build_resume_context(summary)
 
     await websocket.send_json({"type": "status", "status": "ready"})
 
     pending_questions: dict[int, QuestionRequest] = {}
     incoming_queue: asyncio.Queue = asyncio.Queue()
 
-    # Re-inject the first message into the queue (only if it has content, skip if resume-only)
-    if not resumed or first_raw.get("content"):
-        if resumed and resume_context and first_raw.get("content"):
-            first_raw = dict(first_raw)
-            first_raw["content"] = resume_context + first_raw["content"]
-            resume_context = ""  # already injected, don't inject again
+    # Re-inject the first message into the queue
+    if resumed and resume_context:
+        # On resume, always send resume_context (+ user content if any) as the first message
+        first_raw = dict(first_raw)
+        user_content = first_raw.get("content", "")
+        if user_content:
+            first_raw["content"] = resume_context + user_content
+        else:
+            first_raw["content"] = resume_context + "继续"
+            first_raw["type"] = "message"
+        resume_context = ""  # already injected
+        await incoming_queue.put(first_raw)
+    elif not resumed and first_raw.get("content"):
         await incoming_queue.put(first_raw)
 
     async def ws_reader():

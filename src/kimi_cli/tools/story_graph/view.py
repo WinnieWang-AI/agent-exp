@@ -61,6 +61,14 @@ def _topo_sort_events(data: dict[str, Any]) -> list[str]:
     return result
 
 
+def _summarize_visual(visual: dict[str, Any] | Any) -> str:
+    """Flatten a visual/appearance dict into a short description string."""
+    if not visual or not isinstance(visual, dict):
+        return ""
+    parts = [f"{v}" for v in visual.values() if v]
+    return "，".join(parts)
+
+
 def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState]]:
     """Build entity_id -> list of child state nodes."""
     states: dict[str, list[StoryGraphState]] = defaultdict(list)
@@ -69,18 +77,24 @@ def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState
             id=a["id"],
             phase=a.get("phase", ""),
             reference_image=a.get("reference_image") or "",
+            description=_summarize_visual(a.get("visual")),
+            generation_prompt=a.get("generation_prompt") or "",
         ))
     for ls in data.get("location_states", []):
         states[ls.get("entity", "")].append(StoryGraphState(
             id=ls["id"],
             phase=ls.get("phase", ""),
             reference_image=ls.get("reference_image") or "",
+            description=_summarize_visual(ls.get("appearance")),
+            generation_prompt=ls.get("generation_prompt") or "",
         ))
     for ps in data.get("prop_states", []):
         states[ps.get("entity", "")].append(StoryGraphState(
             id=ps["id"],
             phase=ps.get("phase", ""),
             reference_image=ps.get("reference_image") or "",
+            description=_summarize_visual(ps.get("appearance")),
+            generation_prompt=ps.get("generation_prompt") or "",
         ))
     return dict(states)
 
@@ -223,6 +237,8 @@ def build_story_graph_view(
             name=c.get("name", c["id"]),
             kind="character",
             reference_image=c.get("reference_image") or "",
+            description=c.get("fixed_traits", ""),
+            generation_prompt=c.get("generation_prompt") or "",
             states=entity_states.get(c["id"], []),
         ))
     for loc in data.get("locations", []):
@@ -231,6 +247,8 @@ def build_story_graph_view(
             name=loc.get("name", loc["id"]),
             kind="location",
             reference_image=loc.get("reference_image") or "",
+            description=loc.get("fixed_traits", ""),
+            generation_prompt=loc.get("generation_prompt") or "",
             states=entity_states.get(loc["id"], []),
         ))
     for p in data.get("props", []):
@@ -239,6 +257,8 @@ def build_story_graph_view(
             name=p.get("name", p["id"]),
             kind="prop",
             reference_image=p.get("reference_image") or "",
+            description=p.get("fixed_traits", ""),
+            generation_prompt=p.get("generation_prompt") or "",
             states=entity_states.get(p["id"], []),
         ))
 

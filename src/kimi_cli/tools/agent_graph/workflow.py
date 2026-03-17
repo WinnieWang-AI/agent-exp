@@ -240,15 +240,33 @@ def _parse_workflow(data: dict[str, Any], agent_id: str, warnings: list[str]) ->
 
 
 async def _call_llm(chat_provider: ChatProvider, system_md: str, spec: ResolvedAgentSpec) -> str:
-    """Call the LLM to extract workflow, return raw text response."""
+    """Call the LLM to extract workflow, return raw text response.
+
+    Retries on rate-limit (429) errors with exponential backoff.
+    """
+    import asyncio
+
     user_msg = _build_user_message(spec, system_md)
     history = [Message(role="user", content=user_msg)]
-    streamed = await chat_provider.generate(_EXTRACTION_SYSTEM_PROMPT, tools=[], history=history)
-    parts: list[str] = []
-    async for part in streamed:
-        if isinstance(part, TextPart):
-            parts.append(part.text)
-    return "".join(parts)
+
+    max_api_retries = 3
+    for attempt in range(max_api_retries + 1):
+        try:
+            streamed = await chat_provider.generate(
+                _EXTRACTION_SYSTEM_PROMPT, tools=[], history=history
+            )
+            parts: list[str] = []
+            async for part in streamed:
+                if isinstance(part, TextPart):
+                    parts.append(part.text)
+            return "".join(parts)
+        except Exception as e:
+            err_str = str(e)
+            if ("429" in err_str or "RateLimit" in err_str or "rate" in err_str.lower()) and attempt < max_api_retries:
+                wait = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                await asyncio.sleep(wait)
+                continue
+            raise
 
 
 async def extract_workflow(

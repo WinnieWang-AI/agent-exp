@@ -310,6 +310,8 @@ def _load_system_prompt(
 ) -> str:
     logger.info("Loading system prompt: {path}", path=path)
     system_prompt = path.read_text(encoding="utf-8").strip()
+    # Expose the agent directory so system prompts can reference sibling files
+    args.setdefault("AGENT_DIR", str(path.parent))
     logger.debug(
         "Substituting system prompt with builtin args: {builtin_args}, spec args: {spec_args}",
         builtin_args=builtin_args,

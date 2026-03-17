@@ -18,6 +18,7 @@ import type React from "react";
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -161,6 +162,16 @@ function VirtualizedMessageListComponent(
 ) {
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const scrollerRef = useRef<HTMLElement | null>(null);
+  // Track whether user has manually scrolled away from the bottom.
+  // While true, followOutput will NOT auto-scroll even if close to the bottom.
+  const userScrolledAwayRef = useRef(false);
+
+  // Mark that the user is actively scrolling (wheel or touch).
+  // Any manual scroll interaction disables auto-follow until the user
+  // returns to the bottom (handled by atBottomStateChange).
+  const handleUserScroll = useCallback(() => {
+    userScrolledAwayRef.current = true;
+  }, []);
 
   // Filtered messages list (excluding message-id) aligned with listItems indices
   const filteredMessages = useMemo(
@@ -176,6 +187,10 @@ function VirtualizedMessageListComponent(
 
   const handleAtBottomChange = useCallback(
     (atBottom: boolean) => {
+      if (atBottom) {
+        // User scrolled back to bottom — re-enable auto-follow
+        userScrolledAwayRef.current = false;
+      }
       onAtBottomChange?.(atBottom);
     },
     [onAtBottomChange],
@@ -183,23 +198,51 @@ function VirtualizedMessageListComponent(
 
   const handleScrollerRef = useCallback(
     (ref: HTMLElement | Window | null) => {
+      // Remove listener from previous scroller element
+      const prev = scrollerRef.current;
+      if (prev) {
+        prev.removeEventListener("wheel", handleUserScroll);
+        prev.removeEventListener("touchmove", handleUserScroll);
+      }
       scrollerRef.current = ref instanceof HTMLElement ? ref : null;
+      // Attach listener to detect manual scroll-up
+      if (scrollerRef.current) {
+        scrollerRef.current.addEventListener("wheel", handleUserScroll, {
+          passive: true,
+        });
+        scrollerRef.current.addEventListener("touchmove", handleUserScroll, {
+          passive: true,
+        });
+      }
     },
-    [],
+    [handleUserScroll],
   );
 
-  // Use a generous threshold to tolerate height estimation mismatches
-  // when blocks are expanded (actual heights >> defaultItemHeight).
-  // This is decoupled from atBottomStateChange which uses Virtuoso's
-  // default tight threshold for the scroll-to-bottom button.
+  // Cleanup scroll listeners on unmount
+  useEffect(() => {
+    return () => {
+      const el = scrollerRef.current;
+      if (el) {
+        el.removeEventListener("wheel", handleUserScroll);
+        el.removeEventListener("touchmove", handleUserScroll);
+      }
+    };
+  }, [handleUserScroll]);
+
+  // Auto-follow new output only when the user hasn't scrolled away.
+  // Once the user manually scrolls (wheel / touch), we stop following
+  // until they return to the bottom (atBottomStateChange resets the flag).
   const handleFollowOutput = useCallback(
     (isAtBottom: boolean) => {
       if (isAtBottom) return "auto" as const;
+      // User explicitly scrolled away — don't pull them back
+      if (userScrolledAwayRef.current) return false;
+      // Small tolerance for layout shifts (e.g. expanding tool blocks)
       const scroller = scrollerRef.current;
       if (scroller) {
         const gap =
           scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-        if (gap <= 1500) return "auto" as const;
+        if (gap <= 300) return "auto" as const;
       }
       return false;
     },

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import override
 
@@ -12,6 +13,15 @@ from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_directory
+
+# Per-file locks to prevent concurrent read-modify-write on the same file.
+_file_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_file_lock(path: str) -> asyncio.Lock:
+    if path not in _file_locks:
+        _file_locks[path] = asyncio.Lock()
+    return _file_locks[path]
 
 
 class Edit(BaseModel):
@@ -92,52 +102,57 @@ class StrReplaceFile(CallableTool2[Params]):
                     brief="Invalid path",
                 )
 
-            # Read the file content
-            content = await p.read_text(errors="replace")
+            # Serialize concurrent edits to the same file to prevent
+            # read-modify-write race conditions (e.g. parallel StrReplaceFile
+            # calls updating story-graph.json simultaneously).
+            lock = _get_file_lock(str(p))
+            async with lock:
+                # Read the file content
+                content = await p.read_text(errors="replace")
 
-            original_content = content
-            edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
+                original_content = content
+                edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
 
-            # Apply all edits
-            for edit in edits:
-                content = self._apply_edit(content, edit)
+                # Apply all edits
+                for edit in edits:
+                    content = self._apply_edit(content, edit)
 
-            # Check if any changes were made
-            if content == original_content:
-                return ToolError(
-                    message="No replacements were made. The old string was not found in the file.",
-                    brief="No replacements made",
+                # Check if any changes were made
+                if content == original_content:
+                    return ToolError(
+                        message="No replacements were made. The old string was not found in the file.",
+                        brief="No replacements made",
+                    )
+
+                diff_blocks: list[DisplayBlock] = list(
+                    build_diff_blocks(str(p), original_content, content)
                 )
 
-            diff_blocks: list[DisplayBlock] = list(
-                build_diff_blocks(str(p), original_content, content)
-            )
+                action = (
+                    FileActions.EDIT
+                    if is_within_directory(p, self._work_dir)
+                    else FileActions.EDIT_OUTSIDE
+                )
 
-            action = (
-                FileActions.EDIT
-                if is_within_directory(p, self._work_dir)
-                else FileActions.EDIT_OUTSIDE
-            )
+                # Request approval
+                if not await self._approval.request(
+                    self.name,
+                    action,
+                    f"Edit file `{p}`",
+                    display=diff_blocks,
+                ):
+                    return ToolRejectedError()
 
-            # Request approval
-            if not await self._approval.request(
-                self.name,
-                action,
-                f"Edit file `{p}`",
-                display=diff_blocks,
-            ):
-                return ToolRejectedError()
+                # Write the modified content back to the file
+                await p.write_text(content, errors="replace")
 
-            # Write the modified content back to the file
-            await p.write_text(content, errors="replace")
-
-            # Count changes for success message
-            total_replacements = 0
-            for edit in edits:
-                if edit.replace_all:
-                    total_replacements += original_content.count(edit.old)
-                else:
-                    total_replacements += 1 if edit.old in original_content else 0
+                # Count changes for success message
+                total_replacements = 0
+                for edit in edits:
+                    if edit.replace_all:
+                        total_replacements += original_content.count(edit.old)
+                    else:
+                        total_replacements += 1 if edit.old in original_content else 0
 
             return ToolReturnValue(
                 is_error=False,

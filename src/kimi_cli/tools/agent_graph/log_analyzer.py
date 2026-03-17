@@ -151,11 +151,20 @@ def segment_by_steps(
 ) -> dict[str, list[list[dict[str, Any]]]]:
     """Segment Task calls into workflow steps by matching subagent_name.
 
+    Uses workflow step ordering to disambiguate when multiple steps call
+    the same agent.  A cursor tracks which step we're "at" in the workflow;
+    when a call arrives for an agent that maps to several steps, we prefer
+    the step closest to (and >= ) the cursor position.
+
     Returns: {step_id: [[calls for iteration 1], [calls for iteration 2], ...]}
     """
     task_calls = _extract_task_calls(log)
 
-    # Build step lookup: subagent_name -> list of step_ids
+    # Ordered list of task-step IDs (preserves workflow declaration order)
+    task_step_order = [s.id for s in workflow.steps if s.kind == "task" and s.agent_call]
+    step_index = {sid: idx for idx, sid in enumerate(task_step_order)}
+
+    # Build step lookup: subagent_name -> list of step_ids (in workflow order)
     agent_to_steps: dict[str, list[str]] = {}
     for step in workflow.steps:
         if step.agent_call:
@@ -163,30 +172,34 @@ def segment_by_steps(
 
     result: dict[str, list[list[dict[str, Any]]]] = {}
     last_step_id: str = ""
+    cursor: int = 0  # index into task_step_order
 
     for call in task_calls:
         subagent = call["subagent_name"]
         step_ids = agent_to_steps.get(subagent, [])
         if not step_ids:
-            # Unmatched call - track under special key
             result.setdefault("_unmatched", [[]])
             result["_unmatched"][-1].append(call)
             continue
 
-        # Pick the most likely step (for now, use the first match)
-        # TODO: use ordering heuristics to disambiguate when multiple steps call the same agent
+        # Pick the best step: prefer the first candidate at or after the cursor.
+        # If none found after cursor, fall back to the first candidate (loop back).
         step_id = step_ids[0]
+        for sid in step_ids:
+            if step_index.get(sid, 0) >= cursor:
+                step_id = sid
+                break
 
         if step_id != last_step_id:
-            # New step or new iteration
             if step_id not in result:
                 result[step_id] = [[]]
-            elif last_step_id != "" and step_id == last_step_id:
-                pass  # continue current iteration
             else:
-                # Check if we're returning to this step (new iteration)
+                # Returning to this step -> new iteration
                 result[step_id].append([])
             last_step_id = step_id
+            # Advance cursor to this step's position
+            if step_id in step_index:
+                cursor = step_index[step_id]
 
         result[step_id][-1].append(call)
 

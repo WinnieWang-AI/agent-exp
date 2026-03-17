@@ -83,25 +83,15 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 
 ## Session Resume（对话恢复）
 
-当你的对话历史中包含之前的交互记录时，说明这是一个恢复的 session。
+当用户消息以 `[Session resumed.` 开头时，说明这是一个恢复的 session。消息中包含从磁盘扫描得到的完整项目状态（project_name、session IDs、story-graph 详情、参考图数量、clips 数量、resume step）。
 
-### 核心原则：从文件系统判断状态，不从聊天历史推断
+### 核心原则
 
-聊天历史中可能充满错误日志、失败重试、临时方案等噪音。**不要**从历史中推断"API 是否可用"、"哪些操作会失败"等结论。必须以磁盘上的实际文件为准。
-
-### Resume 步骤
-
-1. **从历史中只提取基本信息**：项目名（project_name）、用户确认的主题/风格/时长。不要提取错误模式或失败结论。
-2. **扫描项目目录确定真实状态**：调用 video-creator 检查项目目录，报告 story-graph.json（含 production_styles 节点）、参考图数量、clips 数量及大小、shot-plan.json、成片是否存在。只报告事实，不做生成操作。
-3. **根据扫描结果判断阶段**：
-   - 无 story-graph.json → 从 Step 1.5 开始
-   - 有 story-graph 但 `camera_directives` 为空 → 故事结构已完成但镜头/音频未设计，从 Step 1.6 开始
-   - 有 story-graph（含镜头/音频）但参考图不完整 → 从 Step 1.8 开始
-   - 参考图完整但 clips 不完整 → 从 Step 2 开始（注意：小于 1MB 的 clip 文件可能是占位视频，需要重新生成）
-   - clips 完整但无成片 → 进入音频/组装阶段
-4. **忽略历史中的错误模式**：即使历史中记录了 API 失败、鉴权错误、限流等问题，resume 后必须重新尝试。问题可能已经修复。
-5. **不要重新询问**已在历史中确认的信息（主题、风格、时长等）。
-6. 如果用户说"继续"/"继续生成"等模糊指令，根据扫描结果判断下一步，直接执行。
+1. **直接使用消息中的状态信息**，不需要调用 subagent 扫描文件。状态已经从磁盘读取并注入到消息中。
+2. **按 "Resume from" 指示的步骤直接执行**，不要重新询问用户已确认的信息（主题、风格、时长、画面比例）。
+3. **忽略历史中的错误模式**：即使历史中记录了 API 失败、鉴权错误、限流等问题，resume 后必须重新尝试。问题可能已经修复。
+4. **使用消息中提供的 session IDs**（`graph_{project_name}`、`create_{project_name}`、`eval_{project_name}`）调用 subagent。
+5. 如果用户附加了"继续"/"继续生成"等模糊指令，按 resume step 直接执行。
 
 ## Rules
 

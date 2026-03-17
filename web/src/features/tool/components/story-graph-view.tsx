@@ -36,6 +36,8 @@ type StoryGraphState = {
   id: string;
   phase?: string;
   reference_image?: string;
+  description?: string;
+  generation_prompt?: string;
 };
 
 type StoryGraphEntity = {
@@ -43,6 +45,8 @@ type StoryGraphEntity = {
   name: string;
   kind: "character" | "location" | "prop";
   reference_image?: string;
+  description?: string;
+  generation_prompt?: string;
   states?: StoryGraphState[];
 };
 
@@ -144,9 +148,10 @@ const StateThumb = ({ state }: { state: StoryGraphState }) => {
   const fileUrl = useFileUrl();
   const [imgError, setImgError] = useState(false);
   const imgSrc = state.reference_image ? fileUrl(state.reference_image) : "";
+  const tooltip = [state.phase, state.description].filter(Boolean).join(": ");
 
   return (
-    <div className="flex flex-col items-center gap-0.5 shrink-0">
+    <div className="flex flex-col items-center gap-0.5 shrink-0" title={tooltip}>
       <div className="relative size-9 rounded border border-border/30 bg-muted/20 overflow-hidden flex items-center justify-center">
         {imgSrc && !imgError ? (
           <img
@@ -170,16 +175,26 @@ const StateThumb = ({ state }: { state: StoryGraphState }) => {
 
 const EntityCard = ({ entity }: { entity: StoryGraphEntity }) => {
   const [imgError, setImgError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const fileUrl = useFileUrl();
   const imgSrc = entity.reference_image
     ? fileUrl(entity.reference_image)
     : "";
   const states = entity.states ?? [];
+  const hasDetail = Boolean(entity.description) || Boolean(entity.generation_prompt) || states.some((s) => s.description || s.generation_prompt);
 
   return (
     <div className="flex flex-col items-center gap-1 shrink-0">
       {/* Entity image */}
-      <div className="relative size-12 rounded-md border border-border/40 bg-muted/30 overflow-hidden flex items-center justify-center">
+      <button
+        type="button"
+        className={cn(
+          "relative size-12 rounded-md border border-border/40 bg-muted/30 overflow-hidden flex items-center justify-center",
+          hasDetail && "cursor-pointer hover:ring-1 hover:ring-primary/40 transition-all",
+        )}
+        onClick={() => hasDetail && setExpanded(!expanded)}
+        disabled={!hasDetail}
+      >
         {imgSrc && !imgError ? (
           <img
             src={imgSrc}
@@ -190,7 +205,7 @@ const EntityCard = ({ entity }: { entity: StoryGraphEntity }) => {
         ) : (
           <KindIcon kind={entity.kind} />
         )}
-      </div>
+      </button>
       <span className="text-[10px] text-muted-foreground text-center leading-tight line-clamp-2">
         {entity.name}
       </span>
@@ -199,6 +214,44 @@ const EntityCard = ({ entity }: { entity: StoryGraphEntity }) => {
         <div className="flex gap-1 mt-0.5">
           {states.map((s) => (
             <StateThumb key={s.id} state={s} />
+          ))}
+        </div>
+      )}
+      {/* Expanded detail panel */}
+      {expanded && hasDetail && (
+        <div className="w-full min-w-[200px] max-w-[320px] mt-1 rounded-md border border-border/40 bg-card/80 p-2 text-left space-y-2">
+          {entity.description && (
+            <div className="text-[10px] text-muted-foreground leading-snug">
+              {entity.description}
+            </div>
+          )}
+          {entity.generation_prompt && (
+            <div className="space-y-0.5">
+              <div className="text-[9px] font-medium text-primary/70">Prompt</div>
+              <div className="rounded bg-muted/40 px-1.5 py-1 text-[9px] text-foreground/80 leading-snug whitespace-pre-wrap break-words font-mono">
+                {entity.generation_prompt}
+              </div>
+            </div>
+          )}
+          {states.filter((s) => s.description || s.generation_prompt).map((s) => (
+            <div key={s.id} className="space-y-0.5 border-t border-border/20 pt-1.5">
+              <div className="text-[9px] font-medium text-foreground/70">
+                {s.phase || s.id}
+              </div>
+              {s.description && (
+                <div className="text-[9px] text-muted-foreground/80 leading-snug">
+                  {s.description}
+                </div>
+              )}
+              {s.generation_prompt && (
+                <div className="space-y-0.5">
+                  <div className="text-[9px] font-medium text-primary/70">Prompt</div>
+                  <div className="rounded bg-muted/40 px-1.5 py-1 text-[9px] text-foreground/80 leading-snug whitespace-pre-wrap break-words font-mono">
+                    {s.generation_prompt}
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}

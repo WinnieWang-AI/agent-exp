@@ -9,6 +9,7 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.tools.video.providers import get_default_image_provider
 from kimi_cli.tools.video.providers.image_base import ImageGenerationRequest
+from kimi_cli.utils.logging import logger
 
 
 class Params(BaseModel):
@@ -45,9 +46,12 @@ class GenerateImage(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Image generation rejected by user.", brief="Rejected")
 
+        tos_config = self._config.tos if self._config.tos.is_configured else None
+        available = list(self._config.image_providers.keys())
+
         try:
             provider_name, provider = get_default_image_provider(
-                self._config.image_providers, params.provider
+                self._config.image_providers, params.provider, tos_config
             )
         except ValueError as e:
             return builder.error(message=str(e), brief="Provider error")
@@ -60,12 +64,46 @@ class GenerateImage(CallableTool2[Params]):
             reference_image_paths=params.reference_image_paths,
         )
 
+        # Try primary provider, then fallback to others on failure
+        result = None
+        primary_error = None
         try:
             result = await provider.generate_image(request)
         except Exception as e:
+            primary_error = e
+            logger.warning(
+                "Image generation failed with {provider}, trying fallback: {error}",
+                provider=provider_name,
+                error=str(e),
+            )
+
+        # Fallback: try other configured providers
+        if result is None:
+            for fallback_name, fallback_config in self._config.image_providers.items():
+                if fallback_name == provider_name:
+                    continue
+                try:
+                    _, fallback_provider = get_default_image_provider(
+                        self._config.image_providers, fallback_name, tos_config
+                    )
+                    result = await fallback_provider.generate_image(request)
+                    builder.write(f"Primary provider '{provider_name}' failed: {primary_error}\n")
+                    builder.write(f"Fallback to '{fallback_name}' succeeded.\n")
+                    provider_name = fallback_name
+                    break
+                except Exception as fallback_e:
+                    logger.warning(
+                        "Fallback provider {provider} also failed: {error}",
+                        provider=fallback_name,
+                        error=str(fallback_e),
+                    )
+
+        if result is None:
             return builder.error(
-                message=f"Image generation failed: {e}",
-                brief="Generation failed",
+                message=f"Image generation failed with all providers.\n"
+                        f"  primary ({provider_name}): {primary_error}\n"
+                        f"  available_providers: {available}",
+                brief="All providers failed",
             )
 
         Path(params.output_path).parent.mkdir(parents=True, exist_ok=True)

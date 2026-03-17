@@ -1,0 +1,248 @@
+# Prompt Guide: Video Generation (Phase 3)
+
+本文件提供首帧图和视频 prompt 的写作规范和示例。Phase 3 开始前请阅读。
+
+所有 prompt **必须用英文**写。你需要将 `prompt_materials` 中的结构化数据编织成**一段流畅的自然语言描述**，而不是机械地罗列字段。
+
+---
+
+## 首帧图 Prompt（Technique B）
+
+目标：生成一张**静态画面**作为视频起点。有完整构图、场景、角色站位，但**没有动作过程**——描述的是动作发生前一刻的"定格"。
+
+### 与参考图的区别
+
+| | 参考图（Phase 2） | 首帧图（Technique B） |
+|--|--|--|
+| 背景 | 纯白/纯色 | 有完整场景环境 |
+| 构图 | 居中展示 | 有镜头语言（景别、角度） |
+| 角色 | 中立姿势 | 有具体站位和朝向 |
+| 用途 | 作为 reference_images 维持一致性 | 作为 reference_image_path 定义视频第一帧 |
+
+### 示例：特写镜头首帧
+
+<example>
+shot plan 数据：
+```json
+{
+  "shot_type": "close_up",
+  "angle": "eye_level",
+  "movement": "push_in",
+  "intent": "小红帽停步，感觉有什么在看她",
+  "focus_on": ["appear_red_neat", "appear_wolf_natural"],
+  "prompt_materials": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "event_description": "大灰狼从树后现身，假装友善地搭话",
+    "appearances": [
+      {"entity": "char_red", "visual": {"costume": "红色丝绒斗篷，白色连衣裙", "hair": "棕色卷发散落在斗篷里", "physical": "健康，红润"}},
+      {"entity": "char_wolf", "visual": {"costume": "灰褐色毛皮，蓬松的尾巴", "hair": "尖耳竖立", "physical": "体型高大，尖齿"}}
+    ],
+    "minds": [
+      {"entity": "char_red", "emotion": "好奇，微微不安", "behavior": "停下脚步，侧头倾听"},
+      {"entity": "char_wolf", "emotion": "伪装友善，暗藏贪婪", "behavior": "缓缓走出，弓着身体显得矮小"}
+    ],
+    "location_state": {"appearance": {"lighting": "丁达尔光束", "weather": "晴，微风", "condition": "野花，蝴蝶", "atmosphere": "童话美好"}},
+    "interactions": [{"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽，语气温柔"}]
+  }
+}
+```
+
+首帧图 prompt（静态画面，描述动作发生前一刻的定格）：
+"hand-drawn illustration, warm color palette, children's storybook style. Close-up shot at eye level. A little girl in a red velvet cloak and white dress stands on a forest path, head slightly tilted, eyes wide with curiosity and a hint of unease, curly brown hair framing her round face. Behind a moss-covered oak tree, a large gray-brown wolf peers out, ears pointed forward, crouching low to appear smaller. Warm god rays filter through the canopy, wildflowers and butterflies dotting the sunlit path. The girl has just noticed something watching her — a frozen moment of first contact."
+
+参数：
+- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png", "assets/images/appear_wolf_natural.png"]
+  （从 techniques.B_first_frame.generate_image_spec.reference_image_paths 获取）
+- aspect_ratio: "16:9"
+- negative_prompt: "photorealistic, dark, horror, oversaturated"
+</example>
+
+### 示例：全景首帧
+
+<example>
+shot plan 数据：
+```json
+{
+  "shot_type": "wide",
+  "angle": "high_angle",
+  "movement": "crane_down",
+  "intent": "小红帽独自走在林间小路上，渺小而天真",
+  "focus_on": ["appear_red_neat"],
+  "prompt_materials": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "event_description": "小红帽蹦蹦跳跳穿过森林小路，采野花",
+    "appearances": [
+      {"entity": "char_red", "visual": {"costume": "红色丝绒斗篷，白色连衣裙", "hair": "棕色卷发散落在斗篷里", "physical": "健康，红润"}}
+    ],
+    "minds": [{"entity": "char_red", "emotion": "开心，天真", "behavior": "蹦蹦跳跳，东张西望"}],
+    "location_state": {"appearance": {"lighting": "丁达尔光束", "weather": "晴，微风", "condition": "野花，蝴蝶", "atmosphere": "童话美好"}}
+  }
+}
+```
+
+首帧图 prompt：
+"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from a high angle looking down. A tiny figure in a bright red cloak walks along a narrow winding dirt path through a vast dense forest, towering pine and oak trees stretching in all directions, golden god rays slanting through the canopy, patches of colorful wildflowers along the path edges, butterflies in the warm air. The girl appears small against the grand forest, conveying innocence and vulnerability."
+
+参数：
+- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png"]
+- aspect_ratio: "16:9"
+- negative_prompt: "photorealistic, dark, horror, oversaturated"
+</example>
+
+---
+
+## 视频 Prompt
+
+目标：描述一段**动态镜头**——角色在做什么、怎么互动、镜头怎么运动。视频 prompt 和首帧图的关键区别是**有动作过程和时间推进**。
+
+### Prompt 结构
+
+将 `prompt_materials` 编织成自然语言，覆盖以下要素（不需要按固定顺序，但都要包含）：
+
+1. **风格**：`style_prefix` 放在开头
+2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）
+3. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
+4. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
+5. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
+6. **互动方式**：`interactions[].style` — 角色之间怎么互动
+7. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
+8. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
+9. **参考图标记**：`<<<image_1>>>` ... `<<<image_N>>>`，按 `techniques.A_reference_images.images` 顺序
+10. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
+
+### 示例：中景 + 双人互动
+
+<example>
+shot plan 数据：
+```json
+{
+  "shot_type": "medium",
+  "angle": "eye_level",
+  "movement": "static",
+  "intent": "小红帽停步，感觉有什么在看她",
+  "focus_on": ["appear_red_neat", "appear_wolf_natural"],
+  "prompt_materials": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "event_description": "大灰狼从树后现身，假装友善地搭话，套出外婆住处",
+    "appearances": [
+      {"entity": "char_red", "visual": {"costume": "红色丝绒斗篷，白色连衣裙", "hair": "棕色卷发散落在斗篷里"}},
+      {"entity": "char_wolf", "visual": {"costume": "灰褐色毛皮，蓬松的尾巴", "hair": "尖耳竖立", "physical": "体型高大，尖齿"}}
+    ],
+    "minds": [
+      {"entity": "char_red", "emotion": "好奇，微微不安", "behavior": "停下脚步，侧头倾听"},
+      {"entity": "char_wolf", "emotion": "伪装友善，暗藏贪婪", "behavior": "缓缓走出，弓着身体显得矮小"}
+    ],
+    "location_state": {"appearance": {"lighting": "丁达尔光束", "condition": "野花", "atmosphere": "童话美好"}},
+    "interactions": [{"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽，语气温柔"}],
+    "relationships": [{"pair": ["char_red", "char_wolf"], "current_kind": "陌生人"}],
+    "prop_states": [{"entity": "prop_basket", "appearance": {"visual": "藤篮盖着红白格子布", "condition": "完好"}}]
+  },
+  "techniques": {
+    "A_reference_images": {"enabled": true, "images": [
+      {"id": "appear_red_neat", "path": "assets/images/appear_red_neat.png"},
+      {"id": "appear_wolf_natural", "path": "assets/images/appear_wolf_natural.png"}
+    ]}
+  }
+}
+```
+
+视频 prompt：
+"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. In a sunlit forest clearing with god rays and scattered wildflowers, a little girl in a red velvet cloak stops on the path, tilting her head with wide curious eyes and a flicker of unease. From behind a large oak tree, a tall gray-brown wolf slowly emerges, crouching low and hunching his body to appear smaller and less threatening. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness. <<<image_1>>> <<<image_2>>>"
+
+参数：
+- negative_prompt: "photorealistic, dark, horror, oversaturated"
+- mode: "image_to_video"（因为有 Technique B/C 提供的首帧/尾帧）
+- reference_image_path: "assets/frames/cam_wolf_encounter_shot_0_first.png"（来自 Technique B/C）
+- reference_images: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
+- aspect_ratio: "16:9"
+- duration_seconds: 5
+</example>
+
+### 示例：全景 + 单人 + 镜头运动
+
+<example>
+shot plan 数据：
+```json
+{
+  "shot_type": "wide",
+  "angle": "high_angle",
+  "movement": "crane_down",
+  "intent": "小红帽独自走在林间小路上，渺小而天真",
+  "focus_on": ["appear_red_neat"],
+  "prompt_materials": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "event_description": "小红帽蹦蹦跳跳穿过森林小路，采野花",
+    "minds": [{"entity": "char_red", "emotion": "开心，天真", "behavior": "蹦蹦跳跳，东张西望"}],
+    "location_state": {"appearance": {"lighting": "丁达尔光束", "weather": "晴，微风", "condition": "野花，蝴蝶", "atmosphere": "童话美好"}}
+  },
+  "techniques": {
+    "A_reference_images": {"enabled": true, "images": [
+      {"id": "appear_red_neat", "path": "assets/images/appear_red_neat.png"}
+    ]}
+  }
+}
+```
+
+视频 prompt：
+"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from high angle, camera slowly craning down. A vast dense forest with towering pines, golden god rays streaming through the canopy, gentle breeze stirring the leaves. A tiny red-cloaked figure skips merrily along a winding dirt path, hopping and looking around with childlike wonder, pausing to pick a wildflower, butterflies dancing in the warm sunlit air. The girl appears small and innocent against the grand ancient woodland. <<<image_1>>>"
+
+参数：
+- negative_prompt: "photorealistic, dark, horror, oversaturated"
+- mode: "text_to_video"（无 Technique B/C）
+- reference_images: ["assets/images/appear_red_neat.png"]
+- aspect_ratio: "16:9"
+- duration_seconds: 5
+</example>
+
+### 示例：特写 + 情绪表达
+
+<example>
+shot plan 数据：
+```json
+{
+  "shot_type": "close_up",
+  "angle": "low_angle",
+  "movement": "push_in",
+  "intent": "外婆发现来的不是小红帽，恐惧涌上脸庞",
+  "focus_on": ["appear_grandma_home"],
+  "prompt_materials": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "event_description": "外婆听到敲门声，开门后发现来者是大灰狼",
+    "appearances": [
+      {"entity": "char_grandma", "visual": {"costume": "白色睡衣，花边睡帽", "hair": "灰白发丝从帽下露出", "physical": "体弱，脸色苍白"}}
+    ],
+    "minds": [{"entity": "char_grandma", "emotion": "震惊转为恐惧", "behavior": "瞪大双眼，嘴微张，身体往后缩"}],
+    "location_state": {"appearance": {"lighting": "昏暗壁炉光", "condition": "温馨小屋内部", "atmosphere": "从温暖骤变为压迫"}}
+  },
+  "techniques": {
+    "A_reference_images": {"enabled": true, "images": [
+      {"id": "appear_grandma_home", "path": "assets/images/appear_grandma_home.png"}
+    ]}
+  }
+}
+```
+
+视频 prompt：
+"hand-drawn illustration, warm color palette, children's storybook style. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown and lace nightcap, wisps of gray hair peeking out, her frail pale face lit by the dim flicker of a fireplace. Her eyes widen in shock, mouth falling slightly open, body instinctively shrinking backward as terror washes over her expression. The cozy cottage interior shifts from warmth to an oppressive, claustrophobic feeling. <<<image_1>>>"
+
+参数：
+- negative_prompt: "photorealistic, dark, horror, oversaturated"
+- mode: "image_to_video"
+- reference_image_path: "assets/frames/cam_grandma_door_shot_0_first.png"
+- reference_images: ["assets/images/appear_grandma_home.png"]
+- aspect_ratio: "16:9"
+- duration_seconds: 5
+</example>
+
+---
+
+## 写作要点
+
+1. **自然语言而非字段罗列**：不要写成 "costume: red cloak, hair: curly brown"，而是 "a girl in a red cloak, curly brown hair framing her face"。把结构化数据编织成连贯的画面描述。
+2. **动作是视频 prompt 的核心**：`minds[].behavior` 和 `interactions[].style` 决定画面中发生什么。首帧图只描述"即将发生"的瞬间，视频 prompt 要描述动作的完整过程。
+3. **镜头语言要明确**：在 prompt 开头标明 shot_type + angle + movement（如 "Medium shot, eye level, static camera"），视频模型会据此控制构图和运镜。
+4. **角色外形从简**：因为 reference_images 已经传入了角色参考图，prompt 中不需要重复所有服装细节，用最显著的视觉特征标识角色即可（如 "red-cloaked girl"、"gray-brown wolf"）。
+5. **`<<<image_N>>>` 标记**：放在 prompt 末尾、negative_prompt 之前。按 `techniques.A_reference_images.images` 的顺序编号。这些标记让视频模型将参考图与 prompt 关联。
+6. **style_prefix 放 prompt 开头，negative_prefix 放 `negative_prompt` 参数**：不要混放，不要通过 `style` 参数重复传入。
+7. **relationships 影响氛围描写**：如果两个角色是"陌生人"，描述中体现初次相遇的试探感；如果是"信任的朋友"，体现亲密随意的互动。不需要直接写出关系名称，而是融入动作和氛围。
+8. **prop_states 按需提及**：道具只在画面中有重要作用时提及（如"clutches her basket tighter"），不需要每个 shot 都描述所有道具。

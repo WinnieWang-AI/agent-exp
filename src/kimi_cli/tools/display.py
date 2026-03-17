@@ -53,6 +53,8 @@ class StoryGraphState(BaseModel):
     id: str
     phase: str = ""
     reference_image: str = ""
+    description: str = ""
+    generation_prompt: str = ""
 
 
 class StoryGraphEntity(BaseModel):
@@ -60,6 +62,8 @@ class StoryGraphEntity(BaseModel):
     name: str
     kind: Literal["character", "location", "prop"]
     reference_image: str = ""
+    description: str = ""
+    generation_prompt: str = ""
     states: list[StoryGraphState] = []
 
 

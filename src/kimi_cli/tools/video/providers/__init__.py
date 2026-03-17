@@ -46,18 +46,26 @@ def get_default_provider(
     return name, create_provider(providers[name], tos_config)
 
 
-def create_image_provider(config: ImageProviderConfig) -> ImageProvider:
+def create_image_provider(
+    config: ImageProviderConfig, tos_config: TOSConfig | None = None
+) -> ImageProvider:
     """Factory function to create an image provider from configuration."""
     provider_type = config.type.lower()
     if provider_type == "gemini":
         from kimi_cli.tools.video.providers.gemini import GeminiImageProvider
 
         return GeminiImageProvider(config)
+    if provider_type == "seedream":
+        from kimi_cli.tools.video.providers.seedream import SeedreamImageProvider
+
+        return SeedreamImageProvider(config, tos_config)
     raise ValueError(f"Unknown image provider type: {config.type}")
 
 
 def get_default_image_provider(
-    providers: dict[str, ImageProviderConfig], preferred: str = ""
+    providers: dict[str, ImageProviderConfig],
+    preferred: str = "",
+    tos_config: TOSConfig | None = None,
 ) -> tuple[str, ImageProvider]:
     """Get an image provider by name, or the first available one.
 
@@ -70,6 +78,6 @@ def get_default_image_provider(
     if not providers:
         raise ValueError("No image providers configured")
     if preferred and preferred in providers:
-        return preferred, create_image_provider(providers[preferred])
+        return preferred, create_image_provider(providers[preferred], tos_config)
     name = next(iter(providers))
-    return name, create_image_provider(providers[name])
+    return name, create_image_provider(providers[name], tos_config)
