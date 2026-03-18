@@ -100,14 +100,16 @@ class ManageVideoProject(CallableTool2[Params]):
         builder.write(f"Project: {project}\n")
         builder.write(f"Metadata: {json.dumps(data, ensure_ascii=False, indent=2)}\n\n")
 
-        clips_dir = project / "assets" / "clips"
+        shots_dir = project / "assets" / "shots"
         images_dir = project / "assets" / "images"
+        frames_dir = project / "assets" / "frames"
         audio_dir = project / "assets" / "audio"
         output_dir = project / "output"
 
         for label, d in [
-            ("Clips", clips_dir),
+            ("Shots", shots_dir),
             ("Images", images_dir),
+            ("Frames", frames_dir),
             ("Audio", audio_dir),
             ("Output", output_dir),
         ]:
