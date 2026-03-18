@@ -23,13 +23,17 @@ import { useRef, useState } from "react";
 // Types (matching backend StoryGraphViewDisplayBlock)
 // ---------------------------------------------------------------------------
 
+type StoryGraphVideoInfo = {
+  aspect_ratio?: string;
+  duration?: string;
+  language?: string;
+};
+
 type StoryGraphProductionStyle = {
   id: string;
   description?: string;
   style_prefix?: string;
   negative_prefix?: string;
-  aspect_ratio?: string;
-  duration?: string;
 };
 
 type StoryGraphState = {
@@ -54,9 +58,13 @@ type StoryGraphShot = {
   shot_id: string;
   order: number;
   shot_type?: string;
+  angle?: string;
+  movement?: string;
   intent?: string;
   focus_on?: string[];
-  techniques?: string[];
+  is_continuation?: boolean;
+  mode?: string;
+  prompt?: string;
   video_clip?: string;
   reference_images?: string[];
   first_frame?: string;
@@ -106,6 +114,7 @@ type StoryGraphEventData = {
 
 export type StoryGraphViewData = {
   phase?: string;
+  video_info?: StoryGraphVideoInfo;
   production_styles?: StoryGraphProductionStyle[];
   entities?: StoryGraphEntity[];
   timeline?: StoryGraphEventData[];
@@ -289,36 +298,32 @@ const ProductionInfoNode = ({
   </div>
 );
 
-// --- Technique Badge ---
+// --- Mode Badge ---
 
-const TechniqueBadge = ({ tech }: { tech: string }) => {
-  const colors: Record<string, string> = {
-    A: "bg-blue-500/20 text-blue-700 dark:text-blue-300",
-    B: "bg-purple-500/20 text-purple-700 dark:text-purple-300",
-    C: "bg-green-500/20 text-green-700 dark:text-green-300",
+const ModeBadge = ({ mode }: { mode: string }) => {
+  const styles: Record<string, { color: string; label: string; title: string }> = {
+    text_to_video: {
+      color: "bg-gray-500/20 text-gray-700 dark:text-gray-300",
+      label: "T2V",
+      title: "Text to video",
+    },
+    image_to_video: {
+      color: "bg-purple-500/20 text-purple-700 dark:text-purple-300",
+      label: "I2V",
+      title: "Image to video (first frame)",
+    },
   };
-  const labels: Record<string, string> = {
-    A: "Ref",
-    B: "Gen",
-    C: "Cont",
-  };
+  const s = styles[mode];
+  if (!s) return null;
   return (
     <span
       className={cn(
         "inline-flex items-center rounded px-1 py-0.5 text-[9px] font-medium",
-        colors[tech] ?? "bg-muted text-muted-foreground",
+        s.color,
       )}
-      title={
-        tech === "A"
-          ? "Reference images"
-          : tech === "B"
-            ? "First-frame generation"
-            : tech === "C"
-              ? "Tail-frame continuity"
-              : tech
-      }
+      title={s.title}
     >
-      {labels[tech] ?? tech}
+      {s.label}
     </span>
   );
 };
@@ -451,27 +456,50 @@ const AudioLayerIcon = ({ layer }: { layer: string }) => {
   }
 };
 
-// --- Shot Row ---
+// --- Shot Row (expandable) ---
 
 const ShotRow = ({ shot }: { shot: StoryGraphShot }) => {
   const fileUrl = useFileUrl();
+  const [expanded, setExpanded] = useState(false);
   const refImages = shot.reference_images ?? [];
   const hasAssets =
     refImages.length > 0 ||
     shot.first_frame ||
     shot.tail_frame ||
     shot.video_clip;
+  const hasDetails = shot.mode || shot.prompt || hasAssets;
 
   return (
     <div className="py-1 px-2 text-xs space-y-1">
-      <div className="flex items-center gap-2">
+      <div
+        className={cn(
+          "flex items-center gap-2",
+          hasDetails && "cursor-pointer hover:bg-muted/30 -mx-1 px-1 rounded",
+        )}
+        onClick={() => hasDetails && setExpanded(!expanded)}
+      >
         <FilmIcon className="size-3 shrink-0 text-muted-foreground" />
         <span className="text-muted-foreground min-w-[2ch]">
           #{shot.order}
         </span>
+        {shot.is_continuation && (
+          <span className="rounded bg-orange-500/20 px-1 py-0.5 text-[9px] font-medium text-orange-700 dark:text-orange-300">
+            CONT
+          </span>
+        )}
         {shot.shot_type && (
           <span className="rounded bg-muted/60 px-1 py-0.5 text-[10px]">
             {shot.shot_type}
+          </span>
+        )}
+        {shot.angle && (
+          <span className="rounded bg-blue-500/15 px-1 py-0.5 text-[10px] text-blue-700 dark:text-blue-300">
+            {shot.angle}
+          </span>
+        )}
+        {shot.movement && (
+          <span className="rounded bg-violet-500/15 px-1 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
+            {shot.movement}
           </span>
         )}
         {shot.intent && (
@@ -479,13 +507,26 @@ const ShotRow = ({ shot }: { shot: StoryGraphShot }) => {
             {shot.intent}
           </span>
         )}
-        <div className="flex items-center gap-0.5">
-          {shot.techniques?.map((t) => (
-            <TechniqueBadge key={t} tech={t} />
-          ))}
+        <div className="flex items-center gap-1">
+          {shot.mode && <ModeBadge mode={shot.mode} />}
+          {shot.video_clip && (
+            <span className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-medium bg-green-500/20 text-green-700 dark:text-green-300">
+              Done
+            </span>
+          )}
         </div>
+        {hasDetails && (
+          <ChevronDownIcon
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-180",
+            )}
+          />
+        )}
       </div>
-      {hasAssets && (
+
+      {/* Collapsed: show asset thumbnails inline */}
+      {!expanded && hasAssets && (
         <div className="flex items-center gap-1.5 ml-5">
           {refImages.map((path) => (
             <ShotAssetThumb
@@ -511,6 +552,79 @@ const ShotRow = ({ shot }: { shot: StoryGraphShot }) => {
               src={fileUrl(shot.video_clip)}
               label="Clip"
             />
+          )}
+        </div>
+      )}
+
+      {/* Expanded: show full details */}
+      {expanded && (
+        <div className="ml-5 space-y-2 pb-1">
+          {/* Generation mode */}
+          {shot.mode && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-[10px] w-12 shrink-0">Mode</span>
+              <span className="text-[10px]">{shot.mode}</span>
+            </div>
+          )}
+
+          {/* Prompt */}
+          {shot.prompt && (
+            <div className="space-y-0.5">
+              <span className="text-muted-foreground text-[10px]">Prompt</span>
+              <div className="text-[10px] leading-relaxed bg-muted/30 rounded px-2 py-1 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                {shot.prompt}
+              </div>
+            </div>
+          )}
+
+          {/* Reference images */}
+          {refImages.length > 0 && (
+            <div className="space-y-0.5">
+              <span className="text-muted-foreground text-[10px]">Reference images ({refImages.length})</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {refImages.map((path) => (
+                  <ShotAssetThumb
+                    key={path}
+                    src={fileUrl(path)}
+                    label={path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "Ref"}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* First frame / Tail frame */}
+          {(shot.first_frame || shot.tail_frame) && (
+            <div className="space-y-0.5">
+              <span className="text-muted-foreground text-[10px]">Frames</span>
+              <div className="flex items-center gap-1.5">
+                {shot.first_frame && (
+                  <ShotAssetThumb
+                    src={fileUrl(shot.first_frame)}
+                    label="First frame"
+                  />
+                )}
+                {shot.tail_frame && (
+                  <ShotAssetThumb
+                    src={fileUrl(shot.tail_frame)}
+                    label="Tail frame"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Video clip */}
+          {shot.video_clip && (
+            <div className="space-y-0.5">
+              <span className="text-muted-foreground text-[10px]">Generated video</span>
+              <div>
+                <VideoClipThumb
+                  src={fileUrl(shot.video_clip)}
+                  label="Clip"
+                />
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -805,6 +919,7 @@ const OutputCard = ({ output }: { output: StoryGraphOutput }) => {
 // ---------------------------------------------------------------------------
 
 export const StoryGraphView = ({ data }: { data: StoryGraphViewData }) => {
+  const videoInfo = data.video_info;
   const productionStyles = data.production_styles ?? [];
   const entities = data.entities ?? [];
   const timeline = data.timeline ?? [];
@@ -857,7 +972,36 @@ export const StoryGraphView = ({ data }: { data: StoryGraphViewData }) => {
         )}
       </div>
 
-      {/* Production Info: Style / Ratio / Duration */}
+      {/* Video Specs (from video_info) */}
+      {videoInfo && (videoInfo.aspect_ratio || videoInfo.duration || videoInfo.language) && (
+        <div className="px-3 py-2 border-b border-border/40">
+          <div className="flex gap-2">
+            {videoInfo.aspect_ratio && (
+              <ProductionInfoNode
+                icon={<RatioIcon className="size-3" />}
+                label="画面比例"
+                value={videoInfo.aspect_ratio}
+              />
+            )}
+            {videoInfo.duration && (
+              <ProductionInfoNode
+                icon={<ClockIcon className="size-3" />}
+                label="视频时长"
+                value={videoInfo.duration}
+              />
+            )}
+            {videoInfo.language && (
+              <ProductionInfoNode
+                icon={<MessageCircleIcon className="size-3" />}
+                label="语言"
+                value={videoInfo.language === "zh" ? "中文" : videoInfo.language === "en" ? "English" : videoInfo.language}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Visual Style (from production_styles) */}
       {productionStyles.length > 0 && (() => {
         const ps = productionStyles[0];
         return (
@@ -865,19 +1009,9 @@ export const StoryGraphView = ({ data }: { data: StoryGraphViewData }) => {
             <div className="flex gap-2">
               <ProductionInfoNode
                 icon={<PaletteIcon className="size-3" />}
-                label="视频风格"
+                label="视觉风格"
                 value={ps.description || ps.style_prefix || "—"}
                 detail={ps.description ? ps.style_prefix : undefined}
-              />
-              <ProductionInfoNode
-                icon={<RatioIcon className="size-3" />}
-                label="画面比例"
-                value={ps.aspect_ratio || "16:9"}
-              />
-              <ProductionInfoNode
-                icon={<ClockIcon className="size-3" />}
-                label="视频时长"
-                value={ps.duration || "—"}
               />
             </div>
           </div>

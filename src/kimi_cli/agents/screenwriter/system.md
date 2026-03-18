@@ -41,6 +41,9 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - `relationships`：与其他实体的关系，按时间排序。`since: null` 表示故事开始前就存在。给定一个 Event，取列表中最后一个 `since <= 当前事件` 的条目。
 
 **Prop（物品/道具）**
+
+> **只有角色手持或使用的关键道具，需要在多个镜头中保持视觉一致性的，才创建 Prop 实体**（如篮子、武器、信件、粮袋）。环境中的自然物体（石头、树叶、河水、花朵）属于 Location 的视觉描述，写在 `LocationState.appearance` 中即可，不要创建独立的 Prop 实体。判断标准：这个物品是否需要独立生成参考图来保持跨镜头一致性？如果不需要，就不建。
+
 ```json
 {
   "id": "prop_hood",          // prop_ 前缀
@@ -179,27 +182,38 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 }
 ```
 
-#### ProductionStyle（制作风格 + 画面比例）
+#### video_info（视频全局规格）
 
-全局或分段的视觉风格与画面比例。大多数视频只需要一个节点，所有事件共享。风格切换（闪回、梦境）时才需要多个节点。
+顶层字段，全局唯一，描述最终视频的规格。不属于任何节点数组，不参与 `*_active_during` 调度。
+
+```json
+{
+  "video_info": {
+    "aspect_ratio": "16:9",      // "16:9" / "9:16" / "1:1"
+    "duration": "2min",          // 目标视频总时长，如 "30s" / "1min" / "2min"
+    "language": "zh"             // 视频语言，如 "zh" / "en" / "ja"
+  }
+}
+```
+- `aspect_ratio`：画面比例，由 director 传入（已和用户确认），不可自行默认
+- `duration`：目标视频总时长，由 director 传入
+- `language`：视频内容语言，影响对白、字幕、旁白的语言。**必填**，由 director 传入，不可自行默认
+
+#### ProductionStyle（视觉风格）
+
+视觉风格节点。大多数视频只需要一个节点，所有事件共享。风格切换（闪回、梦境）时才需要多个节点，通过 `style_active_during` 绑定到不同事件。
 
 ```json
 {
   "id": "style_main",            // style_ 前缀
   "description": "手绘插画风格，暖色调，儿童绘本质感",
   "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
-  "negative_prefix": "photorealistic, dark, horror, oversaturated",
-  "aspect_ratio": "16:9",        // "16:9" / "9:16" / "1:1"
-  "duration": "2min",            // 目标视频总时长，如 "30s" / "1min" / "2min"
-  "language": "zh"               // 视频语言，如 "zh" / "en" / "ja"
+  "negative_prefix": "photorealistic, dark, horror, oversaturated"
 }
 ```
 - `description`：风格的自然语言描述（给人类看）
 - `style_prefix`：注入视频/图片生成 prompt 前缀（英文）
 - `negative_prefix`：注入 negative prompt（英文）
-- `aspect_ratio`：画面比例，影响视频生成和首帧图生成
-- `duration`：目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），由 director 传入
-- `language`：视频内容语言（如 `"zh"`、`"en"`、`"ja"`），影响对白、字幕、旁白的语言。**必填**，由 director 传入，不可自行默认
 
 #### AudioState（音频状态）
 
@@ -272,16 +286,15 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 构建故事的核心骨架——实体、事件、状态及其关联。**不包含镜头和音频。**
 
-**Step 0: 确定制作风格**
-- 根据用户描述（或 director 传入的风格、画面比例、时长）创建 `ProductionStyle` 节点
-- 大多数情况只需一个 `style_main` 节点，`style_active_during` 指向所有事件
-- 如果故事含有风格切换（闪回、梦境），创建多个节点并设定 `style_transitions`
+**Step 0: 确定视频规格与视觉风格**
+- 写入顶层 `video_info` 字段：`aspect_ratio`（由 director 传入，不可默认）、`duration`（未指定时默认 `"1min"`）、`language`（由 director 传入，不可默认）
+- 创建 `ProductionStyle` 节点：大多数情况只需一个 `style_main` 节点，`style_active_during` 指向所有事件
+- 如果故事含有风格切换（闪回、梦境），创建多个 ProductionStyle 节点并设定 `style_transitions`
 - `style_prefix` / `negative_prefix` 用英文，要具体可执行（如 "hand-drawn illustration, warm color palette" 而非 "好看的风格"）
-- 未指定画面比例时默认 `"16:9"`
-- `duration` 记录目标视频总时长（如 `"30s"`、`"1min"`、`"2min"`），未指定时默认 `"1min"`
 
 **Step 1: 提取实体**
 - 识别所有角色（characters）、物品（props）、场所（locations）
+- **物品筛选**：只有角色手持/使用的、需要跨镜头保持视觉一致性的关键道具才建为 Prop 实体。环境中的自然物体（石头、树叶、河水）属于 Location 的视觉描述，不建独立实体。
 - 为每个角色写 `fixed_traits`（不变的体貌特征）
 - 为角色/物品之间设定 `relationships`（含时间线变化）
 

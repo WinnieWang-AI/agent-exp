@@ -9,6 +9,7 @@ from kimi_cli.soul.agent import BuiltinSystemPromptArgs
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file import FileActions
+from kimi_cli.tools.file.json_guard import validate_json_before_write
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_directory
@@ -117,6 +118,11 @@ class WriteFile(CallableTool2[Params]):
                 display=diff_blocks,
             ):
                 return ToolRejectedError()
+
+            # Guard: validate JSON files before writing (syntax + structural checks).
+            guard_error = validate_json_before_write(str(p), new_text)
+            if guard_error:
+                return guard_error
 
             # Write content to file
             match params.mode:

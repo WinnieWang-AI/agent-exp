@@ -16,6 +16,7 @@ from kimi_cli.tools.display import (
     StoryGraphProductionStyle,
     StoryGraphShot,
     StoryGraphState,
+    StoryGraphVideoInfo,
     StoryGraphViewDisplayBlock,
 )
 
@@ -201,6 +202,36 @@ def _resolve_path(project_dir: str, relative_path: str) -> str:
     return str(absolute)
 
 
+def _collect_shot_reference_images(shot: dict[str, Any]) -> list[str]:
+    """Collect all available reference images from a shot's prompt_materials.
+
+    Returns deduplicated paths in stable order (appearance states first,
+    then location, then props; state images before entity images).
+    """
+    materials = shot.get("prompt_materials", {})
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    def _add(path: str) -> None:
+        if path and path not in seen:
+            seen.add(path)
+            refs.append(path)
+
+    for app in materials.get("appearances", []):
+        _add(app.get("reference_image", ""))
+    for app in materials.get("appearances", []):
+        _add(app.get("entity_reference_image", ""))
+    loc = materials.get("location_state")
+    if loc:
+        _add(loc.get("reference_image", ""))
+        _add(loc.get("entity_reference_image", ""))
+    for ps in materials.get("prop_states", []):
+        _add(ps.get("reference_image", ""))
+    for ps in materials.get("prop_states", []):
+        _add(ps.get("entity_reference_image", ""))
+    return refs
+
+
 def build_story_graph_view(
     data: dict[str, Any],
     *,
@@ -216,6 +247,23 @@ def build_story_graph_view(
         shot_plan: Optional parsed shot-plan.json for enriching shot data.
         project_dir: Absolute path to the project directory (for resolving asset paths).
     """
+    # --- Video Info (global specs) ---
+    vi = data.get("video_info")
+    if vi:
+        video_info = StoryGraphVideoInfo(
+            aspect_ratio=vi.get("aspect_ratio", ""),
+            duration=vi.get("duration", ""),
+            language=vi.get("language", ""),
+        )
+    else:
+        # Backward compat: fall back to production_styles[0]
+        ps0 = (data.get("production_styles") or [{}])[0] if data.get("production_styles") else {}
+        video_info = StoryGraphVideoInfo(
+            aspect_ratio=ps0.get("aspect_ratio", ""),
+            duration=ps0.get("duration", ""),
+            language=ps0.get("language", ""),
+        )
+
     # --- Production Styles ---
     production_styles: list[StoryGraphProductionStyle] = []
     for ps in data.get("production_styles", []):
@@ -224,9 +272,6 @@ def build_story_graph_view(
             description=ps.get("description", ""),
             style_prefix=ps.get("style_prefix", ""),
             negative_prefix=ps.get("negative_prefix", ""),
-            aspect_ratio=ps.get("aspect_ratio", "16:9"),
-            duration=ps.get("duration", ""),
-            language=ps.get("language", "zh"),
         ))
 
     # --- Entity states ---
@@ -327,51 +372,54 @@ def build_story_graph_view(
                 audio_file=a.audio_file,
             ))
 
-        # Shots
+        # Shots (1:1 from shot_plan)
         shots: list[StoryGraphShot] = []
-        for sp in shots_by_event.get(eid, []):
-            techs: list[str] = []
-            techniques = sp.get("techniques", {})
-            if techniques.get("A_reference_images", {}).get("enabled"):
-                techs.append("A")
-            if techniques.get("B_first_frame", {}).get("enabled"):
-                techs.append("B")
-            if techniques.get("C_tail_frame", {}).get("enabled"):
-                techs.append("C")
+        for shot_entry in shots_by_event.get(eid, []):
+            shot_id = shot_entry["shot_id"]
+            execution = shot_entry.get("execution")
 
-            # Reference images (already absolute paths from shot-plan)
-            tech_a_images = [
-                img["path"]
-                for img in techniques.get("A_reference_images", {}).get("images", [])
-                if img.get("path")
-            ]
+            if execution:
+                # Agent has executed this shot — show actual materials used
+                ref_images = [_resolve_path(project_dir, p) for p in execution.get("reference_images", []) if p]
+                first_frame = _resolve_path(project_dir, execution.get("first_frame_path", ""))
+                tail_frame = _resolve_path(project_dir, execution.get("tail_frame_path", ""))
+                mode = execution.get("mode", "")
+                prompt = execution.get("prompt", "")
+            else:
+                # Not yet executed — show available materials from inventory
+                ref_images = [_resolve_path(project_dir, p) for p in _collect_shot_reference_images(shot_entry) if p]
+                first_frame = ""
+                tail_frame = ""
+                if project_dir:
+                    ff = Path(project_dir) / f"assets/frames/{shot_id}_first.png"
+                    if ff.exists():
+                        first_frame = str(ff)
+                    tf = Path(project_dir) / f"assets/frames/{shot_id}_tail.png"
+                    if tf.exists():
+                        tail_frame = str(tf)
+                mode = ""
+                prompt = ""
 
-            shot_id = sp["shot_id"]
-
-            # Frames: resolve to absolute paths
-            first_frame = ""
-            if techniques.get("B_first_frame", {}).get("enabled"):
-                first_frame = _resolve_path(
-                    project_dir, f"assets/frames/{shot_id}_first.png"
-                )
-            tail_frame = ""
-            if techniques.get("C_tail_frame", {}).get("enabled"):
-                tail_frame = _resolve_path(
-                    project_dir, f"assets/frames/{shot_id}_tail.png"
-                )
-
-            # Video clip: resolve to absolute path
-            video_clip = _resolve_path(project_dir, sp.get("output_path", ""))
+            # Video file: resolve to absolute path only if file exists
+            video_clip = ""
+            if project_dir and shot_entry.get("output_path"):
+                vc = Path(project_dir) / shot_entry["output_path"]
+                if vc.exists():
+                    video_clip = str(vc)
 
             shots.append(StoryGraphShot(
-                shot_id=sp["shot_id"],
-                order=sp.get("order", 0),
-                shot_type=sp.get("shot_type", ""),
-                intent=sp.get("intent", ""),
-                focus_on=sp.get("focus_on", []),
-                techniques=techs,
+                shot_id=shot_id,
+                order=shot_entry.get("order", 1),
+                shot_type=shot_entry.get("shot_type", ""),
+                angle=shot_entry.get("angle", ""),
+                movement=shot_entry.get("movement", ""),
+                intent=shot_entry.get("intent", ""),
+                focus_on=shot_entry.get("focus_on", []),
+                is_continuation=shot_entry.get("is_continuation", False),
+                mode=mode,
+                prompt=prompt,
                 video_clip=video_clip,
-                reference_images=tech_a_images,
+                reference_images=ref_images,
                 first_frame=first_frame,
                 tail_frame=tail_frame,
             ))
@@ -433,6 +481,7 @@ def build_story_graph_view(
 
     return StoryGraphViewDisplayBlock(
         phase=phase,
+        video_info=video_info,
         production_styles=production_styles,
         entities=entities,
         timeline=timeline,

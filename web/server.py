@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse
 from kaos.path import KaosPath
 
 from kimi_cli.agentspec import VIDEO_DIRECTOR_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE
+from kimi_cli.tools.story_graph.view import build_story_graph_view
 from kimi_cli.app import KimiCLI, enable_logging
 from kimi_cli.session import Session
 from kimi_cli.wire.types import (
@@ -132,6 +133,48 @@ async def read_json_file(file_path: str):
         media_type="application/json",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
+
+
+@app.get("/api/sessions/{session_id}/story-graph-view")
+async def get_story_graph_view(session_id: str):
+    """Return the story graph view data for a session (reads story-graph.json from disk)."""
+    session_output_dir = Path.cwd() / "output" / session_id
+    if not session_output_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Session output directory not found")
+
+    # Find story-graph.json
+    story_graph_path = None
+    for p in session_output_dir.rglob("story-graph.json"):
+        story_graph_path = p
+        break
+
+    if not story_graph_path or not story_graph_path.exists():
+        raise HTTPException(status_code=404, detail="story-graph.json not found")
+
+    try:
+        sg_data = json.loads(story_graph_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse story-graph.json: {e}")
+
+    # Determine phase heuristically
+    phase = "skeleton"
+    all_entities = sg_data.get("characters", []) + sg_data.get("locations", []) + sg_data.get("props", [])
+    if any(e.get("reference_image") for e in all_entities):
+        phase = "references"
+
+    # Check for shot plan
+    shot_plan = None
+    shot_plan_path = story_graph_path.parent / "shot-plan.json"
+    if shot_plan_path.exists():
+        try:
+            shot_plan = json.loads(shot_plan_path.read_text(encoding="utf-8"))
+            phase = "shots"
+        except Exception:
+            pass
+
+    project_dir = str(story_graph_path.parent)
+    view_block = build_story_graph_view(sg_data, phase=phase, shot_plan=shot_plan, project_dir=project_dir)
+    return view_block.model_dump(mode="json")
 
 
 @app.get("/list-dir/{dir_path:path}")
@@ -269,8 +312,11 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
         except Exception:
             pass
 
-    # Count generated clips (exclude small placeholders < 1MB)
-    clips = list(session_output_dir.rglob("*.mp4"))
+    # Count generated shot clips (exclude final outputs and small placeholders < 1MB)
+    output_dir = session_output_dir / (project_name or "") / "output"
+    all_mp4 = list(session_output_dir.rglob("*.mp4"))
+    output_set = set(output_dir.glob("*.mp4")) if output_dir.is_dir() else set()
+    clips = [c for c in all_mp4 if c not in output_set]
     real_clips = [c for c in clips if c.stat().st_size > 1_000_000]  # > 1MB
     if clips:
         summary["clips"] = {"total": len(clips), "valid": len(real_clips)}
@@ -342,19 +388,21 @@ def _build_resume_context(summary: dict[str, Any]) -> str:
     if summary.get("final_video"):
         lines.append(f"Final video: {summary['final_video']}")
 
-    # Determine the resume step
+    # Determine the resume phase (must match system.md Phase naming)
     if not sg:
-        resume_step = "Step 1.5 (build story structure)"
+        resume_step = "Phase 1 (read story graph & init project — no story graph found)"
     elif not sg["has_camera_directives"]:
-        resume_step = "Step 1.6 (design camera directives & audio — story structure is done)"
+        resume_step = "Phase 1 (story structure exists but camera directives & audio are missing)"
     elif sg["entity_reference_images"] < sg["total_entities"] or sg["state_reference_images"] < sg["total_states"]:
-        resume_step = "Step 1.8 (generate reference images — story graph is complete)"
+        resume_step = "Phase 2 (generate reference images — story graph is complete)"
+    elif not summary.get("shot_plan"):
+        resume_step = "Phase 3, Step 3a (generate shot plan via LinearizeStoryGraph — reference images are ready)"
     elif not clips or clips["valid"] == 0:
-        resume_step = "Step 2 (generate video clips — reference images are ready)"
+        resume_step = "Phase 3, Step 3b (generate video clips — shot plan is ready)"
     elif summary.get("final_video"):
         resume_step = "Complete — final video exists. Ask user what they want to do next."
     else:
-        resume_step = "Step 2 (continue video generation / assembly)"
+        resume_step = "Phase 3 (continue video generation / assembly)"
 
     lines.append(f"\nResume from: {resume_step}")
     lines.append("Do NOT re-ask the user for topic/style/duration — these are already confirmed in chat history.")
@@ -664,11 +712,13 @@ async def ws_auto(websocket: WebSocket):
         hints = []
         if summary.get("story_graph"):
             sg = summary["story_graph"]
-            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {sg['reference_images']} ref images (path: {sg['path']})")
+            n_refs = sg.get('entity_reference_images', 0) + sg.get('state_reference_images', 0)
+            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {n_refs} ref images (path: {sg['path']})")
         if summary.get("shot_plan"):
             hints.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
         if summary.get("clips"):
-            hints.append(f"Video Clips: {summary['clips']} generated")
+            clips = summary["clips"]
+            hints.append(f"Video Clips: {clips['total']} total, {clips['valid']} valid (>1MB)")
         if summary.get("images"):
             hints.append(f"Images: {summary['images']} generated")
         if hints:

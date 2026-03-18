@@ -20,8 +20,9 @@ class Params(BaseModel):
 
 # Standard project directory structure
 _PROJECT_DIRS = [
-    "assets/clips",
+    "assets/shots",
     "assets/images",
+    "assets/frames",
     "assets/audio",
     "output",
 ]

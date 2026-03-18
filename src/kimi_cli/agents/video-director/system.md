@@ -20,16 +20,16 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。**语言是必填项，不可省略或默认——必须由用户明确指定。** 确认后立即进入 Step 1.5。
-- 如果用户已在描述中提到了这些信息，无需再问，直接采用。未指定画面比例时默认 16:9（横屏）。
-- 确认后的画面比例（16:9 / 9:16）、视觉风格和语言将传递给 screenwriter，写入 Story Graph 的 `production_styles` 节点（包含 `language` 字段）。video-creator 和 linearizer 直接从图中读取，无需额外传递。
+- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。**语言和画面比例都是必填项，不可省略或默认——必须由用户明确指定。** 确认后立即进入 Step 1.5。
+- 如果用户已在描述中提到了这些信息，无需再问，直接采用。**画面比例不可默认，必须和用户确认。**
+- 确认后的画面比例、时长和语言将写入 Story Graph 的顶层 `video_info` 字段；视觉风格写入 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
 
 ### Step 1.5: Build Story Graph — 阶段一（故事结构）
 
 调用 screenwriter agent（session_id=`graph_{project_name}`），传入用户描述、目标时长、视觉风格、**画面比例**（如 16:9 或 9:16）、**语言**（如中文/英文），指示其执行**阶段一**：构建故事结构（实体、事件、状态及关联），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。screenwriter 写入后会自动运行 ValidateStoryGraph。
 
-**重要**：明确告知 screenwriter 用户确认的风格、画面比例和语言，screenwriter 会将其写入 `production_styles` 节点（包含 `style_prefix`、`negative_prefix`、`aspect_ratio`、`language`），后续 video-creator 和 linearizer 直接从图中读取。
+**重要**：明确告知 screenwriter 用户确认的风格、画面比例和语言。screenwriter 会将画面比例、时长、语言写入顶层 `video_info`，视觉风格写入 `production_styles` 节点（`style_prefix`、`negative_prefix`）。后续 video-creator 和 linearizer 直接从图中读取。
 
 向用户展示故事结构摘要（角色数、事件数、时间线结构、主要剧情脉络），等用户确认后再进入 Step 1.6。**只展示人类可读的摘要，严禁暴露文件路径、session ID、工具名等内部细节。**
 
@@ -83,7 +83,7 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 
 ## Session Resume（对话恢复）
 
-当用户消息以 `[Session resumed.` 开头时，说明这是一个恢复的 session。消息中包含从磁盘扫描得到的完整项目状态（project_name、session IDs、story-graph 详情、参考图数量、clips 数量、resume step）。
+当用户消息以 `[Session resumed.` 开头时，说明这是一个恢复的 session。消息中包含从磁盘扫描得到的完整项目状态（project_name、session IDs、story-graph 详情、参考图数量、shots 数量、resume step）。
 
 ### 核心原则
 

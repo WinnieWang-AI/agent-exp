@@ -12,7 +12,9 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 1. Read the `story-graph.json` file provided in the prompt.
 2. Use ManageVideoProject(action="init") to set up the project directory.
-3. 从 `story-graph.json` 的 `production_styles` 节点读取视觉风格（`style_prefix`、`negative_prefix`）、画面比例（`aspect_ratio`）和视频语言（`language`）。这些信息由 screenwriter 在构建 Story Graph 时写入。
+3. 从 `story-graph.json` 读取两类信息：
+   - **视频规格**：从顶层 `video_info` 字段读取 `aspect_ratio`（画面比例）和 `language`（视频语言）。
+   - **视觉风格**：从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`。
 
 ### Phase 2: Reference Image Generation（两层参考图）
 
@@ -20,7 +22,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **从 story-graph.json 读取实体和状态节点，按两层策略生成参考图。**
 
-从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`、`aspect_ratio` 和 `language`，用于所有图片/视频生成。`language` 影响对白 TTS 语言选择和字幕语言。
+从顶层 `video_info` 读取 `aspect_ratio` 和 `language`，从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`，用于所有图片/视频生成。`language` 影响对白 TTS 语言选择和字幕语言。
 
 #### 第 1 层：实体参考图（身份锚点）
 
@@ -86,11 +88,12 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 - 批量校验完成，所有图片状态为"通过"或"可接受"
 - **STOP**：等待用户确认角色和环境形象后再进入 Phase 3
 
-### Phase 3: Video Generation（逐镜头生成）
+### Phase 3: Video Generation（按 Shot 生成）
 
-**开始前必须执行**：用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-video.md`，按其中的规范和示例写 prompt。不要跳过此步骤。
-
-**先调用 LinearizeStoryGraph 生成 shot plan，再按 plan 逐 shot 生成视频。** 不要手动查询 `*_active_during` 映射或判断一致性策略——这些已由 Linearizer 确定性计算完成。
+**开始前必须执行**：
+1. 用 ReadFile 读取 `${AGENT_DIR}/generation-strategy.md`，按其中的决策流程为每个 shot 选择生成方式和参考图。
+2. 用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-video.md`，按其中的规范和示例写 prompt。
+不要跳过这两步。
 
 #### Step 3a: 生成 Shot Plan
 
@@ -100,128 +103,88 @@ LinearizeStoryGraph(
 )
 ```
 
-Linearizer 自动从 story-graph.json 的 `production_styles` 节点读取每个事件的风格和画面比例。
+输出 `shot-plan.json`，包含每个摄影镜头的执行信息：
+- `shot_id`：镜头唯一 ID（格式 `{event_id}_shot_{order}`，超长镜头拆分为 `{shot_id}_part_N`）
+- `event_id`：所属事件
+- `shot_type`、`angle`、`movement`、`intent`、`focus_on`：运镜信息，用于 prompt 组装
+- `prompt_materials`：所有活跃的 appearances（含 reference_image）、minds、location_state、prop_states、interactions、relationships、style
+- `is_continuation`：是否为同一镜头的 duration-split 后续部分
+- `prev_shot`：仅当 `is_continuation: true` 时有值，包含前一 part 的 shot_id 和 output_path
+- `duration_seconds`：目标时长
 
-输出 `shot-plan.json`，包含每个 shot 的：
-- `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、interactions、relationships
-- `techniques`：已推导的一致性策略（A/B/C 哪些启用、参考图列表、原因）
-- `recommended_call`：预填的 GenerateVideo 参数
+每个 shot 是一次独立的 GenerateVideoSync 调用。Linearizer 只提供素材清单，**不做生成策略决策**。生成方式、参考图选择由你根据 `generation-strategy.md` 的决策流程推理决定。
 
 检查 `warnings`，如果有 reference_image 缺失，必须先回到 Phase 2 补充。
 
-#### Step 3b: 并行 Shot 执行
+#### Step 3b: 逐 Shot 决策与执行
 
-读取 `shot-plan.json`，**尽可能并行生成多个 shot**。
+读取 `shot-plan.json` 的 `shots` 数组，对每个 shot 按 `generation-strategy.md` 的决策流程推理：
 
-**并行规则**：
-- 没有 Technique C（尾帧接续）依赖的 shot 之间可以并行
-- 有 Technique C 的 shot 必须等其 `prev_clip_path` 对应的 shot 完成后才能执行
-- 使用 `GenerateVideoSync` 工具（submit + poll + download 一体化），在一个 response 中调用多个 `GenerateVideoSync` 实现并行
-- 建议每批并行 3-5 个 shot（取决于依赖关系）
+**对每个 shot，依次完成：**
 
-**执行流程**：
-1. 分析依赖图：找出所有无 Technique C 依赖的 shot 作为第一批
-2. 对第一批中的每个 shot，在同一个 response 中并行调用 `GenerateVideoSync`
-3. 第一批完成后，找出依赖已满足的下一批 shot，继续并行执行
-4. 重复直到所有 shot 完成
+**1. 决策**（按 `generation-strategy.md` 的 Step 1-5 推理）：
+- 判断谁出镜（从 `focus_on` 和 `prompt_materials`）
+- 判断人物在首帧和视频过程中的状态 → 决定是否需要首帧图
+- 如果 `is_continuation: true`，从 `prev_shot.output_path` 提取尾帧做首帧
+- 选择参考图（从 `prompt_materials` 中的 `reference_image` 字段）
+- 确定生成方式（`text_to_video` / `image_to_video`）
 
-对每个 shot：
-
-**1. 组装 Prompt**（你负责的部分——用 `prompt_materials` 写出流畅的自然语言描述，参考 `prompt-guide-video.md` 的示例和写作要点）：
-```
-style_prefix
-+ shot_type + angle + movement（镜头语言）
-+ shot.intent（镜头意图）
-+ prompt_materials.event_description（事件描述）
-+ appearances[].visual（角色当前外形——用最显著特征标识，不需重复所有细节）
-+ minds[].emotion + minds[].behavior（角色表演指导——视频 prompt 的核心）
-+ location_state.appearance（环境氛围：lighting/weather/condition/atmosphere）
-+ interactions（互动方式）
-+ relationships（角色关系——融入氛围描写，不要直接写关系名称）
-+ prop_states（道具——按需提及，只在画面中有重要作用时）
-+ "<<<image_1>>> ... <<<image_N>>>"（引用参考图，按 techniques.A_reference_images.images 顺序）
-```
-style_prefix 放在 prompt 开头，negative_prefix 通过 `negative_prompt` 参数传入（不要拼进 prompt 正文）。
-
-**2. 执行 Technique C（尾帧接续）**——如果 `techniques.C_tail_frame.enabled`：
+**2. 执行尾帧提取**（仅当 `is_continuation: true`）：
 ```
 ExtractFrame(
-  video_path=techniques.C_tail_frame.prev_clip_path,
+  video_path=prev_shot.output_path,
   output_path="assets/frames/{shot_id}_tail.png",
   position="last"
 )
 ```
-将截取的帧作为 `reference_image_path`。
 
-**3. 执行 Technique B（首帧图）**——如果 `techniques.B_first_frame.enabled`（且 C 未启用）：
+**3. 执行首帧图生成**（如果决定需要首帧图，且不是 continuation）：
 ```
 GenerateImage(
-  prompt=<用 prompt_materials 组装的首帧描述>,
-  reference_image_paths=techniques.B_first_frame.generate_image_spec.reference_image_paths,
-  aspect_ratio=techniques.B_first_frame.generate_image_spec.aspect_ratio,
+  prompt=<用 prompt_materials 组装的首帧描述，参考 prompt-guide-video.md>,
+  reference_image_paths=<该角色的参考图>,
+  aspect_ratio=<从 prompt_materials.aspect_ratio>,
   output_path="assets/frames/{shot_id}_first.png"
 )
 ```
-将生成的首帧图作为 `reference_image_path`。用 ReadMediaFile 验证，不符合重试（最多 2 次）。
+用 ReadMediaFile 验证，不符合重试（最多 2 次）。
 
-**4. 调用 GenerateVideoSync**（推荐）或 GenerateVideo：
-
-根据 `recommended_call.mode` 选择正确的参数组合：
-
-| mode | 说明 | 关键参数 |
-|------|------|----------|
-| `text_to_video` | 纯文本生成，无图片输入 | 仅 prompt |
-| `reference_to_video` | 文本 + 参考图保持一致性 | `reference_images` |
-| `first_frame_to_video` | 单张起始帧（B 首帧或 C 尾帧） | `reference_image_path` |
-| `first_last_frame_to_video` | 首帧(C尾帧) + 尾帧(B首帧) | `first_frame_path` + `last_frame_path` |
-
+**4. 组装 Prompt 并调用生成**（参考 `prompt-guide-video.md` 的写作规范）：
 ```
-# text_to_video / reference_to_video
 GenerateVideoSync(
   prompt=<组装好的 prompt>,
-  mode=recommended_call.mode,
-  reference_images=recommended_call.reference_images,  # reference_to_video 时传入
-  duration_seconds=recommended_call.duration_seconds,
-  aspect_ratio=recommended_call.aspect_ratio,
-  download_path=shot.output_path
-)
-
-# first_frame_to_video（B 或 C 单独启用）
-GenerateVideoSync(
-  prompt=<组装好的 prompt>,
-  mode="first_frame_to_video",
-  reference_image_path=<B 的首帧图 或 C 的尾帧>,
-  reference_images=recommended_call.reference_images,  # 如有参考图仍可传入
-  duration_seconds=recommended_call.duration_seconds,
-  aspect_ratio=recommended_call.aspect_ratio,
-  download_path=shot.output_path
-)
-
-# first_last_frame_to_video（B + C 同时启用）
-GenerateVideoSync(
-  prompt=<组装好的 prompt>,
-  mode="first_last_frame_to_video",
-  first_frame_path=<C 的尾帧，提供场景连续性>,
-  last_frame_path=<B 生成的首帧图，作为目标构图>,
-  reference_images=recommended_call.reference_images,  # 如有参考图仍可传入
-  duration_seconds=recommended_call.duration_seconds,
-  aspect_ratio=recommended_call.aspect_ratio,
+  mode=<决策确定的模式>,
+  reference_images=<决策选定的参考图列表>,
+  reference_image_path=<首帧图或尾帧路径（如果用了 image_to_video）>,
+  duration_seconds=shot.duration_seconds,
+  aspect_ratio=prompt_materials.aspect_ratio,
+  negative_prompt=prompt_materials.negative_prefix,
   download_path=shot.output_path
 )
 ```
-GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可在同一个 response 中并行调用。
 
-**首帧来源判断**：查看 `recommended_call.first_frame_source`：
-- `"tail_frame"` → 从 `recommended_call.tail_frame_clip` 提取尾帧
-- `"generated_first_frame"` → 使用步骤 3 生成的首帧图
+**5. 回写执行结果**：每个 shot 生成后，用 StrReplaceFile 在 `shot-plan.json` 对应 shot 中添加 `execution` 字段，记录实际使用的参数：
+```json
+"execution": {
+  "mode": "text_to_video",
+  "reference_images": ["assets/images/appear_red_neat.png"],
+  "first_frame_path": "",
+  "tail_frame_path": "",
+  "prompt": "实际传给 API 的完整 prompt",
+  "negative_prompt": "photorealistic, dark"
+}
+```
+不要等所有 shot 完成再批量回写——逐个回写可以让前端实时展示生成进度。
 
-当存在 `recommended_call.last_frame_source`（值为 `"generated_first_frame"`），说明是 FLF 模式，B 生成的首帧图作为 last_frame。
+**6. 验证**：每个 shot 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次）。
 
-**5. 验证**：每个 clip 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次/shot）。
+**并行规则**：
+- `is_continuation: false` 的 shot 之间可以并行（它们是独立镜头）
+- `is_continuation: true` 的 shot 必须等前一 part 完成后才能执行（需要尾帧）
+- 使用 `GenerateVideoSync`，在一个 response 中调用多个实现并行
+- 建议每批并行 3-5 个 shot
 
-**模式规则**：当 Technique B 和 C 同时启用时，使用 **first_last_frame_to_video** 模式（C 尾帧作为 first_frame 提供场景连续性，B 首帧图作为 last_frame 提供目标构图）。
-
-**STOP**: 所有 clip 生成完成后，等待确认再进入 Phase 4。
+**STOP**: 所有 shot 生成完成后，等待确认再进入 Phase 4。
 
 ### Phase 4: Audio Production（从 Graph 读取音频设计）
 
@@ -262,12 +225,13 @@ GenerateVideoSync 自动完成提交、轮询、下载。多个独立 shot 可�
 
 ### Phase 5: Editing & Assembly（基于 Graph 组装）
 
-1. **按 `event_sequence` 排列 clips**：
+1. **按 `event_sequence` 排列 shots**：
    - `THEN` → 顺序拼接
    - `PARALLEL` → 交叉剪辑（参考 `camera_directive` 中 `for_event` 为数组的镜头指导交叉顺序）
-2. Use VideoEdit(operation="trim") 裁剪每个 clip 到目标时长。
+   - `is_continuation` parts → 按顺序拼接为完整镜头
+2. Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长。
 3. Use VideoEdit(operation="transition") 添加转场效果。
-4. Use VideoEdit(operation="concat") 按顺序拼接所有 clips。
+4. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
 5. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围，按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
 6. **叠加对白/旁白**：按 `audio_active_during` 确定对白时间点，叠加到对应位置。
 7. 如有对白，生成 SRT 字幕文件，用 VideoEdit(operation="add_subtitles") 叠加。

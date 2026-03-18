@@ -38,14 +38,19 @@ class ShellDisplayBlock(DisplayBlock):
 # ---------------------------------------------------------------------------
 
 
+class StoryGraphVideoInfo(BaseModel):
+    """Global video specs — singular, not per-event."""
+
+    aspect_ratio: str = ""
+    duration: str = ""
+    language: str = ""
+
+
 class StoryGraphProductionStyle(BaseModel):
     id: str
     description: str = ""
     style_prefix: str = ""
     negative_prefix: str = ""
-    aspect_ratio: str = "16:9"
-    duration: str = ""
-    language: str = "zh"
 
 
 class StoryGraphState(BaseModel):
@@ -72,9 +77,13 @@ class StoryGraphShot(BaseModel):
     shot_id: str
     order: int
     shot_type: str = ""
+    angle: str = ""
+    movement: str = ""
     intent: str = ""
     focus_on: list[str] = []
-    techniques: list[str] = []
+    is_continuation: bool = False
+    mode: str = ""
+    prompt: str = ""
     video_clip: str = ""
     reference_images: list[str] = []
     first_frame: str = ""
@@ -135,6 +144,7 @@ class StoryGraphViewDisplayBlock(DisplayBlock):
 
     type: str = "story_graph_view"
     phase: str = "skeleton"
+    video_info: StoryGraphVideoInfo | None = None
     production_styles: list[StoryGraphProductionStyle] = []
     entities: list[StoryGraphEntity] = []
     timeline: list[StoryGraphEvent] = []

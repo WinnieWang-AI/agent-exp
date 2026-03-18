@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from typing import override
 
@@ -10,6 +11,7 @@ from kimi_cli.soul.agent import BuiltinSystemPromptArgs
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file import FileActions
+from kimi_cli.tools.file.json_guard import validate_json_before_write
 from kimi_cli.tools.utils import ToolRejectedError, load_desc
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import is_within_directory
@@ -142,6 +144,11 @@ class StrReplaceFile(CallableTool2[Params]):
                     display=diff_blocks,
                 ):
                     return ToolRejectedError()
+
+                # Guard: validate JSON files before writing (syntax + structural checks).
+                guard_error = validate_json_before_write(str(p), content)
+                if guard_error:
+                    return guard_error
 
                 # Write the modified content back to the file
                 await p.write_text(content, errors="replace")

@@ -244,14 +244,25 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
                 if not has_mind:
                     issues.append(f'event {eid}: character {char_id} in interactions but no mind active')
 
-    # Check production_styles have required fields (language, aspect_ratio, duration)
-    for ps in data.get("production_styles", []):
-        if not ps.get("language"):
-            issues.append(f'production_style {ps["id"]}: missing required "language" field')
-        if not ps.get("aspect_ratio"):
-            issues.append(f'production_style {ps["id"]}: missing required "aspect_ratio" field')
-        if not ps.get("duration"):
-            issues.append(f'production_style {ps["id"]}: missing required "duration" field')
+    # Check video_info has required fields (aspect_ratio, duration, language)
+    vi = data.get("video_info")
+    if vi:
+        if not vi.get("aspect_ratio"):
+            issues.append('video_info: missing required "aspect_ratio" field')
+        if not vi.get("duration"):
+            issues.append('video_info: missing required "duration" field')
+        if not vi.get("language"):
+            issues.append('video_info: missing required "language" field')
+    else:
+        # Backward compat: accept old format where these live in production_styles
+        ps_list = data.get("production_styles", [])
+        if ps_list and (ps_list[0].get("aspect_ratio") or ps_list[0].get("language")):
+            issues.append(
+                'video_info is missing. aspect_ratio/duration/language found in production_styles '
+                '(old format). Move them to a top-level "video_info" object.'
+            )
+        else:
+            issues.append('video_info: missing required top-level field')
 
     # Check every event has a production_style active
     style_active = data.get("style_active_during", {})
@@ -317,8 +328,16 @@ def _validate_event_dag(data: dict[str, Any], ids: dict[str, set[str]]) -> list[
 
 
 def _validate_reference_image_placeholders(data: dict[str, Any], project_dir: str = "") -> list[str]:
-    """Check that reference_image fields are either null or real existing file paths."""
+    """Check that reference_image fields are either null or real existing file paths,
+    and that state-level images match their owning state/entity ID."""
     issues: list[str] = []
+
+    # Build entity_id lookup for states
+    state_entity: dict[str, str] = {}
+    for key in ("character_appearances", "prop_states", "location_states"):
+        for node in data.get(key, []):
+            state_entity[node["id"]] = node.get("entity", "")
+
     for key in ("characters", "props", "locations",
                 "character_appearances", "prop_states", "location_states"):
         for node in data.get(key, []):
@@ -340,6 +359,18 @@ def _validate_reference_image_placeholders(data: dict[str, Any], project_dir: st
                 issues.append(
                     f'{nid}: reference_image "{ref}" does not exist on disk — '
                     f"must be null (to be filled by video-creator) or a real file path"
+                )
+                continue
+
+            # Check that the image filename is plausibly related to this node.
+            # The filename stem should contain the node ID or entity ID.
+            stem = ref_path.stem
+            entity_id = state_entity.get(nid, "")
+            if stem != nid and stem != entity_id:
+                issues.append(
+                    f'{nid}: reference_image filename "{ref_path.name}" does not match '
+                    f'node ID "{nid}" or entity ID "{entity_id}". '
+                    f"This may indicate the image was assigned to the wrong node."
                 )
     return issues
 

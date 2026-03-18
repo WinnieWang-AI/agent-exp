@@ -1,8 +1,17 @@
-"""Linearize a Story Graph into a deterministic shot-by-shot execution plan."""
+"""Linearize a Story Graph into a shot-level execution plan.
+
+Produces one entry per camera shot — the atomic unit of video generation.
+Each shot carries a material inventory (reference images, prompt materials,
+camera language) so the agent can decide generation strategy independently.
+
+Tail-frame continuity is only used when a single shot is split into multiple
+generations due to duration limits.
+"""
 
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, override
@@ -35,6 +44,23 @@ class _GraphIndex:
 
     def __init__(self, data: dict[str, Any]) -> None:
         self.data = data
+
+        # Global video specs (top-level)
+        vi = data.get("video_info")
+        if vi:
+            self.video_info: dict[str, str] = {
+                "aspect_ratio": vi.get("aspect_ratio", ""),
+                "duration": vi.get("duration", ""),
+                "language": vi.get("language", ""),
+            }
+        else:
+            # Backward compat: fall back to production_styles[0]
+            ps0 = (data.get("production_styles") or [{}])[0] if data.get("production_styles") else {}
+            self.video_info = {
+                "aspect_ratio": ps0.get("aspect_ratio", ""),
+                "duration": ps0.get("duration", ""),
+                "language": ps0.get("language", ""),
+            }
 
         # Entity / state lookups by id
         self.nodes: dict[str, dict[str, Any]] = {}
@@ -94,10 +120,6 @@ class _GraphIndex:
         rels = char.get("relationships", {}).get(target_id, [])
         if not rels:
             return None
-        # Find the last entry whose `since` is <= event_id in topological order.
-        # We use a simple heuristic: take the last entry whose `since` is None
-        # or whose `since` appears before event_id in _topo_order.
-        # _topo_order is set externally after topological sort.
         result = rels[0].get("kind")
         for rel in rels:
             since = rel.get("since")
@@ -114,23 +136,16 @@ class _GraphIndex:
         self._event_order = order
 
     def get_style_for_event(self, event_id: str) -> dict[str, str]:
-        """Return the production style active during *event_id*.
-
-        Returns a dict with keys: style_prefix, negative_prefix, aspect_ratio, description.
-        Returns empty strings / default aspect_ratio if no style node is found.
-        """
+        """Return the visual style active during *event_id*."""
         style_nodes = self.get_active("style_active_during", event_id)
         if style_nodes:
             s = style_nodes[0]
             return {
                 "style_prefix": s.get("style_prefix", ""),
                 "negative_prefix": s.get("negative_prefix", ""),
-                "aspect_ratio": s.get("aspect_ratio", "16:9"),
-                "duration": s.get("duration", ""),
-                "language": s.get("language", "zh"),
                 "description": s.get("description", ""),
             }
-        return {"style_prefix": "", "negative_prefix": "", "aspect_ratio": "16:9", "duration": "", "language": "zh", "description": ""}
+        return {"style_prefix": "", "negative_prefix": "", "description": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -216,72 +231,35 @@ def _build_interleave_order(events: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Reference image collection & priority
-# ---------------------------------------------------------------------------
-
-_PRIORITY_MAP = {
-    "appear_": 1,   # character appearance state
-    "char_": 2,     # character entity
-    "lstate_": 3,   # location state
-    "loc_": 4,      # location entity
-    "pstate_": 5,   # prop state
-    "prop_": 6,     # prop entity
-    "mind_": 99,    # minds have no reference image, skip
-}
-
-
-def _id_priority(node_id: str) -> int:
-    for prefix, prio in _PRIORITY_MAP.items():
-        if node_id.startswith(prefix):
-            return prio
-    return 50
-
-
-def _collect_reference_images(
-    shot: dict[str, Any],
-    g: _GraphIndex,
-    max_images: int = 4,
-) -> list[dict[str, Any]]:
-    """Collect reference images from focus_on state nodes."""
-    seen: set[str] = set()
-    candidates: list[dict[str, Any]] = []
-
-    for state_id in shot.get("focus_on", []):
-        node = g.nodes.get(state_id)
-        if not node:
-            continue
-        ref = node.get("reference_image")
-        if ref and state_id not in seen:
-            seen.add(state_id)
-            candidates.append({"id": state_id, "path": ref, "priority": _id_priority(state_id)})
-
-    candidates.sort(key=lambda c: c["priority"])
-    return candidates[:max_images]
-
-
-# ---------------------------------------------------------------------------
 # Prompt material extraction
 # ---------------------------------------------------------------------------
 
 def _extract_prompt_materials(
     event: dict[str, Any],
-    shot: dict[str, Any],
     g: _GraphIndex,
 ) -> dict[str, Any]:
-    """Extract all prompt-relevant information for a shot from the graph."""
+    """Extract all prompt-relevant information for an event from the graph.
+
+    Each state node includes its own ``reference_image`` and its parent
+    entity's ``entity_reference_image`` so the agent can decide which
+    images to use without additional lookups.
+    """
     event_id = event["id"]
 
     # Read style from ProductionStyle nodes in the graph
     effective_style = g.get_style_for_event(event_id)
 
-    # Active appearances
+    # Active appearances — with reference images
     appearances = []
     for a in g.get_active("appearance_active_during", event_id):
+        entity = g.entity_of(a)
         appearances.append({
             "id": a["id"],
             "entity": a.get("entity", ""),
             "phase": a.get("phase", ""),
             "visual": a.get("visual", {}),
+            "reference_image": a.get("reference_image") or "",
+            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         })
 
     # Active minds
@@ -295,25 +273,31 @@ def _extract_prompt_materials(
             "behavior": m.get("behavior", ""),
         })
 
-    # Location state
+    # Location state — with reference image
     location_state = None
     for ls in g.get_active("location_active_during", event_id):
+        entity = g.entity_of(ls)
         location_state = {
             "id": ls["id"],
             "entity": ls.get("entity", ""),
             "phase": ls.get("phase", ""),
             "appearance": ls.get("appearance", {}),
+            "reference_image": ls.get("reference_image") or "",
+            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         }
         break  # typically one location state per event
 
-    # Prop states
+    # Prop states — with reference images
     prop_states = []
     for ps in g.get_active("prop_active_during", event_id):
+        entity = g.entity_of(ps)
         prop_states.append({
             "id": ps["id"],
             "entity": ps.get("entity", ""),
             "phase": ps.get("phase", ""),
             "appearance": ps.get("appearance", {}),
+            "reference_image": ps.get("reference_image") or "",
+            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         })
 
     # Audio states
@@ -348,8 +332,8 @@ def _extract_prompt_materials(
     return {
         "style_prefix": effective_style.get("style_prefix", ""),
         "negative_prefix": effective_style.get("negative_prefix", ""),
-        "aspect_ratio": effective_style.get("aspect_ratio", "16:9"),
-        "language": effective_style.get("language", "zh"),
+        "aspect_ratio": g.video_info.get("aspect_ratio", ""),
+        "language": g.video_info.get("language", ""),
         "event_description": event.get("description", ""),
         "happens_at": event.get("happens_at", ""),
         "happens_during": event.get("happens_during", ""),
@@ -364,166 +348,22 @@ def _extract_prompt_materials(
 
 
 # ---------------------------------------------------------------------------
-# Technique derivation
+# Duration helpers
 # ---------------------------------------------------------------------------
 
-_CLOSE_SHOT_TYPES = {"close_up", "extreme_close", "over_shoulder", "detail_insert"}
+MAX_SHOT_DURATION = 10.0  # model single-generation limit in seconds
 
 
-def _derive_techniques(
-    shot: dict[str, Any],
-    event: dict[str, Any],
-    prev_shot_info: dict[str, Any] | None,
-    ref_images: list[dict[str, Any]],
-    g: _GraphIndex,
-    aspect_ratio: str = "16:9",
-) -> dict[str, Any]:
-    """Derive which consistency techniques to use for this shot."""
-
-    # --- Technique A: reference images ---
-    tech_a = {
-        "enabled": len(ref_images) > 0,
-        "images": ref_images,
-        "reason": "focus_on contains state nodes with reference images" if ref_images else "no reference images available",
-    }
-
-    # --- Technique C: tail-frame continuity ---
-    tech_c: dict[str, Any] = {"enabled": False, "reason": ""}
-    if prev_shot_info:
-        same_location = prev_shot_info.get("happens_at") == event.get("happens_at")
-        if same_location and prev_shot_info.get("output_path"):
-            tech_c = {
-                "enabled": True,
-                "prev_clip_path": prev_shot_info["output_path"],
-                "reason": f"previous shot at same location ({event.get('happens_at', '')})",
-            }
-        else:
-            tech_c = {
-                "enabled": False,
-                "reason": f"location changed ({prev_shot_info.get('happens_at', '')} -> {event.get('happens_at', '')})"
-                if not same_location
-                else "no previous clip available",
-            }
-    else:
-        tech_c = {"enabled": False, "reason": "first shot, no previous clip"}
-
-    # --- Technique B: first-frame generation ---
-    shot_type = shot.get("shot_type", "")
-    char_appearances_in_focus = [
-        sid for sid in shot.get("focus_on", []) if sid.startswith("appear_")
-    ]
-    needs_first_frame = (
-        shot_type in _CLOSE_SHOT_TYPES
-        or len(char_appearances_in_focus) >= 2
-    )
-
-    tech_b: dict[str, Any]
-    if needs_first_frame:
-        # Collect reference_image_paths for GenerateImage (state nodes only)
-        gen_img_refs: list[str] = []
-        for sid in shot.get("focus_on", []):
-            node = g.nodes.get(sid)
-            if node and node.get("reference_image"):
-                gen_img_refs.append(node["reference_image"])
-
-        reasons = []
-        if shot_type in _CLOSE_SHOT_TYPES:
-            reasons.append(f"shot_type is {shot_type}")
-        if len(char_appearances_in_focus) >= 2:
-            reasons.append(f"focus_on contains {len(char_appearances_in_focus)} character appearances")
-
-        tech_b = {
-            "enabled": True,
-            "reason": "; ".join(reasons),
-            "generate_image_spec": {
-                "reference_image_paths": gen_img_refs,
-                "aspect_ratio": aspect_ratio,
-            },
-        }
-    else:
-        tech_b = {"enabled": False, "reason": "not a close-up and < 2 character appearances in focus"}
-
-    return {
-        "A_reference_images": tech_a,
-        "B_first_frame": tech_b,
-        "C_tail_frame": tech_c,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Recommended call assembly
-# ---------------------------------------------------------------------------
-
-def _build_recommended_call(
-    techniques: dict[str, Any],
-    ref_images: list[dict[str, Any]],
-    shot: dict[str, Any],
-    aspect_ratio: str = "16:9",
-) -> dict[str, Any]:
-    """Build recommended GenerateVideo parameters.
-
-    Four generation modes:
-      - text_to_video:             pure text prompt, no image input
-      - reference_to_video:        text prompt + reference images for consistency
-      - first_frame_to_video:      single starting frame (from B or C, not both)
-      - first_last_frame_to_video: first frame (C tail) + last frame (B generated)
-    """
-    tech_c = techniques["C_tail_frame"]
-    tech_b = techniques["B_first_frame"]
-
-    has_b = tech_b["enabled"]
-    has_c = tech_c["enabled"]
-    has_refs = len(ref_images) > 0
-
-    # Determine mode
-    if has_b and has_c:
-        # Both available: C provides continuity start frame, B provides target
-        # end composition → use first-last-frame generation
-        mode = "first_last_frame_to_video"
-    elif has_b or has_c:
-        # Single frame source → first-frame generation
-        mode = "first_frame_to_video"
-    elif has_refs:
-        # No starting frame but has reference images for consistency
-        mode = "reference_to_video"
-    else:
-        # Pure text
-        mode = "text_to_video"
-
-    # Parse duration from shot (e.g. "5.0s" -> 5.0), default to 5
-    shot_dur = shot.get("duration", "")
-    dur_seconds = 5
-    if isinstance(shot_dur, str) and shot_dur:
+def _parse_duration(raw: Any, default: float = 5.0) -> float:
+    """Parse a duration value (number or string like '5s') into float seconds."""
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
         try:
-            dur_seconds = float(shot_dur.replace("s", ""))
+            return float(raw.replace("s", "").replace("sec", "").strip())
         except ValueError:
-            pass
-    elif isinstance(shot_dur, (int, float)):
-        dur_seconds = float(shot_dur)
-
-    call: dict[str, Any] = {
-        "mode": mode,
-        "duration_seconds": dur_seconds,
-        "aspect_ratio": aspect_ratio,
-    }
-
-    # reference_images (Technique A) — passed in all modes for consistency
-    if ref_images:
-        call["reference_images"] = [img["path"] for img in ref_images]
-
-    # Frame sources
-    if has_b and has_c:
-        # FLF: C tail frame = first_frame (continuity), B generated = last_frame (target)
-        call["first_frame_source"] = "tail_frame"
-        call["tail_frame_clip"] = tech_c["prev_clip_path"]
-        call["last_frame_source"] = "generated_first_frame"
-    elif has_c:
-        call["first_frame_source"] = "tail_frame"
-        call["tail_frame_clip"] = tech_c["prev_clip_path"]
-    elif has_b:
-        call["first_frame_source"] = "generated_first_frame"
-
-    return call
+            return default
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -531,7 +371,12 @@ def _build_recommended_call(
 # ---------------------------------------------------------------------------
 
 def linearize(data: dict[str, Any]) -> dict[str, Any]:
-    """Linearize a story graph into a shot plan. Pure function, no I/O."""
+    """Linearize a story graph into a shot-level execution plan.
+
+    Each shot from ``camera_directives`` becomes an independent execution
+    unit.  If a single shot exceeds *MAX_SHOT_DURATION* it is split into
+    continuation parts that require tail-frame handoff.
+    """
     g = _GraphIndex(data)
 
     # Topological sort
@@ -543,10 +388,9 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
     # Parallel groups
     parallel_groups = _find_parallel_groups(g.event_sequence)
 
-    # Build shots
+    # Build shots — one entry per camera shot (or per duration-split part)
     shots: list[dict[str, Any]] = []
     warnings: list[str] = []
-    prev_shot_info: dict[str, Any] | None = None
 
     for event_id in sorted_events:
         event = g.events.get(event_id)
@@ -558,58 +402,71 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
             warnings.append(f"event {event_id}: no camera_directive found, skipping")
             continue
 
-        cam_shots = cam.get("shots", [])
-        for shot in sorted(cam_shots, key=lambda s: s.get("order", 0)):
-            shot_id = f"{cam['id']}_shot_{shot.get('order', 0)}"
-            output_path = f"assets/clips/{event_id}_shot_{shot.get('order', 0)}.mp4"
+        cam_shots = sorted(cam.get("shots", []), key=lambda s: s.get("order", 0))
 
-            # Collect reference images (Technique A)
-            ref_images = _collect_reference_images(shot, g)
+        # Extract prompt materials once per event (shared by all shots)
+        materials = _extract_prompt_materials(event, g)
 
-            # Check for missing reference images
-            for sid in shot.get("focus_on", []):
+        for cam_shot in cam_shots:
+            shot_order = cam_shot.get("order", 1)
+            shot_id = f"{event_id}_shot_{shot_order}"
+            duration = _parse_duration(cam_shot.get("duration"), default=5.0)
+
+            focus_on = cam_shot.get("focus_on", [])
+
+            # Warn about missing reference images
+            for sid in focus_on:
                 node = g.nodes.get(sid)
                 if node and not node.get("reference_image") and not sid.startswith("mind_"):
                     warnings.append(f"{shot_id}: focus_on '{sid}' has no reference_image")
 
-            # Extract prompt materials (includes per-event style from graph)
-            materials = _extract_prompt_materials(event, shot, g)
-            shot_aspect_ratio = materials.get("aspect_ratio", "16:9")
-
-            # Derive techniques
-            techniques = _derive_techniques(shot, event, prev_shot_info, ref_images, g, shot_aspect_ratio)
-
-            # Build recommended call
-            recommended_call = _build_recommended_call(techniques, ref_images, shot, shot_aspect_ratio)
-
-            shot_plan = {
-                "shot_id": shot_id,
+            base_entry = {
                 "event_id": event_id,
                 "camera_directive_id": cam["id"],
-                "order": shot.get("order", 0),
-                "output_path": output_path,
-                # Camera language
-                "shot_type": shot.get("shot_type", ""),
-                "angle": shot.get("angle", ""),
-                "movement": shot.get("movement", ""),
-                "intent": shot.get("intent", ""),
-                "focus_on": shot.get("focus_on", []),
-                # Consistency techniques
-                "techniques": techniques,
-                # Prompt materials
+                "order": shot_order,
+                "shot_type": cam_shot.get("shot_type", ""),
+                "angle": cam_shot.get("angle", ""),
+                "movement": cam_shot.get("movement", ""),
+                "intent": cam_shot.get("intent", ""),
+                "focus_on": focus_on,
                 "prompt_materials": materials,
-                # Recommended call
-                "recommended_call": recommended_call,
             }
-            shots.append(shot_plan)
 
-            # Update prev_shot_info for next iteration
-            prev_shot_info = {
-                "shot_id": shot_id,
-                "event_id": event_id,
-                "happens_at": event.get("happens_at", ""),
-                "output_path": output_path,
-            }
+            if duration <= MAX_SHOT_DURATION:
+                # Single generation
+                shots.append({
+                    **base_entry,
+                    "shot_id": shot_id,
+                    "output_path": f"assets/shots/{shot_id}.mp4",
+                    "duration_seconds": duration,
+                    "is_continuation": False,
+                    "prev_shot": None,
+                })
+            else:
+                # Split into continuation parts (tail-frame handoff)
+                n_parts = math.ceil(duration / MAX_SHOT_DURATION)
+                part_duration = round(duration / n_parts, 1)
+                prev_part_info: dict[str, Any] | None = None
+
+                for part_idx in range(n_parts):
+                    part_id = f"{shot_id}_part_{part_idx + 1}"
+                    part_output = f"assets/shots/{part_id}.mp4"
+                    is_continuation = part_idx > 0
+
+                    shots.append({
+                        **base_entry,
+                        "shot_id": part_id,
+                        "output_path": part_output,
+                        "duration_seconds": part_duration,
+                        "is_continuation": is_continuation,
+                        "prev_shot": prev_part_info,
+                    })
+
+                    prev_part_info = {
+                        "shot_id": part_id,
+                        "event_id": event_id,
+                        "output_path": part_output,
+                    }
 
     plan = {
         "shots": shots,
@@ -642,7 +499,7 @@ class LinearizeStoryGraph(CallableTool2[Params]):
         except json.JSONDecodeError as e:
             return builder.error(f"Invalid JSON: {e}", brief="JSON parse error")
 
-        # Linearize (style is read from production_styles nodes in the graph)
+        # Linearize
         plan = linearize(data)
 
         # Write output
@@ -662,15 +519,21 @@ class LinearizeStoryGraph(CallableTool2[Params]):
         n_warnings = len(plan["warnings"])
         n_parallel = len(plan["parallel_groups"])
 
-        tech_a_count = sum(1 for s in plan["shots"] if s["techniques"]["A_reference_images"]["enabled"])
-        tech_b_count = sum(1 for s in plan["shots"] if s["techniques"]["B_first_frame"]["enabled"])
-        tech_c_count = sum(1 for s in plan["shots"] if s["techniques"]["C_tail_frame"]["enabled"])
+        # Reference image coverage
+        n_shots_with_refs = 0
+        n_total_refs = 0
+        for s in plan["shots"]:
+            pm = s["prompt_materials"]
+            refs = [a for a in pm.get("appearances", []) if a.get("reference_image")]
+            if pm.get("location_state") and pm["location_state"].get("reference_image"):
+                refs.append(pm["location_state"])
+            refs.extend(p for p in pm.get("prop_states", []) if p.get("reference_image"))
+            if refs:
+                n_shots_with_refs += 1
+            n_total_refs += len(refs)
 
         builder.write(f"Shot plan generated: {n_shots} shots\n\n")
-        builder.write(f"Consistency techniques:\n")
-        builder.write(f"  Technique A (reference images): {tech_a_count}/{n_shots} shots\n")
-        builder.write(f"  Technique B (first-frame gen):  {tech_b_count}/{n_shots} shots\n")
-        builder.write(f"  Technique C (tail-frame cont):  {tech_c_count}/{n_shots} shots\n")
+        builder.write(f"Reference image coverage: {n_shots_with_refs}/{n_shots} shots have reference images ({n_total_refs} total)\n")
         if n_parallel:
             builder.write(f"\nParallel groups: {n_parallel}\n")
             for pg in plan["parallel_groups"]:
