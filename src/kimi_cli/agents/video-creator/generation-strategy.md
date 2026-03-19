@@ -95,9 +95,33 @@ Phase 3 开始前请阅读。本文件指导你如何根据每个 shot 的素材
 
 1. 从 `prev_shot.output_path` 提取尾帧
 2. 用尾帧作为当前 shot 的首帧（`image_to_video`）
-3. 这是**唯一**需要尾帧接续的场景
 
-如果 `is_continuation` 为 `false`，跳过此步骤。**不同 shot 之间不做尾帧接续。**
+如果 `is_continuation` 为 `false`，跳过此步骤。
+
+### Step 3.5: 跨 Shot 尾帧接续（仅当 `prev_shot_in_sequence` 存在时）
+
+Linearizer 会预计算相邻 shot 之间的接续建议。如果当前 shot 的 `prev_shot_in_sequence` 不为 null，说明该 shot 与前一事件的最后一个 shot 满足以下全部条件：
+
+1. **同场景**（同一 location）
+2. **同人物**（当前 focus_on 的角色是前一 shot 的子集，不含新面孔）
+3. **同机位**（shot_type 和 angle 相同）
+
+此时使用尾帧接续：
+
+1. 从 `prev_shot_in_sequence.output_path` 提取尾帧：
+   ```
+   ExtractFrame(
+     video_path=prev_shot_in_sequence.output_path,
+     output_path="assets/frames/{shot_id}_seq_tail.png",
+     position="last"
+   )
+   ```
+2. 用 `image_to_video` 模式，`reference_image_path` = 尾帧路径
+3. **跳过 Step 4-5**（生成方式已确定）
+
+**并行影响**：有 `prev_shot_in_sequence` 的 shot 必须等前一 shot 完成后才能执行（需要其视频输出来提取尾帧）。无接续关系的 shot 仍可并行。
+
+如果 `prev_shot_in_sequence` 为 null，跳过此步骤，走正常的 Step 4-5 流程。
 
 ### Step 4: 选择参考图
 
@@ -120,6 +144,7 @@ Phase 3 开始前请阅读。本文件指导你如何根据每个 shot 的素材
 | 判断结果 | 生成方式 | 关键参数 |
 |---|---|---|
 | `is_continuation: true` | `image_to_video` | `reference_image_path` = 前一 part 尾帧 |
+| `prev_shot_in_sequence` 存在 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
 | 所有角色首帧可见 + 需要构图控制 | `image_to_video` | `reference_image_path` = 生成的首帧图 |
 | 有角色首帧不可见 / 运动为主 | `text_to_video` + `reference_images` | `reference_images` = 角色参考图列表 |
 | 无参考图可用 | `text_to_video` | 仅 prompt |
@@ -211,7 +236,7 @@ Phase 3 开始前请阅读。本文件指导你如何根据每个 shot 的素材
 
 ## 常见陷阱
 
-1. **不要在不同 shot 之间做尾帧接续。** 每个 shot 是独立的摄影镜头，有自己的构图和角度。尾帧接续仅用于 `is_continuation: true` 的 duration-split 场景。
-2. **不要因为有参考图就一定传入。** 如果已经用了首帧图（image_to_video），首帧里角色身份已经锚定，额外传参考图的收益有限。
+1. **跨 shot 尾帧接续只在 `prev_shot_in_sequence` 存在时使用。** Linearizer 已预计算了哪些 shot 对满足同场景 + 同人物 + 同机位条件。不要自行判断——没有该字段的 shot 不做跨 shot 尾帧接续。
+2. **不要因为有参考图就一定传入。** 如果已经用了首帧图或尾帧图（image_to_video），画面身份已经锚定，额外传参考图的收益有限。
 3. **运动幅度大的镜头慎用首帧。** 首帧约束了起始构图和姿态，大幅运动（奔跑、跳跃、转身）会显得不自然。
 4. **不要因为一次失败就放弃某种策略。** 每个 shot 独立决策。

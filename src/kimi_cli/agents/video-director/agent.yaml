@@ -22,4 +22,4 @@ agent:
       description: "Generates videos from script to final output. Has access to GenerateVideo, CheckVideoJob, VideoEdit, GenerateImage for visuals, and GenerateMusic, CheckMusicJob, GenerateSpeech for audio (background music via Suno, TTS narration via Minimax)."
     video-evaluator:
       path: ../video-evaluator/agent.yaml
-      description: "Analyzes and evaluates videos. Compares generated videos against originals and provides detailed natural language feedback with scores."
+      description: "Visual evaluation expert. Evaluates reference images (checks white background, full-body, character consistency, etc.) and videos (composition, color, motion, fidelity). Provides structured PASS/FAIL/ACCEPTABLE reports with actionable fix suggestions."

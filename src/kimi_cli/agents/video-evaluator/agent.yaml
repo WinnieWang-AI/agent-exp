@@ -12,7 +12,8 @@ agent:
     - "kimi_cli.tools.file:StrReplaceFile"
     - "kimi_cli.tools.file:Glob"
     - "kimi_cli.tools.file:Grep"
-    # Optional VLM-based analysis/comparison (fallback when video_in is unavailable)
+    # Optional VLM-based analysis/comparison (fallback when image_in/video_in is unavailable)
+    - "kimi_cli.tools.video:AnalyzeImage"
     - "kimi_cli.tools.video:AnalyzeVideo"
     - "kimi_cli.tools.video:CompareVideos"
   subagents: {}

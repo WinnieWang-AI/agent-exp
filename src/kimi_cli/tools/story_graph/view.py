@@ -407,6 +407,18 @@ def build_story_graph_view(
                 if vc.exists():
                     video_clip = str(vc)
 
+            # Sequence continuity (cross-shot tail-frame)
+            seq_prev = shot_entry.get("prev_shot_in_sequence")
+            seq_prev_shot_id = seq_prev["shot_id"] if seq_prev else ""
+            seq_tail_frame = ""
+            if seq_prev and project_dir:
+                # Check if agent wrote the extracted tail frame
+                seq_tf = Path(project_dir) / f"assets/frames/{shot_id}_seq_tail.png"
+                if seq_tf.exists():
+                    seq_tail_frame = str(seq_tf)
+            if execution and execution.get("sequence_tail_frame_path"):
+                seq_tail_frame = _resolve_path(project_dir, execution["sequence_tail_frame_path"])
+
             shots.append(StoryGraphShot(
                 shot_id=shot_id,
                 order=shot_entry.get("order", 1),
@@ -416,6 +428,8 @@ def build_story_graph_view(
                 intent=shot_entry.get("intent", ""),
                 focus_on=shot_entry.get("focus_on", []),
                 is_continuation=shot_entry.get("is_continuation", False),
+                sequence_prev_shot_id=seq_prev_shot_id,
+                sequence_tail_frame=seq_tail_frame,
                 mode=mode,
                 prompt=prompt,
                 video_clip=video_clip,

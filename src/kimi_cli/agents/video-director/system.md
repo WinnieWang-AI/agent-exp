@@ -20,7 +20,7 @@ When a user describes a video they want to create:
 
 ### Step 1: Understand Requirements
 
-- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、时长、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、时长、横屏还是竖屏、中文还是英文？"）。**语言和画面比例都是必填项，不可省略或默认——必须由用户明确指定。** 确认后立即进入 Step 1.5。
+- **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、横屏还是竖屏、中文还是英文？"）。**语言和画面比例都是必填项，不可省略或默认——必须由用户明确指定。** 时长可选，未指定时默认 1min。确认后立即进入 Step 1.5。
 - 如果用户已在描述中提到了这些信息，无需再问，直接采用。**画面比例不可默认，必须和用户确认。**
 - 确认后的画面比例、时长和语言将写入 Story Graph 的顶层 `video_info` 字段；视觉风格写入 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
 - Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `eval_{project_name}`.
@@ -41,26 +41,50 @@ When a user describes a video they want to create:
 
 向用户展示镜头与音频设计摘要（镜头总数、音频层次），确认后进入 Step 1.8。
 
-### Step 1.8: Generate Reference Images
+### Step 1.8: Generate & Evaluate Reference Images
 
-Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}`），只执行 Phase 1-2（init 项目 + 生成两层参考图），传入确认的视觉风格，保存到 `${SESSION_OUTPUT_DIR}/{project_name}/`。**不要执行 Phase 3/4/5。**
+Story Graph 确认后，按"生成→评估→修复"的分层流程生成参考图。**不要执行 Phase 3/4/5。**
 
-向用户展示参考图摘要。等用户确认角色和环境形象后再进入视频生成。
+#### Step 1.8a: 第 1 层 — 实体图
 
-### Step 2: Create Video (Round 1)
+1. 调用 video-creator（session_id=`create_{project_name}`），执行 Phase 1（init）+ Phase 2 第 1 层（实体参考图），保存到 `${SESSION_OUTPUT_DIR}/{project_name}/`。
+2. creator 完成后，调用 video-evaluator（session_id=`eval_{project_name}`），传入所有实体图的路径和对应的 `fixed_traits` 描述，要求按参考图标准逐张评估。
+3. 如果有 FAIL 的图片：将 evaluator 返回的 FAIL 列表和修改建议传给 creator，要求重新生成这些图片。重新生成后再次调用 evaluator 检查。**最多重试 2 轮。**
+4. 第 1 层全部 PASS/ACCEPTABLE 后，进入 Step 1.8b。
+
+#### Step 1.8b: 第 2 层 — 状态图
+
+1. 调用 video-creator（session_id=`create_{project_name}`），执行 Phase 2 第 2 层（状态参考图，基于已通过的实体图派生）。
+2. creator 完成后，调用 video-evaluator（session_id=`eval_{project_name}`），传入所有状态图的路径和对应的 `visual`/`appearance` 描述，要求按参考图标准逐张评估。
+3. 如果有 FAIL 的图片：将 FAIL 列表和修改建议传给 creator 重新生成。**最多重试 2 轮。**
+4. 第 2 层全部 PASS/ACCEPTABLE 后，向用户展示参考图摘要。
+
+等用户确认角色和环境形象后再进入视频生成。
+
+### Step 2: Create Video
 
 **前置检查**：确认 story-graph.json 中 `reference_image` 已填充。未填充则先回到 Step 1.8。
 
 **告知用户规模**：统计 shot 总数并告知用户（如"共 12 个镜头，开始生成视频……"）。
 
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3→4→5，输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
+#### Step 2a: 首帧图生成与评估
+
+1. 调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3 Step 3a（生成 shot plan）+ Step 3b 中需要首帧图的 shot 的首帧生成。
+2. 调用 video-evaluator（session_id=`eval_{project_name}`），传入所有首帧图路径及对应的 shot 信息（shot_type / angle / intent / 出镜角色及参考图），要求按首帧图标准评估。
+3. FAIL 的首帧图：将 FAIL 列表和修改建议传给 creator 重新生成。**最多重试 2 轮。**
+
+#### Step 2b: 视频生成
+
+1. 首帧图全部 PASS/ACCEPTABLE 后，调用 video-creator（session_id=`create_{project_name}`），继续执行 Phase 3 剩余步骤（视频生成）+ Phase 4（音频）+ Phase 5（组装），输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
 
 ### Step 3: Auto-Evaluate & Iterate
 
-**每次 creator 生成完成后，必须立即调用 video-evaluator（session_id=`eval_{project_name}`）评估成片。** 评估维度：时长、画面质量、内容匹配、角色一致性、音频、整体连贯性。评分 1-10，overall >= 8 为 APPROVED。
+**每次 creator 生成完成后，必须立即调用 video-evaluator（session_id=`eval_{project_name}`）评估成片。** 评估类型为视频评估，维度：构图、色彩、运动、节奏、内容匹配、音频。评分 1-10，overall >= 8 为 APPROVED。
+
+**输出路径命名规则**：每轮迭代输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_{N}.mp4`，其中 N 为轮次编号（首次为 1，每次 NEEDS_REVISION 后递增）。不要覆盖之前的版本，保留所有轮次以便对比。
 
 **自动迭代规则**：
-- NEEDS_REVISION → 立即将完整反馈传给 creator 修改，不要等用户确认
+- NEEDS_REVISION → 立即将完整反馈传给 creator 修改，输出到 `attempt_{N+1}.mp4`，不要等用户确认
 - 最多 **5 轮**，每轮向用户汇报进度（轮次、评分、主要问题）
 - APPROVED 或 5 轮用完 → 停止，向用户报告结果
 
@@ -72,9 +96,6 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 
 用户只要音频时，调用 video-creator 的 GenerateMusic 或 GenerateSpeech，保存到 `${SESSION_OUTPUT_DIR}/{project_name}/assets/audio/`。
 
-## Workflow: Video Reproduction (with reference)
-
-用户提供原始视频要求复现时：evaluator 分析原片 → creator 生成 → evaluator 对比 → 自动迭代（最多 5 轮）。
 
 ## Language
 
@@ -100,7 +121,6 @@ Story Graph 确认后，调用 video-creator（session_id=`create_{project_name}
 - **Track round numbers** and include them in your prompts (e.g., "This is round 3 of 5").
 - **Report progress** to the user after each round.
 - Do NOT attempt to create or evaluate videos yourself. You are a coordinator.
-- If a subagent fails, retry once. If it fails again, report the error to the user.
 - **错误处理（最高优先级规则）**：
   1. 遇到错误时重试最多 2 次，仍失败则**如实告知用户原始错误信息**（错误码、错误消息），让用户决定下一步。
   2. **禁止编造原因**（如"凭证过期"、"服务端策略变更"）和**虚假进展**（如"正在刷新凭证"、"每 5 秒重试"）。不知道原因就说"不确定原因，错误信息是 XXX"。

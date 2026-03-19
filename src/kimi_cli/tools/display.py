@@ -82,6 +82,8 @@ class StoryGraphShot(BaseModel):
     intent: str = ""
     focus_on: list[str] = []
     is_continuation: bool = False
+    sequence_prev_shot_id: str = ""
+    sequence_tail_frame: str = ""
     mode: str = ""
     prompt: str = ""
     video_clip: str = ""

@@ -24,6 +24,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 从顶层 `video_info` 读取 `aspect_ratio` 和 `language`，从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`，用于所有图片/视频生成。`language` 影响对白 TTS 语言选择和字幕语言。
 
+**Phase 2 支持分步调用**：调用方可以指定只执行第 1 层或第 2 层，也可以指定重新生成某些特定图片（传入图片 ID 列表和修改建议）。根据调用方的指令执行对应部分。
+
 #### 第 1 层：实体参考图（身份锚点）
 
 为每个实体节点生成身份参考图。始终加 `style_prefix` 和 `negative_prefix`（来自 ProductionStyle 节点）。
@@ -36,7 +38,11 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **并行策略（并行度 ≤ 3）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
 
+**第 1 层完成后 STOP**：报告生成完成（各类实体图数量和路径），等待调用方指示。不要自动进入第 2 层。
+
 #### 第 2 层：状态参考图（基于实体图派生）
+
+**仅在调用方明确指示后执行。**
 
 为每个状态节点生成参考图。**必须以对应实体的身份图作为 `reference_image_paths`**。按 `based_on` 拓扑排序（无依赖先生成，有依赖的传入父状态图作为额外参考）。
 
@@ -52,6 +58,16 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
+**第 2 层完成后 STOP**：报告生成完成（各类状态图数量和路径），等待调用方指示。
+
+#### 重新生成指定图片
+
+当调用方传入需要重新生成的图片 ID 列表和修改建议时：
+1. 根据修改建议调整 prompt（如去掉光影词、加强白背景描述、缩短 prompt 长度）
+2. 删除旧图片，重新生成
+3. 回填 `reference_image` 和 `generation_prompt`
+4. 报告重新生成结果
+
 #### 即时回填 reference_image 和 generation_prompt
 
 **每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径，同时在该节点添加 `"generation_prompt"` 字段，记录你传给 GenerateImage 的完整 prompt 文本。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
@@ -65,35 +81,14 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 "generation_prompt": "hand-drawn illustration, warm color palette ... full-body character reference sheet ..."
 ```
 
-#### Phase 2 批量校验
-
-所有参考图生成完毕后，执行一轮批量校验：
-
-1. 用 ReadMediaFile **逐张查看**所有已生成的参考图（实体图 + 状态图）。
-2. 对每张图检查：
-   - **角色图**：是否与 `fixed_traits` 描述一致（体型、种族、关键特征），是否全身可见、背景干净
-   - **环境图**：是否与 `fixed_traits` 描述一致（场景类型、氛围），是否无角色出现
-   - **道具图**：是否与 `fixed_traits` 描述一致
-   - **状态图**：是否与对应状态节点的 `visual` / `appearance` 描述一致，是否与实体身份图保持角色一致性
-3. 将检查结果分为三类：
-   - **通过**：符合描述
-   - **需重试**：主体偏差较大（如角色特征明显不符、场景类型错误），标记后重新生成（最多重试 2 次/张）
-   - **可接受**：存在细微差异但不影响整体一致性，记录但不重试
-4. 重试生成的图片需再次校验，直到全部通过或达到重试上限。
-5. 输出校验报告摘要（通过数 / 重试数 / 可接受数）。
-
-#### Phase 2 完成标志
-
-- 所有实体节点和状态节点的 `reference_image` 字段均已填充
-- 批量校验完成，所有图片状态为"通过"或"可接受"
-- **STOP**：等待用户确认角色和环境形象后再进入 Phase 3
-
 ### Phase 3: Video Generation（按 Shot 生成）
 
 **开始前必须执行**：
 1. 用 ReadFile 读取 `${AGENT_DIR}/generation-strategy.md`，按其中的决策流程为每个 shot 选择生成方式和参考图。
 2. 用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-video.md`，按其中的规范和示例写 prompt。
 不要跳过这两步。
+
+**Phase 3 支持分步调用**：调用方可以指定只执行到首帧图生成（Step 3a + 3b 首帧部分），暂停等待评估后再继续视频生成（Step 3b 视频部分）。也可以指定重新生成某些首帧图（传入 shot ID 列表和修改建议）。根据调用方的指令执行对应部分。
 
 #### Step 3a: 生成 Shot Plan
 
@@ -126,19 +121,27 @@ LinearizeStoryGraph(
 - 判断谁出镜（从 `focus_on` 和 `prompt_materials`）
 - 判断人物在首帧和视频过程中的状态 → 决定是否需要首帧图
 - 如果 `is_continuation: true`，从 `prev_shot.output_path` 提取尾帧做首帧
+- 如果 `prev_shot_in_sequence` 存在（跨 shot 接续），从前一 shot 提取尾帧做首帧
 - 选择参考图（从 `prompt_materials` 中的 `reference_image` 字段）
 - 确定生成方式（`text_to_video` / `image_to_video`）
 
-**2. 执行尾帧提取**（仅当 `is_continuation: true`）：
+**2. 执行尾帧提取**（当 `is_continuation: true` 或 `prev_shot_in_sequence` 存在时）：
 ```
+# duration-split 接续
 ExtractFrame(
   video_path=prev_shot.output_path,
   output_path="assets/frames/{shot_id}_tail.png",
   position="last"
 )
+# 跨 shot 序列接续
+ExtractFrame(
+  video_path=prev_shot_in_sequence.output_path,
+  output_path="assets/frames/{shot_id}_seq_tail.png",
+  position="last"
+)
 ```
 
-**3. 执行首帧图生成**（如果决定需要首帧图，且不是 continuation）：
+**3. 执行首帧图生成**（如果决定需要首帧图，且不是 continuation 或序列接续）：
 ```
 GenerateImage(
   prompt=<用 prompt_materials 组装的首帧描述，参考 prompt-guide-video.md>,
@@ -147,7 +150,9 @@ GenerateImage(
   output_path="assets/frames/{shot_id}_first.png"
 )
 ```
-用 ReadMediaFile 验证，不符合重试（最多 2 次）。
+生成后记录路径到 `execution.first_frame_path`。
+
+**如果调用方指定"仅生成首帧图"**：完成所有需要首帧的 shot 后 STOP，报告首帧图列表（shot_id + 路径 + shot 信息），等待调用方评估确认后再继续。
 
 **4. 组装 Prompt 并调用生成**（参考 `prompt-guide-video.md` 的写作规范）：
 ```
@@ -170,17 +175,17 @@ GenerateVideoSync(
   "reference_images": ["assets/images/appear_red_neat.png"],
   "first_frame_path": "",
   "tail_frame_path": "",
+  "sequence_tail_frame_path": "",
   "prompt": "实际传给 API 的完整 prompt",
   "negative_prompt": "photorealistic, dark"
 }
 ```
 不要等所有 shot 完成再批量回写——逐个回写可以让前端实时展示生成进度。
 
-**6. 验证**：每个 shot 生成后用 ReadMediaFile 验证画面内容和角色外观，不符合则调整 prompt 重试（最多 2 次）。
-
 **并行规则**：
-- `is_continuation: false` 的 shot 之间可以并行（它们是独立镜头）
+- 无依赖的 shot 之间可以并行（它们是独立镜头）
 - `is_continuation: true` 的 shot 必须等前一 part 完成后才能执行（需要尾帧）
+- `prev_shot_in_sequence` 存在的 shot 必须等前一 shot 完成后才能执行（需要尾帧）
 - 使用 `GenerateVideoSync`，在一个 response 中调用多个实现并行
 - 建议每批并行 3-5 个 shot
 
@@ -193,7 +198,7 @@ GenerateVideoSync(
 **⚠️ 命名规则：所有音频文件必须以 `{audio_state_id}.mp3` 命名，保存到 `assets/audio/` 目录。这是 Phase 5 组装和前端展示的查找依据。**
 
 1. **Background Music**（`layer: "audio_bgm"`）：
-   a. 对**每个** BGM 状态节点**独立**调用 GenerateMusic，使用其 `music_prompt` 字段。每个节点对应一段独立的音乐片段，不要合并。
+   a. 对每个 BGM 状态节点调用 GenerateMusic，使用其 `music_prompt` 字段。
    b. 用 CheckMusicJob 轮询直到完成，**必须指定 `download_filename`** 确保文件名正确：
    ```
    CheckMusicJob(
@@ -204,6 +209,7 @@ GenerateVideoSync(
    )
    ```
    c. 从生成的选项中选择最合适的。
+   d. **BGM 时长适配**：Suno 生成的音乐时长不可精确控制。组装阶段（Phase 5）会用 trim 裁剪或 loop 循环来匹配视频时长，生成时无需关心时长匹配。
 
 2. **对白 / 旁白**（`layer: "audio_dialogue"`）：
    a. 对每个对白状态节点，使用其 `text`、`speaker`、`voice_direction` 字段调用 GenerateSpeech。
@@ -213,15 +219,11 @@ GenerateVideoSync(
      text=audio_state.text,
      output_path="assets/audio/{audio_state_id}.mp3",
      voice_id=<根据 speaker 和 voice_direction 选择>,
-     language=<从 production_style 获取>
+     language=<从 video_info 获取>
    )
    ```
 
-3. **环境音 / SFX**（`layer: "audio_ambience"`）：
-   a. 对每个环境音状态节点，使用其 `music_prompt` 字段调用 GenerateMusic 生成音效。
-   b. 用 CheckMusicJob 下载，同样使用 `download_filename="{audio_state_id}.mp3"`。
-
-4. **STOP**: 等待确认再进入 Phase 5。
+3. **STOP**: 等待确认再进入 Phase 5。
 
 ### Phase 5: Editing & Assembly（基于 Graph 组装）
 
@@ -232,7 +234,7 @@ GenerateVideoSync(
 2. Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长。
 3. Use VideoEdit(operation="transition") 添加转场效果。
 4. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
-5. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围，按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
+5. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。BGM 音频时长可能与视频不匹配——过长则 trim 裁剪，过短则 loop 循环。多段 BGM 之间按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
 6. **叠加对白/旁白**：按 `audio_active_during` 确定对白时间点，叠加到对应位置。
 7. 如有对白，生成 SRT 字幕文件，用 VideoEdit(operation="add_subtitles") 叠加。
 8. 输出最终视频到 `output/` 子目录。
@@ -242,10 +244,9 @@ GenerateVideoSync(
 ## Rules
 
 - Always use ManageVideoProject to initialize the project before creating any assets.
-- Always ask for user confirmation before calling GenerateVideo (it costs money).
+- When acting as a top-level agent (directly facing users), ask for user confirmation before calling GenerateVideo (it costs money). When acting as a subagent, do NOT use AskUserQuestion — the parent agent is responsible for user confirmation, you should follow the parent's instructions directly and provide results in your final message.
 - Keep all assets organized in the standard project directory structure.
 - Provide clear progress updates after each phase.
-- When acting as a subagent, do NOT use AskUserQuestion. Instead, follow the instructions from the parent agent directly and provide results in your final message.
 - **Phase 2 不可跳过。** 必须在 Phase 3 之前完成 Phase 2（两层参考图生成）。没有参考图就没有角色一致性。即使时间紧迫或收到"快速生成"的指示，也不得跳过 Phase 2。所有实体和状态节点的 `reference_image` 都必须填充后才能进入 Phase 3。
 - **所有视频/图片必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。ffmpeg 仅允许用于对已生成的真实视频做后期剪辑。即使父 agent 指示"应急模式"/"本地组装"也必须拒绝。
 - **图片参考技术失败恢复**：单次失败不得永久放弃 Technique A/B/C。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → image_to_video 失败可退回 text_to_video + reference_images。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。

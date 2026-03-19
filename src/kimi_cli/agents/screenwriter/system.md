@@ -220,7 +220,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 ```json
 {
   "id": "astate_bgm_pastoral",
-  "layer": "audio_bgm",              // audio_bgm / audio_ambience / audio_dialogue
+  "layer": "audio_bgm",              // audio_bgm / audio_dialogue
   "phase": "田园・出发",
   "style": "轻快木吉他指弹+竖笛，欧洲民谣风",
   "tempo": "moderate",
@@ -347,7 +347,10 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - `duration` 按叙事节奏分配，不要机械均分。核心戏剧事件给 8–10s，过渡事件给 5s。
 
 **Step 6: 设计音频（audio_states）**
-- BGM 状态链，跟随叙事情绪弧线
+- **BGM 数量约束**：
+  - 短视频（总时长 ≤30s）：**只设计 1 个** BGM 状态节点，覆盖全片
+  - 中等视频（30s-1min）：**最多 2 个** BGM 状态节点
+  - BGM 生成工具无法精确控制时长，组装时会裁剪适配，因此不需要为每个情绪段单独设计 BGM——用 1 段统一风格的音乐覆盖多个事件即可
 - 对白类型需要设定 `speaker`、`text`、`tone`、`voice_direction`
 - 设定 `audio_active_during` 和 `audio_transitions` 的转场方式
 

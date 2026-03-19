@@ -4,8 +4,13 @@ Produces one entry per camera shot — the atomic unit of video generation.
 Each shot carries a material inventory (reference images, prompt materials,
 camera language) so the agent can decide generation strategy independently.
 
-Tail-frame continuity is only used when a single shot is split into multiple
-generations due to duration limits.
+Tail-frame continuity is used in two scenarios:
+1. **Duration-split**: a single shot exceeds MAX_SHOT_DURATION and is split
+   into continuation parts (``is_continuation: true``, ``prev_shot``).
+2. **Sequence continuity**: consecutive shots across THEN-linked events share
+   the same location, characters, shot_type, and angle
+   (``prev_shot_in_sequence``).  The agent may extract the tail frame of the
+   predecessor and use ``image_to_video`` to maintain visual continuity.
 """
 
 from __future__ import annotations
@@ -367,6 +372,107 @@ def _parse_duration(raw: Any, default: float = 5.0) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Cross-shot sequence continuity
+# ---------------------------------------------------------------------------
+
+
+def _get_focus_characters(shot: dict[str, Any]) -> set[str]:
+    """Extract character entity IDs that are in focus_on via prompt_materials."""
+    focus_on = set(shot.get("focus_on", []))
+    materials = shot.get("prompt_materials", {})
+    return {
+        a["entity"]
+        for a in materials.get("appearances", [])
+        if a["id"] in focus_on
+    }
+
+
+def _is_sequence_eligible(current: dict[str, Any], prev: dict[str, Any]) -> bool:
+    """Check if current shot can use tail-frame continuity from prev shot.
+
+    Three conditions must all be met:
+    1. Same location
+    2. Current shot's focus characters are a subset of prev shot's (no new faces)
+    3. Same shot_type and angle
+    """
+    curr_mat = current.get("prompt_materials", {})
+    prev_mat = prev.get("prompt_materials", {})
+
+    # Same location
+    curr_loc = curr_mat.get("happens_at", "")
+    prev_loc = prev_mat.get("happens_at", "")
+    if not curr_loc or curr_loc != prev_loc:
+        return False
+
+    # Characters: current must be subset of prev (no new characters in frame)
+    curr_chars = _get_focus_characters(current)
+    prev_chars = _get_focus_characters(prev)
+    if not curr_chars or not curr_chars.issubset(prev_chars):
+        return False
+
+    # Same shot_type and angle
+    if current.get("shot_type") != prev.get("shot_type"):
+        return False
+    if current.get("angle") != prev.get("angle"):
+        return False
+
+    return True
+
+
+def _add_sequence_continuity(shots: list[dict[str, Any]], g: _GraphIndex) -> None:
+    """Compute cross-shot tail-frame continuity suggestions.
+
+    For each first shot of an event, check if the last shot of the
+    THEN-predecessor event is eligible for tail-frame handoff.
+    If so, set ``prev_shot_in_sequence``.
+    """
+    # Build THEN predecessor map: to_event -> from_event
+    then_pred: dict[str, str] = {}
+    for e in g.event_sequence:
+        if e.get("type") == "THEN":
+            then_pred[e["to"]] = e["from"]
+
+    # Index: first and last shot index per event
+    first_shot_of_event: dict[str, int] = {}
+    last_shot_of_event: dict[str, int] = {}
+    for i, shot in enumerate(shots):
+        eid = shot["event_id"]
+        if eid not in first_shot_of_event:
+            first_shot_of_event[eid] = i
+        last_shot_of_event[eid] = i
+
+    for i, shot in enumerate(shots):
+        shot["prev_shot_in_sequence"] = None
+
+        # Skip continuation parts (already handled by prev_shot)
+        if shot["is_continuation"]:
+            continue
+
+        eid = shot["event_id"]
+
+        # Only for the first shot of an event
+        if first_shot_of_event.get(eid) != i:
+            continue
+
+        # Find THEN predecessor event
+        pred_eid = then_pred.get(eid)
+        if not pred_eid:
+            continue
+
+        pred_idx = last_shot_of_event.get(pred_eid)
+        if pred_idx is None:
+            continue
+
+        prev_shot = shots[pred_idx]
+
+        if _is_sequence_eligible(shot, prev_shot):
+            shot["prev_shot_in_sequence"] = {
+                "shot_id": prev_shot["shot_id"],
+                "output_path": prev_shot["output_path"],
+            }
+
+
+# ---------------------------------------------------------------------------
 # Main linearization
 # ---------------------------------------------------------------------------
 
@@ -467,6 +573,9 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
                         "event_id": event_id,
                         "output_path": part_output,
                     }
+
+    # Compute cross-shot sequence continuity
+    _add_sequence_continuity(shots, g)
 
     plan = {
         "shots": shots,

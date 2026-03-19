@@ -23,6 +23,18 @@ def _guess_video_mime(path: str) -> str:
     }.get(suffix, "video/mp4")
 
 
+def _guess_image_mime(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+    }.get(suffix, "image/png")
+
+
 class GeminiVLMClient:
     """Thin wrapper around Gemini for video understanding tasks.
 
@@ -63,6 +75,37 @@ class GeminiVLMClient:
             raise ValueError(
                 "VLM provider requires either api_key or credentials_json + project_id"
             )
+
+    async def analyze_image(
+        self,
+        image_paths: list[tuple[str, str]],
+        prompt: str,
+    ) -> str:
+        """Send one or more labelled images + prompt to Gemini.
+
+        Args:
+            image_paths: List of (label, path) tuples. Each image is prefixed
+                         with its label so the VLM can distinguish them.
+            prompt: The analysis prompt.
+        """
+        parts: list[types.Part] = []
+        for label, path in image_paths:
+            image_bytes = Path(path).read_bytes()
+            mime = _guess_image_mime(path)
+            parts.append(types.Part.from_text(text=f"[{label}]"))
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime))
+        parts.append(types.Part.from_text(text=prompt))
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=parts,
+            config=types.GenerateContentConfig(response_modalities=["TEXT"]),
+        )
+
+        if not response.candidates:
+            raise RuntimeError("Gemini returned no candidates")
+
+        return response.text or ""
 
     async def analyze(self, video_path: str, prompt: str) -> str:
         """Send a single video + prompt to Gemini and return the text response."""
