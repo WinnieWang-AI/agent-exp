@@ -70,7 +70,15 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 **CharacterAppearance（外形状态）**
 
-描述角色的**视觉外形**。只有外形发生重要变化时（换装、受伤、变装等）才创建新节点。每个节点生成一张形象参考图。**如果角色全程外形不变，只需一个 appearance 节点，且其 `visual` 必须和 entity 的 `fixed_traits` 有明确可见的差异描述（不同服装/姿态/状态）；如果确实无差异，`visual` 各字段写"same as entity default"以便 video-creator 跳过重复生成。**
+描述角色的**视觉外形**。每个节点会生成一张静态参考图。
+
+**只有以下两种情况才建新 appearance 节点：**
+1. **服饰更换**：穿上了一套不同的衣服/装备。新节点的 `costume` 必须描述一套与前一个节点完全不同的服装，而非同款加修饰语。
+2. **肢体发生明显变化**：受伤、断手、毁容等身体结构性变化。新节点的 `physical` 必须描述具体的肢体损伤。
+
+其他一切变化（姿态、表情、光效、氛围、"更华美"、"气质更X"）都不建新节点，在视频 prompt 中描述即可。
+
+**如果角色全程外形不变，只需一个 appearance 节点。** 如果该节点的 `visual` 与 entity 的 `fixed_traits` 没有差异，各字段写"same as entity default"，video-creator 会跳过重复生成，直接复用实体参考图。
 
 ```json
 {
@@ -84,6 +92,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
     "props": ["prop_hood", "prop_basket"]
   },
   "based_on": null,           // 可选，指向视觉基准状态
+  "change_reason": null,      // 相比 based_on 有什么明显的视觉变化。首个 appearance（based_on 为 null）写 null；后续节点必填，如"斗篷撕裂，裙摆沾满泥"
   "reference_image": null     // 由生成流程填充
 }
 ```
@@ -192,12 +201,14 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
     "aspect_ratio": "16:9",      // "16:9" / "9:16" / "1:1"
     "duration": "2min",          // 目标视频总时长，如 "30s" / "1min" / "2min"
     "language": "zh"             // 视频语言，如 "zh" / "en" / "ja"
-  }
+  },
+  "synopsis": "小红帽受母亲嘱托，带着食篮穿过森林去探望外婆。途中遇到大灰狼假装友善搭话，套出外婆住处后抢先赶到……"
 }
 ```
 - `aspect_ratio`：画面比例，由 director 传入（已和用户确认），不可自行默认
 - `duration`：目标视频总时长，由 director 传入
 - `language`：视频内容语言，影响对白、字幕、旁白的语言。**必填**，由 director 传入，不可自行默认
+- `synopsis`：故事梗概，用自然语言完整讲述故事，是所有事件的叙事来源（见 Step 0.5）
 
 #### ProductionStyle（视觉风格）
 
@@ -292,6 +303,20 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 如果故事含有风格切换（闪回、梦境），创建多个 ProductionStyle 节点并设定 `style_transitions`
 - `style_prefix` / `negative_prefix` 用英文，要具体可执行（如 "hand-drawn illustration, warm color palette" 而非 "好看的风格"）
 
+**Step 0.5: 写故事梗概（synopsis）**
+
+在拆解事件之前，先根据 `video_info.duration` 思考这个时长能承载多大的故事，然后用自然语言写一段**完整的故事梗概**，写入顶层 `synopsis` 字段。
+
+梗概要求：
+- 用连贯的叙事把故事从头讲到尾，包含起因、发展、转折、结局
+- 明确角色的情感弧线和关键转变
+- 体现事件之间的因果关系，而不仅仅是时间顺序
+- 根据时长控制故事范围：时长很短时（10-15s）聚焦一个瞬间/氛围；较短时（20-30s）直入核心冲突；充裕时（≥1min）展开完整弧线
+
+**原则：宁可少讲、讲透，也不要贪多导致叙事仓促。** 把时长当作创作约束，而不是事后裁剪的对象。
+
+后续所有事件都必须从这段梗概中分解出来——梗概是故事的唯一真相源，事件是它的结构化拆解。
+
 **Step 1: 提取实体**
 - 识别所有角色（characters）、物品（props）、场所（locations）
 - **物品筛选**：只有角色手持/使用的、需要跨镜头保持视觉一致性的关键道具才建为 Prop 实体。环境中的自然物体（石头、树叶、河水）属于 Location 的视觉描述，不建独立实体。
@@ -305,7 +330,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 为有角色互动的事件写 `interactions`
 
 **Step 3: 推导状态**
-- **角色外形（appearances）**：仅在外形真正变化时创建新节点。同一外形跨多个事件共享。
+- **角色外形（appearances）**：只有服饰更换或肢体明显变化（受伤、断手等）才建新节点。同一外形跨多个事件共享。
 - **角色心态（minds）**：情绪/行为模式变化时创建。频率高于外形。
 - **道具状态（prop_states）**：仅在道具本身外观变化时创建。使用方式变化不算。
 - **环境状态（location_states）**：环境物理状态变化时创建。用物理描述命名。
@@ -318,7 +343,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 确保每个事件都有对应的 production_style（`style_active_during`）
 
 **阶段一写入与验证**
-1. 将 JSON 写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。此时 `camera_directives`、`audio_states`、`audio_active_during`、`audio_transitions` 为空数组/空对象。
+1. 将 JSON 写入调用方指定的保存路径。如果调用方未指定路径，则写入 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`（`{project_name}` 根据故事主题自行命名，如 `xiaomaoguohe`、`little_red`）。此时 `camera_directives`、`audio_states`、`audio_active_during`、`audio_transitions` 为空数组/空对象。
 2. **写入后立即调用 `ValidateStoryGraph`** 检查结构完整性。不可跳过。
 3. 如果发现问题，**必须修复后重新写入并再次验证**，直到通过。
 4. 向用户汇报故事结构摘要（角色、事件、状态数量及主要剧情脉络），**等待用户确认后再进入阶段二**。
@@ -340,13 +365,14 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 视频生成工具每次调用产出一个连续片段，可选时长 **5s–10s**。工具本身不具备镜头内转场能力，最终视频是多个片段拼接而成。因此：
 
 - **每个 shot 的 `duration` 必须在 5s–10s 之间**。低于 5s 的片段拼接后画面细碎、观感极差；超过 10s 超出生成工具能力。
-- **默认每个事件只用 1 个 shot**（duration 5–10s），用运镜（tracking、push_in 等）在单片段内完成叙事变化。
+- **默认每个事件只用 1 个 shot**，用运镜（tracking、push_in 等）在单片段内完成叙事变化。
 - 只在以下情况才拆为 2 个 shot：对话正反打、需要特写插入揭示关键细节、同一事件内有明确的情绪转折。
-- 拆分后每个 shot 仍须 ≥5s，因此拆分意味着该事件需要 ≥10s 的时间预算。
-- **短视频（≤30s）全片 shot 总数不超过 4–6 个；1min 视频不超过 8–12 个。**
-- `duration` 按叙事节奏分配，不要机械均分。核心戏剧事件给 8–10s，过渡事件给 5s。
+- `duration` 按叙事节奏分配，不要机械均分。根据视频总时长和事件数量，合理分配每个 shot 的时长——所有 shot 时长之和应接近目标总时长。核心事件分配更多时间，次要事件更少，但每个 shot 都必须在 5-10s 范围内。
 
 **Step 6: 设计音频（audio_states）**
+
+**⚠️ 只允许两种 layer：`audio_bgm` 和 `audio_dialogue`。禁止使用 `audio_ambience`、`audio_sfx` 或其他任何自定义 layer——当前没有对应的生成工具，写入会导致流程失败。**
+
 - **BGM 数量约束**：
   - 短视频（总时长 ≤30s）：**只设计 1 个** BGM 状态节点，覆盖全片
   - 中等视频（30s-1min）：**最多 2 个** BGM 状态节点
@@ -405,7 +431,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 ## 输出规范
 
-- **输出路径**：`${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。绝对不要保存到其他位置。
+- **输出路径**：优先使用调用方指定的保存路径。如果调用方未指定，则使用 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。绝对不要保存到其他位置。
 - 输出的 JSON 必须完整、合法，可以直接被可视化工具加载
 - **`reference_image` 字段必须为 `null`**。禁止写入占位符（如 `"ref_char_xxx"`）、空字符串或任何非真实文件路径的值。该字段由 video-creator 在生成参考图后回填真实路径，screenwriter 永远只写 `null`。
 - ID 命名规范：`char_`, `prop_`, `loc_`, `time_`, `evt_`, `appear_`, `mind_`, `pstate_`, `lstate_`, `style_`, `astate_`, `cam_`

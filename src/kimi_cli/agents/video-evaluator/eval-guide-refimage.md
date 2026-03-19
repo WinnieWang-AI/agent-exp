@@ -6,7 +6,7 @@
 
 ## 评估流程
 
-1. 调用方会提供：图片路径列表、每张图的类型（character / location / prop / appearance / location_state / prop_state）、对应的描述（`fixed_traits` 或 `visual`/`appearance`）。
+1. 调用方会提供：图片路径列表、每张图的类型（character / location / prop / appearance / location_state / prop_state）、对应的描述（`fixed_traits` 或 `visual`/`appearance`）、以及项目目标风格（`style_prefix`）。
 2. 用 **AnalyzeImage** 分析图片，在 prompt 中传入 checklist 检查项和调用方提供的描述供 VLM 比对。
    - **实体图**：每张单独调用，images 传一张，prompt 要求检查对应类型的各项。
    - **状态图**：images 同时传入**实体基础图**和**状态图**两张（分别标注 label），prompt 要求 VLM 对比两图检查身份一致性和状态差异。
@@ -26,6 +26,7 @@
 | **居中构图** | 人物居中，无明显偏移 | 人物偏左/偏右 |
 | **单一视图** | 只有一个角度的全身像 | 生成了多视图 character sheet（正面+侧面+细节） |
 | **特征匹配** | 与提供的描述中的关键特征一致 | 性别、年龄、体型、种族等明显不符 |
+| **风格匹配** | 画面风格与调用方提供的 `style_prefix` 一致 | style_prefix 要求写实但生成了卡通；要求水彩但生成了 3D 渲染 |
 | **无光影污染** | 无 cinematic lighting、体积光、强烈阴影 | 背景有光晕、雾气、明暗渐变 |
 
 **CharacterAppearance 状态图额外检查**：
@@ -61,9 +62,10 @@
 | 检查项 | 级别 | 说明 |
 |--------|------|------|
 | 全身可见 | **关键** | 脚截断、半身均不可接受 |
-| 纯白背景 | **关键** | 任何阴影、渐变、场景元素、黑/灰背景均不可接受 |
+| 纯白背景 | **关键** | 背景整体灰色渐变、场景元素、黑/灰背景不可接受。角色脚下轻微接触阴影可接受（不算 FAIL） |
 | 单一视图 | **关键** | 多视图 character sheet 不可接受 |
 | 特征匹配（关键特征：性别、种族、体型、物种） | **关键** | 关键特征不符不可接受 |
+| 风格匹配（与 style_prefix 一致） | **关键** | 风格大类不符（如要求写实却生成卡通）不可接受。同一风格大类内的细微差异可接受 |
 | 无光影污染 | **次要** | 轻微阴影可接受，明显光晕/雾气/体积光不可接受 |
 | 居中构图 | **次要** | 轻微偏移可接受 |
 | 特征匹配（次要特征：发色深浅、衣服纹理细节） | **次要** | 细节偏差可接受 |
@@ -108,7 +110,7 @@
 
 ### 其他原则
 
-- **给出可操作的修改建议**：FAIL 时不要只说"重新生成"，要指出 prompt 中可能的问题（如"去掉 cinematic lighting"、"prompt 开头加 full-body standing figure on plain white background"、"prompt 超过 60 词需精简"）。
+- **修改建议限定在 prompt 层面**：FAIL 时指出 prompt 中可能的问题和具体的措辞修改方向（如"去掉 cinematic lighting"、"prompt 开头加 full-body standing figure on plain white background"、"prompt 超过 60 词需精简"）。**不要给出分辨率、色彩空间、画面比例等技术参数建议**——这些由生成规范决定，不在评估范围内。
 - **无光影污染的边界**：轻微地面阴影（角色脚下的投影）算 ACCEPTABLE；背景整体灰色渐变、雾气、光晕算关键项 FAIL（归入"纯白背景"FAIL）。
 
 ---

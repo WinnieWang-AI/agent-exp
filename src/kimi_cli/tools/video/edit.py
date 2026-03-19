@@ -102,7 +102,9 @@ class VideoEdit(CallableTool2[Params]):
         if len(params.input_files) < 2:
             raise ValueError("concat requires at least 2 input files")
         # Normalize all inputs to the same resolution/SAR before concatenating.
+        # Use the first input's resolution as the target to preserve aspect ratio.
         # For clips without audio, generate a silent audio track so concat works.
+        target_w, target_h = self._probe_resolution(params.input_files[0])
         n = len(params.input_files)
         inputs: list[str] = []
         filter_parts: list[str] = []
@@ -110,8 +112,8 @@ class VideoEdit(CallableTool2[Params]):
         for i, f in enumerate(params.input_files):
             inputs.extend(["-i", f])
             filter_parts.append(
-                f"[{i}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,"
-                f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}];"
+                f"[{i}:v:0]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2,setsar=1[v{i}];"
             )
             if self._probe_has_audio(f):
                 filter_parts.append(
@@ -266,3 +268,19 @@ class VideoEdit(CallableTool2[Params]):
             return float(result.stdout.strip())
         except Exception:
             return 5.0
+
+    @staticmethod
+    def _probe_resolution(path: str) -> tuple[int, int]:
+        """Get video width and height via ffprobe."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height",
+                 "-of", "csv=p=0:s=x", path],
+                capture_output=True, text=True, timeout=10,
+            )
+            w, h = result.stdout.strip().split("x")
+            return int(w), int(h)
+        except Exception:
+            return 1920, 1080

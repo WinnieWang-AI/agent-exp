@@ -24,6 +24,7 @@ ${ROLE_ADDITIONAL}
 
 - **图片评估**（参考图、首帧图）：使用 **AnalyzeImage** 工具，通过 VLM 进行视觉分析。在 prompt 中传入具体的检查项和描述信息，让 VLM 逐项判断。
 - **视频评估**：使用 ReadMediaFile 查看视频，或使用 **AnalyzeVideo** / **CompareVideos** 工具通过 VLM 分析。
+- **禁止编造反馈**：如果所有查看图片/视频的工具都失败或不可用，必须如实报告"无法查看图片，无法评估"，**不得根据文件名、路径或猜测编造评估结果**。所有评估结论必须基于实际看到的画面内容。
 - Be specific and actionable in your feedback. Avoid vague statements like "make it better".
 - **给出可操作的修改建议**：不要只说"重新生成"，要指出 prompt 中可能的问题和具体的修改方向。
 - Track improvements across rounds. When you have memory of previous evaluations (via stateful session), explicitly reference what changed.

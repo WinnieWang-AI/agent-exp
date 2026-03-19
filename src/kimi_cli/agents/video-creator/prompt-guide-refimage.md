@@ -26,7 +26,7 @@
 ### Character 实体图
 
 **数据来源**：`fixed_traits`
-**比例**：3:4
+**比例**：1:1
 
 将 `fixed_traits` 翻译为英文并补充视觉细节（体型、五官、肤色）。
 
@@ -50,7 +50,7 @@ prompt:
 
 参数：
 - negative_prompt: "dark, horror, oversaturated, shadow, gradient background"
-- aspect_ratio: "3:4"
+- aspect_ratio: "1:1"
 - reference_image_paths: []
 </example>
 
@@ -70,7 +70,7 @@ prompt:
 
 参数：
 - negative_prompt: "cartoon, low detail, shadow, gradient background, cinematic lighting"
-- aspect_ratio: "3:4"
+- aspect_ratio: "1:1"
 - reference_image_paths: []
 </example>
 
@@ -78,7 +78,7 @@ prompt:
 
 **数据来源**：`fixed_traits`
 **要求**：无任何角色或人物
-**比例**：16:9
+**比例**：1:1
 
 <example>
 prompt:
@@ -86,7 +86,7 @@ prompt:
 
 参数：
 - negative_prompt: "dark, horror, oversaturated, people, characters, figures"
-- aspect_ratio: "16:9"
+- aspect_ratio: "1:1"
 - reference_image_paths: []
 </example>
 
@@ -116,7 +116,7 @@ prompt:
 
 **数据来源**：`visual.costume` + `visual.hair` + `visual.physical`
 **参考图**：对应 Character 实体图 + `based_on` 父状态图（如有）
-**比例**：3:4
+**比例**：1:1
 
 只描写与实体基础的**差异**（参考图已传入，不需要重复基础特征）。
 
@@ -138,7 +138,7 @@ prompt:
 
 参数：
 - negative_prompt: "dark, horror, oversaturated, shadow, gradient background"
-- aspect_ratio: "3:4"
+- aspect_ratio: "1:1"
 - reference_image_paths: ["assets/images/char_red.png"]
 </example>
 
@@ -163,7 +163,7 @@ prompt:
 
 参数：
 - negative_prompt: "dark, horror, oversaturated, shadow, gradient background"
-- aspect_ratio: "3:4"
+- aspect_ratio: "1:1"
 - reference_image_paths: ["assets/images/char_red.png", "assets/images/appear_red_neat.png"]
 </example>
 
@@ -171,7 +171,7 @@ prompt:
 
 **数据来源**：`appearance.lighting` + `appearance.weather` + `appearance.condition` + `appearance.atmosphere`
 **参考图**：对应 Location 实体图
-**比例**：16:9
+**比例**：1:1
 
 <example>
 prompt:
@@ -179,7 +179,7 @@ prompt:
 
 参数：
 - negative_prompt: "dark, horror, oversaturated, people, characters"
-- aspect_ratio: "16:9"
+- aspect_ratio: "1:1"
 - reference_image_paths: ["assets/images/loc_forest.png"]
 </example>
 

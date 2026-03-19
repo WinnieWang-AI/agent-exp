@@ -69,14 +69,18 @@ class GeminiImageProvider(ImageProvider):
             prompt_text += f"\nStyle: {request.style}"
         if request.negative_prompt:
             prompt_text += f"\nAvoid: {request.negative_prompt}"
-        if request.aspect_ratio and request.aspect_ratio != "1:1":
-            prompt_text += f"\nAspect ratio: {request.aspect_ratio}"
         parts.append(types.Part.from_text(text=prompt_text))
 
+        image_config = types.ImageConfig(
+            aspect_ratio=request.aspect_ratio or "1:1",
+        )
         response = await self._client.aio.models.generate_content(
             model=self._model,
             contents=parts,
-            config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE"],
+                image_config=image_config,
+            ),
         )
 
         # Extract image from response

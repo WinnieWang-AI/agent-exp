@@ -32,9 +32,11 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 | 类型 | Prompt 来源 | 要求 | 比例 | 路径 |
 |---|---|---|---|---|
-| Character | `fixed_traits` | 全身、纯白背景、居中 | 3:4 | `assets/images/{character_id}.png` |
-| Location | `fixed_traits` | 无角色、纯环境 | 16:9 | `assets/images/{location_id}.png` |
+| Character | `fixed_traits` | 全身、纯白背景、居中、**仅一张正面图** | 1:1 | `assets/images/{character_id}.png` |
+| Location | `fixed_traits` | 无角色、纯环境 | 1:1 | `assets/images/{location_id}.png` |
 | Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `assets/images/{prop_id}.png` |
+
+**每个实体只生成一张图**：Character 一张正面全身、Location 一张环境、Prop 一张特写。文件路径严格为 `assets/images/{entity_id}.png`。
 
 **并行策略（并行度 ≤ 3）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
 
@@ -48,8 +50,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 | 类型 | Prompt 来源 | 比例 | 路径 |
 |---|---|---|---|
-| CharacterAppearance | `visual.costume` + `visual.hair` + `visual.physical` | 3:4 | `assets/images/{appearance_id}.png` |
-| LocationState | `appearance.lighting/weather/condition/atmosphere` | 16:9 | `assets/images/{location_state_id}.png` |
+| CharacterAppearance | `visual.costume` + `visual.hair` + `visual.physical` | 1:1 | `assets/images/{appearance_id}.png` |
+| LocationState | `appearance.lighting/weather/condition/atmosphere` | 1:1 | `assets/images/{location_state_id}.png` |
 | PropState | `appearance.visual` + `appearance.condition` | 1:1 | `assets/images/{prop_state_id}.png` |
 
 **去重规则**：生成第 2 层前，先将每个状态的 prompt 与其所属实体的 prompt 对比。如果状态描述的视觉外观与实体默认外观**没有实质差异**（如角色只有一个外观状态、或状态仅描述"自然/默认"姿态），则**跳过生成**，直接将该状态的 `reference_image` 设为其所属实体的参考图路径（如 `assets/images/{character_id}.png`）。只有当状态在服装、发型、体态、光照、氛围等方面与实体有**明确可见的差异**时，才生成新的参考图。
@@ -232,12 +234,12 @@ GenerateVideoSync(
    - `PARALLEL` → 交叉剪辑（参考 `camera_directive` 中 `for_event` 为数组的镜头指导交叉顺序）
    - `is_continuation` parts → 按顺序拼接为完整镜头
 2. Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长。
-3. Use VideoEdit(operation="transition") 添加转场效果。
-4. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
-5. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。BGM 音频时长可能与视频不匹配——过长则 trim 裁剪，过短则 loop 循环。多段 BGM 之间按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
-6. **叠加对白/旁白**：按 `audio_active_during` 确定对白时间点，叠加到对应位置。
+3. **逐 shot 合成对白**：根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。**回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
+4. Use VideoEdit(operation="transition") 添加转场效果（优先使用 `_merged.mp4` 版本，无则用原始 shot 视频）。
+5. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
+6. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。BGM 音频时长可能与视频不匹配——过长则 trim 裁剪，过短则 loop 循环。多段 BGM 之间按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
 7. 如有对白，生成 SRT 字幕文件，用 VideoEdit(operation="add_subtitles") 叠加。
-8. 输出最终视频到 `output/` 子目录。
+8. 输出最终视频到调用方指定的路径（如 `output/attempt_1.mp4`）。如果调用方未指定，输出到 `output/` 子目录。**不要覆盖已有的输出文件**——如果目标路径已存在，追加序号（如 `output/final_1.mp4`）。
 9. **验证最终成片**：确认总时长、完整性、音视频同步。如有问题修复后重新输出。
 10. Use ManageVideoProject(action="update_metadata") 标记项目完成。
 
@@ -245,7 +247,7 @@ GenerateVideoSync(
 
 - Always use ManageVideoProject to initialize the project before creating any assets.
 - When acting as a top-level agent (directly facing users), ask for user confirmation before calling GenerateVideo (it costs money). When acting as a subagent, do NOT use AskUserQuestion — the parent agent is responsible for user confirmation, you should follow the parent's instructions directly and provide results in your final message.
-- Keep all assets organized in the standard project directory structure.
+- Keep all assets organized in the standard project directory structure. **禁止创建规范之外的目录或复制文件**：参考图只保存到 `assets/images/{entity_id}.png`，不要创建 `references/`、`layer1/` 等额外目录，不要给文件加 `_v1`、`_v2` 等版本后缀，不要复制已有文件到其他路径。
 - Provide clear progress updates after each phase.
 - **Phase 2 不可跳过。** 必须在 Phase 3 之前完成 Phase 2（两层参考图生成）。没有参考图就没有角色一致性。即使时间紧迫或收到"快速生成"的指示，也不得跳过 Phase 2。所有实体和状态节点的 `reference_image` 都必须填充后才能进入 Phase 3。
 - **所有视频/图片必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。ffmpeg 仅允许用于对已生成的真实视频做后期剪辑。即使父 agent 指示"应急模式"/"本地组装"也必须拒绝。

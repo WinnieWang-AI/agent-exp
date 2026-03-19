@@ -53,7 +53,7 @@ shot plan 数据：
 参数：
 - reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png", "assets/images/appear_wolf_natural.png"]
   （从 techniques.B_first_frame.generate_image_spec.reference_image_paths 获取）
-- aspect_ratio: "16:9"
+- aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
 
@@ -85,7 +85,7 @@ shot plan 数据：
 
 参数：
 - reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png"]
-- aspect_ratio: "16:9"
+- aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
 
@@ -154,7 +154,7 @@ shot plan 数据：
 - mode: "image_to_video"（因为有 Technique B/C 提供的首帧/尾帧）
 - reference_image_path: "assets/frames/cam_wolf_encounter_shot_0_first.png"（来自 Technique B/C）
 - reference_images: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
-- aspect_ratio: "16:9"
+- aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>
 
@@ -190,7 +190,7 @@ shot plan 数据：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 - mode: "text_to_video"（无 Technique B/C）
 - reference_images: ["assets/images/appear_red_neat.png"]
-- aspect_ratio: "16:9"
+- aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>
 
@@ -230,7 +230,7 @@ shot plan 数据：
 - mode: "image_to_video"
 - reference_image_path: "assets/frames/cam_grandma_door_shot_0_first.png"
 - reference_images: ["assets/images/appear_grandma_home.png"]
-- aspect_ratio: "16:9"
+- aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>
 

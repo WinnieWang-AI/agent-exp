@@ -67,11 +67,23 @@ def _all_ids(ids: dict[str, set[str]]) -> set[str]:
     return result
 
 
+_VALID_AUDIO_LAYERS = {"audio_bgm", "audio_dialogue"}
+
+
 def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list[str]:
     """Check that all cross-references point to existing IDs."""
     issues: list[str] = []
     all_ids = _all_ids(ids)
     entity_ids = ids["character"] | ids["prop"] | ids["location"]
+
+    # audio_states: layer must be one of the supported types
+    for aus in data.get("audio_states", []):
+        layer = aus.get("layer", "")
+        if layer not in _VALID_AUDIO_LAYERS:
+            issues.append(
+                f'audio_state {aus["id"]}: layer "{layer}" is not supported. '
+                f"Only {sorted(_VALID_AUDIO_LAYERS)} are allowed (no audio_ambience/audio_sfx — no provider available)"
+            )
 
     # character_appearances.entity -> character
     for a in data.get("character_appearances", []):
@@ -79,6 +91,20 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
             issues.append(f'appearance {a["id"]}: entity "{a.get("entity")}" not found in characters')
         if a.get("based_on") and a["based_on"] not in ids["character_appearance"]:
             issues.append(f'appearance {a["id"]}: based_on "{a["based_on"]}" not found')
+        if a.get("based_on"):
+            if not a.get("change_reason"):
+                issues.append(
+                    f'appearance {a["id"]}: has based_on but missing change_reason. '
+                    f"Only two reasons justify a new appearance: costume change or significant body injury."
+                )
+            costume = a.get("visual", {}).get("costume", "")
+            _SAME_COSTUME_MARKERS = ["同款", "同一套", "same", "unchanged", "不变"]
+            if any(marker in costume for marker in _SAME_COSTUME_MARKERS):
+                issues.append(
+                    f'appearance {a["id"]}: costume "{costume}" indicates the same outfit as the base. '
+                    f"A new appearance requires a different costume or significant body injury. "
+                    f"Remove this node and describe other changes (posture, glow, movement) in the video prompt."
+                )
 
     # character_minds.entity -> character
     for m in data.get("character_minds", []):
@@ -430,6 +456,13 @@ def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[st
     placeholder_issues = _validate_reference_image_placeholders(data, project_dir)
     if placeholder_issues:
         result["reference_image_placeholders"] = placeholder_issues
+
+    synopsis = data.get("synopsis")
+    if not synopsis or not isinstance(synopsis, str) or len(synopsis.strip()) < 10:
+        result.setdefault("synopsis", []).append(
+            "Missing or too short 'synopsis' field at top level. "
+            "Write a coherent story synopsis before decomposing into events."
+        )
 
     return result
 
