@@ -2,7 +2,7 @@
 
 Phase 3 开始前请阅读。本文件指导你如何根据每个 shot 的素材清单，决定生成方式和参考图选择。
 
-**核心原则：每个 shot 是一次独立的 GenerateVideoSync 调用。** Shot 之间不做尾帧接续。尾帧接续仅在同一个 shot 因时长超限被拆分成多个 part 时使用（`is_continuation: true`）。
+**核心原则：每个 shot 是一次独立的 GenerateVideoSync 调用。** 尾帧接续在两种情况下使用：（1）同一 shot 因时长超限被拆分成多个 part（`is_continuation: true`）；（2）Linearizer 预计算的跨 shot 接续（`prev_shot_in_sequence` 不为 null，见 Step 3.5）。其余 shot 之间互相独立。
 
 **模型能从输入图片里"看到"谁，就能保持谁的一致性。** 首帧图里出现的角色，后续视频能保持一致；首帧里没有的角色，模型没有视觉锚点，一致性无法保证。参考图模式下，模型全程持有角色参考，无论角色何时出场都能保持一致。
 
@@ -145,9 +145,9 @@ Linearizer 会预计算相邻 shot 之间的接续建议。如果当前 shot 的
 |---|---|---|
 | `is_continuation: true` | `image_to_video` | `reference_image_path` = 前一 part 尾帧 |
 | `prev_shot_in_sequence` 存在 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
-| 所有角色首帧可见 + 需要构图控制 | `image_to_video` | `reference_image_path` = 生成的首帧图 |
-| 有角色首帧不可见 / 运动为主 | `text_to_video` + `reference_images` | `reference_images` = 角色参考图列表 |
-| 无参考图可用 | `text_to_video` | 仅 prompt |
+| 所有角色首帧可见 + 需要构图控制 | `image_to_video` | `reference_image_path` = 生成的首帧图，可附加 `reference_images` |
+| 有角色首帧不可见 / 运动为主 | `reference_to_video` | `reference_images` = 角色参考图列表 |
+| 无参考图可用 | `text_to_video` | 仅 prompt，不传任何图片 |
 
 ---
 
@@ -183,7 +183,7 @@ Linearizer 会预计算相邻 shot 之间的接续建议。如果当前 shot 的
 2. 狼是"缓缓走出"——狼可能在视频开头不完全可见 → 不适合首帧
 3. `is_continuation: false` → 无需尾帧接续
 4. 参考图：appear_red_neat.png + appear_wolf_natural.png
-5. **决策：`text_to_video` + `reference_images`**
+5. **决策：`reference_to_video`**，`reference_images` 传入两张参考图
 
 ### 示例 2：运动镜头
 
@@ -210,7 +210,7 @@ Linearizer 会预计算相邻 shot 之间的接续建议。如果当前 shot 的
 2. fast_tracking + 全速奔跑 → 大幅位移，不适合首帧
 3. `is_continuation: false` → 无需尾帧接续
 4. 参考图：appear_wolf_natural.png
-5. **决策：`text_to_video` + `reference_images`**
+5. **决策：`reference_to_video`**，`reference_images` 传入参考图
 
 ### 示例 3：duration-split continuation
 

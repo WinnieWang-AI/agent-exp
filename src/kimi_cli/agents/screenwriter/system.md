@@ -240,6 +240,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 }
 ```
 
+- **`music_prompt` 必须 ≤ 200 字符**（英文）。GenerateMusic 工具硬限制 300 字符，留出余量给 creator 补充风格修饰。写法：乐器 + 风格 + BPM，不要写歌词或叙事描述。
+
 对白类型额外有 `speaker`, `text`, `tone`, `voice_direction` 字段。
 
 ### 关联结构
@@ -326,7 +328,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 **Step 2: 拆解事件**
 - 将故事拆解为离散事件（events），每个事件是一个叙事节拍
 - 确定 event_sequence（THEN/PARALLEL 关系）
-- 设定 timelines：`label` 只描述叙事时间（如"清晨"、"午后"、"三天后"），**禁止写入视频秒数或时间区间**（如"3.5s"、"0-6s"）。视频时长信息属于 `ProductionStyle.duration`，不属于 Timeline。
+- 设定 timelines：`label` 只描述叙事时间（如"清晨"、"午后"、"三天后"），**禁止写入视频秒数或时间区间**（如"3.5s"、"0-6s"）。视频时长信息存储在顶层 `video_info.duration`，不属于 Timeline。
 - 为有角色互动的事件写 `interactions`
 
 **Step 3: 推导状态**

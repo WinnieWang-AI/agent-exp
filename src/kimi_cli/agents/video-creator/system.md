@@ -125,7 +125,7 @@ LinearizeStoryGraph(
 - 如果 `is_continuation: true`，从 `prev_shot.output_path` 提取尾帧做首帧
 - 如果 `prev_shot_in_sequence` 存在（跨 shot 接续），从前一 shot 提取尾帧做首帧
 - 选择参考图（从 `prompt_materials` 中的 `reference_image` 字段）
-- 确定生成方式（`text_to_video` / `image_to_video`）
+- 确定生成方式（`text_to_video` / `reference_to_video` / `image_to_video`）
 
 **2. 执行尾帧提取**（当 `is_continuation: true` 或 `prev_shot_in_sequence` 存在时）：
 ```
@@ -173,7 +173,7 @@ GenerateVideoSync(
 **5. 回写执行结果**：每个 shot 生成后，用 StrReplaceFile 在 `shot-plan.json` 对应 shot 中添加 `execution` 字段，记录实际使用的参数：
 ```json
 "execution": {
-  "mode": "text_to_video",
+  "mode": "reference_to_video",
   "reference_images": ["assets/images/appear_red_neat.png"],
   "first_frame_path": "",
   "tail_frame_path": "",
@@ -211,7 +211,7 @@ GenerateVideoSync(
    )
    ```
    c. 从生成的选项中选择最合适的。
-   d. **BGM 时长适配**：Suno 生成的音乐时长不可精确控制。组装阶段（Phase 5）会用 trim 裁剪或 loop 循环来匹配视频时长，生成时无需关心时长匹配。
+   d. **BGM 时长适配**：Suno 生成的音乐时长不可精确控制。组装阶段（Phase 5）会用 trim 裁剪或 `audio_loop=true` 循环来匹配视频时长，生成时无需关心时长匹配。
 
 2. **对白 / 旁白**（`layer: "audio_dialogue"`）：
    a. 对每个对白状态节点，使用其 `text`、`speaker`、`voice_direction` 字段调用 GenerateSpeech。
@@ -237,7 +237,9 @@ GenerateVideoSync(
 3. **逐 shot 合成对白**：根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。**回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
 4. Use VideoEdit(operation="transition") 添加转场效果（优先使用 `_merged.mp4` 版本，无则用原始 shot 视频）。
 5. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
-6. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。BGM 音频时长可能与视频不匹配——过长则 trim 裁剪，过短则 loop 循环。多段 BGM 之间按 `audio_transitions` 的 `method`（如 `crossfade_2s`、`crossfade_3s`）做转场混音。用 VideoEdit(operation="add_audio") 叠加。
+6. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。
+   - **单段 BGM**：直接用 VideoEdit(operation="add_audio") 叠加。BGM 过长则先 trim 裁剪，过短则设置 `audio_loop=true` 循环。
+   - **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `assets/audio/bgm_mixed.mp3`，再用 add_audio 叠加到视频。
 7. 如有对白，生成 SRT 字幕文件，用 VideoEdit(operation="add_subtitles") 叠加。
 8. 输出最终视频到调用方指定的路径（如 `output/attempt_1.mp4`）。如果调用方未指定，输出到 `output/` 子目录。**不要覆盖已有的输出文件**——如果目标路径已存在，追加序号（如 `output/final_1.mp4`）。
 9. **验证最终成片**：确认总时长、完整性、音视频同步。如有问题修复后重新输出。
@@ -251,7 +253,7 @@ GenerateVideoSync(
 - Provide clear progress updates after each phase.
 - **Phase 2 不可跳过。** 必须在 Phase 3 之前完成 Phase 2（两层参考图生成）。没有参考图就没有角色一致性。即使时间紧迫或收到"快速生成"的指示，也不得跳过 Phase 2。所有实体和状态节点的 `reference_image` 都必须填充后才能进入 Phase 3。
 - **所有视频/图片必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。ffmpeg 仅允许用于对已生成的真实视频做后期剪辑。即使父 agent 指示"应急模式"/"本地组装"也必须拒绝。
-- **图片参考技术失败恢复**：单次失败不得永久放弃 Technique A/B/C。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → image_to_video 失败可退回 text_to_video + reference_images。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。
+- **图片参考技术失败恢复**：单次失败不得永久放弃 Technique A/B/C。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → image_to_video 失败可退回 reference_to_video。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。
 - **GenerateVideo 失败处理**：原样上报完整错误信息，按以下顺序恢复：
   1. **网络错误 / 超时** → 用相同 provider 重试 1 次
   2. **参数错误（如不支持的 mode、aspect_ratio）** → 调整参数后重试

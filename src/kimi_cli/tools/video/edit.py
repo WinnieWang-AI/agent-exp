@@ -9,9 +9,17 @@ from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.utils.environment import Environment
 
 
+class AudioSegment(BaseModel):
+    path: str = Field(description="Audio file path")
+    start: float = Field(default=0, description="Start time in the output timeline (seconds)")
+    end: float = Field(default=0, description="End time in the output timeline (seconds). 0 means play to the end of the audio file.")
+
+
 class Params(BaseModel):
     operation: str = Field(
-        description='Operation: "concat", "trim", "add_audio", "add_subtitles", or "transition"'
+        description='Operation: "concat", "trim", "add_audio", "add_subtitles", "transition", or "mix_audio". '
+        "For add_audio, set audio_loop=true to loop short BGM. "
+        "For mix_audio, provide audio_segments with crossfade_duration to merge multiple audio files with crossfade into one output file."
     )
     input_files: list[str] = Field(
         default_factory=list, description="Input video file paths"
@@ -26,6 +34,20 @@ class Params(BaseModel):
     audio_mix: bool = Field(
         default=True,
         description="If true, mix the new audio with existing audio tracks. If false, replace the audio track entirely (for add_audio).",
+    )
+    audio_loop: bool = Field(
+        default=False,
+        description="If true, loop the audio to match video duration (for add_audio). Useful when BGM is shorter than the video.",
+    )
+    audio_segments: list[AudioSegment] = Field(
+        default_factory=list,
+        description="Audio segments to mix (for mix_audio). Each segment specifies a file path, "
+        "start time, and end time in the output timeline. Segments are trimmed/padded to fit their time range "
+        "and crossfaded at overlap points.",
+    )
+    crossfade_duration: float = Field(
+        default=2.0,
+        description="Crossfade duration in seconds between consecutive audio segments (for mix_audio).",
     )
     subtitle_path: str = Field(default="", description="SRT subtitle file path (for add_subtitles)")
     transition_type: str = Field(default="fade", description="Transition type (for transition)")
@@ -92,10 +114,12 @@ class VideoEdit(CallableTool2[Params]):
                 return self._build_add_subtitles(params)
             case "transition":
                 return self._build_transition(params)
+            case "mix_audio":
+                return self._build_mix_audio(params)
             case _:
                 raise ValueError(
                     f'Unknown operation: "{params.operation}". '
-                    'Use "concat", "trim", "add_audio", "add_subtitles", or "transition".'
+                    'Use "concat", "trim", "add_audio", "add_subtitles", "transition", or "mix_audio".'
                 )
 
     def _build_concat(self, params: Params) -> list[str]:
@@ -155,10 +179,16 @@ class VideoEdit(CallableTool2[Params]):
         video_input = params.input_files[0]
         has_audio = self._probe_has_audio(video_input)
 
+        # When audio_loop is enabled, use -stream_loop -1 on the audio input
+        # so ffmpeg repeats it indefinitely; the video duration acts as the cutoff.
+        audio_input_args = (
+            ["-stream_loop", "-1", "-i", params.audio_path]
+            if params.audio_loop
+            else ["-i", params.audio_path]
+        )
+
         if params.audio_mix and has_audio:
             # Mix new audio with existing audio, output length = video length.
-            # adelay: offset the new audio by audio_offset seconds (in ms).
-            # amix: combine both audio streams; duration=first keeps video's length.
             delay_ms = int(params.audio_offset * 1000)
             if delay_ms > 0:
                 af = f"[1:a]adelay={delay_ms}|{delay_ms}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]"
@@ -167,7 +197,7 @@ class VideoEdit(CallableTool2[Params]):
             return [
                 "ffmpeg", "-y",
                 "-i", video_input,
-                "-i", params.audio_path,
+                *audio_input_args,
                 "-filter_complex", af,
                 "-map", "0:v:0", "-map", "[aout]",
                 "-c:v", "copy", "-c:a", "aac",
@@ -175,27 +205,28 @@ class VideoEdit(CallableTool2[Params]):
             ]
         else:
             # No existing audio or replace mode: add audio track to video.
-            # Do NOT use -shortest (it truncates video to audio length).
+            # Always use -shortest to prevent audio from extending video duration.
             delay_ms = int(params.audio_offset * 1000)
             if delay_ms > 0:
-                # Delay the audio and pad to video length.
                 af = f"[1:a]adelay={delay_ms}|{delay_ms},apad[aout]"
                 return [
                     "ffmpeg", "-y",
                     "-i", video_input,
-                    "-i", params.audio_path,
+                    *audio_input_args,
                     "-filter_complex", af,
                     "-map", "0:v:0", "-map", "[aout]",
                     "-c:v", "copy", "-c:a", "aac",
+                    "-shortest",
                     params.output_path,
                 ]
             else:
                 return [
                     "ffmpeg", "-y",
                     "-i", video_input,
-                    "-i", params.audio_path,
+                    *audio_input_args,
                     "-c:v", "copy", "-c:a", "aac",
                     "-map", "0:v:0", "-map", "1:a:0",
+                    "-shortest",
                     params.output_path,
                 ]
 
@@ -252,6 +283,49 @@ class VideoEdit(CallableTool2[Params]):
             "-filter_complex", video_filter + audio_filter,
             "-map", "[outv]", *audio_map,
             "-c:v", "libx264", "-c:a", "aac",
+            params.output_path,
+        ]
+
+    def _build_mix_audio(self, params: Params) -> list[str]:
+        """Mix multiple audio segments into one file with crossfade transitions.
+
+        Each segment is trimmed to its [start, end) range in the output timeline.
+        Consecutive segments are crossfaded at their overlap point.
+        """
+        segments = params.audio_segments
+        if len(segments) < 2:
+            raise ValueError("mix_audio requires at least 2 audio_segments")
+
+        cf = params.crossfade_duration
+        inputs: list[str] = []
+        filter_parts: list[str] = []
+
+        for i, seg in enumerate(segments):
+            inputs.extend(["-i", seg.path])
+            # Trim each segment to its target duration
+            seg_duration = (seg.end - seg.start) if seg.end > 0 else 0
+            if seg_duration > 0:
+                filter_parts.append(f"[{i}:a]atrim=0:{seg_duration},asetpts=PTS-STARTPTS[a{i}];")
+            else:
+                filter_parts.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}];")
+
+        # Chain acrossfade between consecutive segments
+        # [a0][a1]acrossfade=d=cf[m0]; [m0][a2]acrossfade=d=cf[m1]; ...
+        current = "a0"
+        for i in range(1, len(segments)):
+            out_label = f"m{i - 1}" if i < len(segments) - 1 else "out"
+            filter_parts.append(f"[{current}][a{i}]acrossfade=d={cf}[{out_label}];")
+            current = out_label
+
+        # Remove trailing semicolon
+        filter_str = "".join(filter_parts).rstrip(";")
+
+        return [
+            "ffmpeg", "-y",
+            *inputs,
+            "-filter_complex", filter_str,
+            "-map", f"[{current}]",
+            "-c:a", "aac",
             params.output_path,
         ]
 

@@ -83,9 +83,11 @@ class CheckMusicJob(CallableTool2[Params]):
             download_dir.mkdir(parents=True, exist_ok=True)
             builder.write(f"\nDownloading {len(status.songs)} song(s)...\n")
             for i, song in enumerate(status.songs):
-                if params.download_filename and len(status.songs) == 1:
+                if params.download_filename and i == 0:
+                    # First song uses the exact requested filename
                     filename = params.download_filename
                 elif params.download_filename:
+                    # Additional songs get numbered suffixes as alternatives
                     stem = Path(params.download_filename).stem
                     suffix = Path(params.download_filename).suffix or ".mp3"
                     filename = f"{stem}_{i}{suffix}"

@@ -49,6 +49,7 @@ class ViduVideoProvider(VideoProvider):
 
     async def submit_job(self, request: GenerationRequest) -> VideoJobSubmission:
         is_i2v = request.mode == "image_to_video" and request.reference_image_path
+        is_ref = request.mode == "reference_to_video" and request.reference_images
         endpoint = "/ent/v2/img2video" if is_i2v else "/ent/v2/text2video"
 
         aspect_ratio = request.aspect_ratio if request.aspect_ratio in _VALID_ASPECT_RATIOS else "16:9"
@@ -70,8 +71,8 @@ class ViduVideoProvider(VideoProvider):
             body["images"] = [resolve_image_to_url(request.reference_image_path, self._tos_config)]
 
         # Multi-reference images for visual consistency (max 7).
-        # Uses reference_images field (mutually exclusive with subjects mode).
-        if request.reference_images:
+        # Only sent for reference_to_video and image_to_video modes.
+        if request.mode in ("reference_to_video", "image_to_video") and request.reference_images:
             refs = request.reference_images[:7]
             body["reference_images"] = [
                 resolve_image_to_url(img, self._tos_config)

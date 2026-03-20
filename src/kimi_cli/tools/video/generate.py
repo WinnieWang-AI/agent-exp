@@ -15,9 +15,11 @@ from kimi_cli.tools.video.providers.base import GenerationRequest
 
 class Params(BaseModel):
     prompt: str = Field(description="Detailed description of the video to generate")
-    mode: Literal["text_to_video", "image_to_video"] = Field(
+    mode: Literal["text_to_video", "reference_to_video", "image_to_video"] = Field(
         default="text_to_video",
-        description="Generation mode: text_to_video or image_to_video",
+        description='Generation mode: "text_to_video" (pure text, no images), '
+        '"reference_to_video" (with reference images for character consistency), '
+        'or "image_to_video" (with a starting frame image)',
     )
     duration_seconds: float = Field(default=5.0, description="Target video duration in seconds")
     aspect_ratio: str = Field(default="16:9", description='Aspect ratio (e.g. "16:9", "9:16", "1:1")')

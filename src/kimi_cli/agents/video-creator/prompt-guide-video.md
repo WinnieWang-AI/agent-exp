@@ -52,7 +52,7 @@ shot plan 数据：
 
 参数：
 - reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png", "assets/images/appear_wolf_natural.png"]
-  （从 techniques.B_first_frame.generate_image_spec.reference_image_paths 获取）
+  （从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集 `reference_image` 和 `entity_reference_image`）
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
@@ -107,7 +107,7 @@ shot plan 数据：
 6. **互动方式**：`interactions[].style` — 角色之间怎么互动
 7. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
 8. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
-9. **参考图标记**：`<<<image_1>>>` ... `<<<image_N>>>`，按 `techniques.A_reference_images.images` 顺序
+9. **参考图标记**：`<<<image_1>>>` ... `<<<image_N>>>`，按 `reference_images` 参数中的图片顺序（即从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集的 `reference_image` / `entity_reference_image`）
 10. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
 
 ### 示例：中景 + 双人互动
@@ -137,12 +137,6 @@ shot plan 数据：
     "relationships": [{"pair": ["char_red", "char_wolf"], "current_kind": "陌生人"}],
     "prop_states": [{"entity": "prop_basket", "appearance": {"visual": "藤篮盖着红白格子布", "condition": "完好"}}]
   },
-  "techniques": {
-    "A_reference_images": {"enabled": true, "images": [
-      {"id": "appear_red_neat", "path": "assets/images/appear_red_neat.png"},
-      {"id": "appear_wolf_natural", "path": "assets/images/appear_wolf_natural.png"}
-    ]}
-  }
 }
 ```
 
@@ -175,11 +169,6 @@ shot plan 数据：
     "minds": [{"entity": "char_red", "emotion": "开心，天真", "behavior": "蹦蹦跳跳，东张西望"}],
     "location_state": {"appearance": {"lighting": "丁达尔光束", "weather": "晴，微风", "condition": "野花，蝴蝶", "atmosphere": "童话美好"}}
   },
-  "techniques": {
-    "A_reference_images": {"enabled": true, "images": [
-      {"id": "appear_red_neat", "path": "assets/images/appear_red_neat.png"}
-    ]}
-  }
 }
 ```
 
@@ -188,7 +177,7 @@ shot plan 数据：
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
-- mode: "text_to_video"（无 Technique B/C）
+- mode: "reference_to_video"
 - reference_images: ["assets/images/appear_red_neat.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
@@ -214,11 +203,6 @@ shot plan 数据：
     "minds": [{"entity": "char_grandma", "emotion": "震惊转为恐惧", "behavior": "瞪大双眼，嘴微张，身体往后缩"}],
     "location_state": {"appearance": {"lighting": "昏暗壁炉光", "condition": "温馨小屋内部", "atmosphere": "从温暖骤变为压迫"}}
   },
-  "techniques": {
-    "A_reference_images": {"enabled": true, "images": [
-      {"id": "appear_grandma_home", "path": "assets/images/appear_grandma_home.png"}
-    ]}
-  }
 }
 ```
 
@@ -242,7 +226,7 @@ shot plan 数据：
 2. **动作是视频 prompt 的核心**：`minds[].behavior` 和 `interactions[].style` 决定画面中发生什么。首帧图只描述"即将发生"的瞬间，视频 prompt 要描述动作的完整过程。
 3. **镜头语言要明确**：在 prompt 开头标明 shot_type + angle + movement（如 "Medium shot, eye level, static camera"），视频模型会据此控制构图和运镜。
 4. **角色外形从简**：因为 reference_images 已经传入了角色参考图，prompt 中不需要重复所有服装细节，用最显著的视觉特征标识角色即可（如 "red-cloaked girl"、"gray-brown wolf"）。
-5. **`<<<image_N>>>` 标记**：放在 prompt 末尾、negative_prompt 之前。按 `techniques.A_reference_images.images` 的顺序编号。这些标记让视频模型将参考图与 prompt 关联。
+5. **`<<<image_N>>>` 标记**：放在 prompt 末尾、negative_prompt 之前。按 `reference_images` 参数中的图片顺序编号。这些标记让视频模型将参考图与 prompt 关联。
 6. **style_prefix 放 prompt 开头，negative_prefix 放 `negative_prompt` 参数**：不要混放，不要通过 `style` 参数重复传入。
 7. **relationships 影响氛围描写**：如果两个角色是"陌生人"，描述中体现初次相遇的试探感；如果是"信任的朋友"，体现亲密随意的互动。不需要直接写出关系名称，而是融入动作和氛围。
 8. **prop_states 按需提及**：道具只在画面中有重要作用时提及（如"clutches her basket tighter"），不需要每个 shot 都描述所有道具。

@@ -20,7 +20,7 @@ class VideoJobState(str, Enum):
 class GenerationRequest(BaseModel):
     """Request to generate a video."""
 
-    mode: Literal["text_to_video", "image_to_video"] = "text_to_video"
+    mode: Literal["text_to_video", "reference_to_video", "image_to_video"] = "text_to_video"
     prompt: str
     duration_seconds: float = 5.0
     aspect_ratio: str = "16:9"

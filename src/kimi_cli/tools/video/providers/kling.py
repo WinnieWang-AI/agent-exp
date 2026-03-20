@@ -52,12 +52,13 @@ class KlingVideoProvider(VideoProvider):
             "generateAudio": True,
         }
 
-        # Image-to-video: attach single reference image.
+        # Image-to-video: attach single reference image as starting frame.
         if request.mode == "image_to_video" and request.reference_image_path:
             body["image"] = {"url": resolve_image_to_url(request.reference_image_path, self._tos_config)}
 
-        # Multi-reference images (max 4). Referenced in prompt as <<<image_1>>>, <<<image_2>>> etc.
-        if request.reference_images:
+        # Multi-reference images (max 4) for reference_to_video and image_to_video modes.
+        # Referenced in prompt as <<<image_1>>>, <<<image_2>>> etc.
+        if request.mode in ("reference_to_video", "image_to_video") and request.reference_images:
             images = request.reference_images[:4]
             body["images"] = [
                 {"url": resolve_image_to_url(img, self._tos_config)}
