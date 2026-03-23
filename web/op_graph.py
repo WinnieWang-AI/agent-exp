@@ -69,6 +69,25 @@ def _is_trivial_message(text: str) -> bool:
     return bool(_TRIVIAL_RE.match(text.strip()))
 
 
+_STEP_GOAL_RE = re.compile(r"【目标】\s*(.+?)(?=\n【|$)", re.DOTALL)
+_STEP_CHECK_RE = re.compile(r"【验证】\s*(.+?)(?=\n【|$)", re.DOTALL)
+
+
+def _parse_step_declaration(text: str) -> dict[str, str] | None:
+    """Parse structured step declaration from ContentPart text.
+
+    Returns {"goal": ..., "check_criteria": ...} if found, else None.
+    """
+    goal_m = _STEP_GOAL_RE.search(text)
+    if not goal_m:
+        return None
+    result: dict[str, str] = {"goal": goal_m.group(1).strip()}
+    check_m = _STEP_CHECK_RE.search(text)
+    if check_m:
+        result["check_criteria"] = check_m.group(1).strip()
+    return result
+
+
 def _extract_args(arguments: str | None) -> dict[str, Any]:
     if not arguments:
         return {}
@@ -148,6 +167,15 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
     # Current batch of parallel delegations being dispatched
     current_parallel_batch: list[str] = []
 
+    # Track recently completed delegation ids for attaching director summaries
+    recently_completed_delegations: list[str] = []
+
+    # Pending step declaration (goal + check_criteria) from ContentPart, to attach to next ToolCall
+    pending_step_decl: dict[str, str] | None = None
+    # Per-delegation pending step declarations from subagent ContentParts
+    # key: task_tool_call_id, value: parsed step declaration
+    subagent_pending_step_decl: dict[str, dict[str, str]] = {}
+
     def ensure_resource(path: str) -> str:
         if path in resource_nodes:
             return resource_nodes[path]
@@ -191,6 +219,8 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 if not goal_text:
                     goal_text = text
                 ensure_goal(text)
+            # New user message resets recently completed delegations
+            recently_completed_delegations = []
 
         if not isinstance(content, dict):
             continue
@@ -226,16 +256,23 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 prompt = args.get("prompt", "")
                 session_id_val = args.get("session_id", "")
 
-                nodes.append({
+                node_data: dict[str, Any] = {
                     "id": did,
                     "type": "delegation",
                     "label": desc or f"Task -> {subagent}",
                     "agent": subagent,
                     "session_id": session_id_val,
                     "prompt_preview": prompt[:300] if prompt else "",
+                    "intent": prompt or "",
                     "timestamp": ts,
                     "seq": seq_num,
-                })
+                }
+                # Attach step declaration if present
+                if pending_step_decl:
+                    node_data["goal"] = pending_step_decl.get("goal", "")
+                    node_data["check_criteria"] = pending_step_decl.get("check_criteria", "")
+                    pending_step_decl = None
+                nodes.append(node_data)
                 node_ids.add(did)
                 delegations[call_id] = {"id": did, "agent": subagent, "call_id": call_id}
 
@@ -252,7 +289,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 # Director-level tool call (not Task)
                 tool_idx += 1
                 tid = f"tool_{tool_idx}"
-                nodes.append({
+                node_data = {
                     "id": tid,
                     "type": "tool_call",
                     "label": fn_name,
@@ -261,10 +298,20 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                     "args_preview": json.dumps(args, ensure_ascii=False)[:200],
                     "timestamp": ts,
                     "result": None,
-                })
+                }
+                if pending_step_decl:
+                    node_data["goal"] = pending_step_decl.get("goal", "")
+                    node_data["check_criteria"] = pending_step_decl.get("check_criteria", "")
+                    pending_step_decl = None
+                nodes.append(node_data)
                 node_ids.add(tid)
                 if call_id:
                     inner_call_to_node[call_id] = tid
+
+                # Connect goal -> first top-level tool_call
+                if current_goal_id and not goal_connected:
+                    edges.append({"source": current_goal_id, "target": tid, "type": "requires"})
+                    goal_connected = True
 
                 produced, consumed = _extract_file_paths(fn_name, args)
                 for p in consumed:
@@ -288,6 +335,10 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                             n["result"] = msg_text
                             n["is_error"] = rv.get("is_error", False)
                             break
+            # Track completed Task delegations for attaching director summaries
+            if result_call_id in delegations:
+                recently_completed_delegations.append(delegations[result_call_id]["id"])
+
             if result_call_id in pending_task_calls:
                 pending_task_calls.remove(result_call_id)
                 # When all pending tasks in the batch are done, finalize the batch
@@ -331,7 +382,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
 
                 tool_idx += 1
                 tid = f"tool_{tool_idx}"
-                nodes.append({
+                tool_node_data: dict[str, Any] = {
                     "id": tid,
                     "type": "tool_call",
                     "label": fn_name,
@@ -341,7 +392,13 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                     "args_preview": json.dumps(args, ensure_ascii=False)[:200],
                     "timestamp": ts,
                     "result": None,  # filled in by ToolResult
-                })
+                }
+                # Attach subagent step declaration if present
+                sub_decl = subagent_pending_step_decl.pop(task_call_id, None)
+                if sub_decl:
+                    tool_node_data["goal"] = sub_decl.get("goal", "")
+                    tool_node_data["check_criteria"] = sub_decl.get("check_criteria", "")
+                nodes.append(tool_node_data)
                 node_ids.add(tid)
                 if inner_call_id:
                     inner_call_to_node[inner_call_id] = tid
@@ -384,6 +441,40 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                             n["is_error"] = is_error
                             break
 
+            # ContentPart inside SubagentEvent — step declaration or report
+            if inner_type == "ContentPart":
+                inner_payload = inner.get("payload", {})
+                text = inner_payload.get("text", "")
+                if text.strip():
+                    # Try to parse as step declaration
+                    sub_step_decl = _parse_step_declaration(text)
+                    if sub_step_decl:
+                        subagent_pending_step_decl[task_call_id] = sub_step_decl
+                    else:
+                        # Not a step declaration — it's a subagent report/summary
+                        did = delegation_info["id"]
+                        for n in nodes:
+                            if n["id"] == did:
+                                existing = n.get("subagent_report", "")
+                                n["subagent_report"] = (existing + "\n" + text).strip() if existing else text
+                                break
+
+        # Director-level ContentPart — step declaration or summary
+        if msg_type == "ContentPart":
+            text = payload.get("text", "")
+            if text.strip():
+                # Try to parse as step declaration (【目标】...【验证】...)
+                step_decl = _parse_step_declaration(text)
+                if step_decl:
+                    pending_step_decl = step_decl
+                else:
+                    # Not a step declaration — it's a director summary to user
+                    for did in recently_completed_delegations:
+                        for n in nodes:
+                            if n["id"] == did:
+                                n["director_summary"] = text
+                                break
+
     # Handle any remaining incomplete batch (session ended mid-execution)
     if current_parallel_batch and last_completed_batch:
         for prev_id in last_completed_batch:
@@ -405,32 +496,41 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     assigned: set[str] = set()
 
-    # Group by parallel_group
-    par_groups: dict[str, list[str]] = {}
-    for n in delegation_nodes:
-        pg = n.get("parallel_group")
-        if pg:
-            par_groups.setdefault(pg, []).append(n["id"])
+    if delegation_nodes:
+        # Group by parallel_group
+        par_groups: dict[str, list[str]] = {}
+        for n in delegation_nodes:
+            pg = n.get("parallel_group")
+            if pg:
+                par_groups.setdefault(pg, []).append(n["id"])
 
-    # Walk delegations in seq order
-    sorted_delegations = sorted(delegation_nodes, key=lambda n: n.get("seq", 0))
-    for n in sorted_delegations:
-        if n["id"] in assigned:
-            continue
-        pg = n.get("parallel_group")
-        if pg and pg in par_groups:
-            group_ids = par_groups[pg]
-            steps.append({
-                "type": "parallel",
-                "delegation_ids": group_ids,
-            })
-            assigned.update(group_ids)
-        else:
+        # Walk delegations in seq order
+        sorted_delegations = sorted(delegation_nodes, key=lambda n: n.get("seq", 0))
+        for n in sorted_delegations:
+            if n["id"] in assigned:
+                continue
+            pg = n.get("parallel_group")
+            if pg and pg in par_groups:
+                group_ids = par_groups[pg]
+                steps.append({
+                    "type": "parallel",
+                    "delegation_ids": group_ids,
+                })
+                assigned.update(group_ids)
+            else:
+                steps.append({
+                    "type": "serial",
+                    "delegation_ids": [n["id"]],
+                })
+                assigned.add(n["id"])
+    else:
+        # No delegations — treat each top-level tool_call as a step
+        top_tools = [n for n in nodes if n["type"] == "tool_call" and not n.get("parent_delegation")]
+        for n in top_tools:
             steps.append({
                 "type": "serial",
-                "delegation_ids": [n["id"]],
+                "tool_call_ids": [n["id"]],
             })
-            assigned.add(n["id"])
 
     return {
         "goal": goal_text,

@@ -245,9 +245,8 @@ def _extract_prompt_materials(
 ) -> dict[str, Any]:
     """Extract all prompt-relevant information for an event from the graph.
 
-    Each state node includes its own ``reference_image`` and its parent
-    entity's ``entity_reference_image`` so the agent can decide which
-    images to use without additional lookups.
+    Each state node includes its own ``reference_image`` so the agent can
+    decide which images to use without additional lookups.
     """
     event_id = event["id"]
 
@@ -257,14 +256,12 @@ def _extract_prompt_materials(
     # Active appearances — with reference images
     appearances = []
     for a in g.get_active("appearance_active_during", event_id):
-        entity = g.entity_of(a)
         appearances.append({
             "id": a["id"],
             "entity": a.get("entity", ""),
             "phase": a.get("phase", ""),
             "visual": a.get("visual", {}),
             "reference_image": a.get("reference_image") or "",
-            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         })
 
     # Active minds
@@ -281,28 +278,24 @@ def _extract_prompt_materials(
     # Location state — with reference image
     location_state = None
     for ls in g.get_active("location_active_during", event_id):
-        entity = g.entity_of(ls)
         location_state = {
             "id": ls["id"],
             "entity": ls.get("entity", ""),
             "phase": ls.get("phase", ""),
             "appearance": ls.get("appearance", {}),
             "reference_image": ls.get("reference_image") or "",
-            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         }
         break  # typically one location state per event
 
     # Prop states — with reference images
     prop_states = []
     for ps in g.get_active("prop_active_during", event_id):
-        entity = g.entity_of(ps)
         prop_states.append({
             "id": ps["id"],
             "entity": ps.get("entity", ""),
             "phase": ps.get("phase", ""),
             "appearance": ps.get("appearance", {}),
             "reference_image": ps.get("reference_image") or "",
-            "entity_reference_image": (entity.get("reference_image") or "") if entity else "",
         })
 
     # Audio states

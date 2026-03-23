@@ -40,8 +40,9 @@ if TYPE_CHECKING:
 
 
 class SimpleCompaction:
-    def __init__(self, max_preserved_messages: int = 2) -> None:
+    def __init__(self, max_preserved_messages: int = 2, custom_prompt: str | None = None) -> None:
         self.max_preserved_messages = max_preserved_messages
+        self._custom_prompt = custom_prompt
 
     async def compact(self, messages: Sequence[Message], llm: LLM) -> Sequence[Message]:
         compact_message, to_preserve = self.prepare(messages)
@@ -112,5 +113,5 @@ class SimpleCompaction:
             compact_message.content.extend(
                 part for part in msg.content if not isinstance(part, ThinkPart)
             )
-        compact_message.content.append(TextPart(text="\n" + prompts.COMPACT))
+        compact_message.content.append(TextPart(text="\n" + (self._custom_prompt or prompts.COMPACT)))
         return self.PrepareResult(compact_message=compact_message, to_preserve=to_preserve)

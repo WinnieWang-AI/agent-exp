@@ -48,11 +48,11 @@ shot plan 数据：
 ```
 
 首帧图 prompt（静态画面，描述动作发生前一刻的定格）：
-"hand-drawn illustration, warm color palette, children's storybook style. Close-up shot at eye level. A little girl in a red velvet cloak and white dress stands on a forest path, head slightly tilted, eyes wide with curiosity and a hint of unease, curly brown hair framing her round face. Behind a moss-covered oak tree, a large gray-brown wolf peers out, ears pointed forward, crouching low to appear smaller. Warm god rays filter through the canopy, wildflowers and butterflies dotting the sunlit path. The girl has just noticed something watching her — a frozen moment of first contact."
+"Reference image characters from left to right are: @[role 1], @[role 2]. hand-drawn illustration, warm color palette, children's storybook style. Close-up shot at eye level. A little girl @[role 1] in a red velvet cloak and white dress stands on a forest path, head slightly tilted, eyes wide with curiosity and a hint of unease, curly brown hair framing her round face. Behind a moss-covered oak tree, a large gray-brown wolf @[role 2] peers out, ears pointed forward, crouching low to appear smaller. Warm god rays filter through the canopy, wildflowers and butterflies dotting the sunlit path. The girl has just noticed something watching her — a frozen moment of first contact."
 
 参数：
-- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png", "assets/images/appear_wolf_natural.png"]
-  （从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集 `reference_image` 和 `entity_reference_image`）
+- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
+  （从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集 `reference_image`，顺序决定 @[role N] 编号）
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
@@ -81,10 +81,10 @@ shot plan 数据：
 ```
 
 首帧图 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from a high angle looking down. A tiny figure in a bright red cloak walks along a narrow winding dirt path through a vast dense forest, towering pine and oak trees stretching in all directions, golden god rays slanting through the canopy, patches of colorful wildflowers along the path edges, butterflies in the warm air. The girl appears small against the grand forest, conveying innocence and vulnerability."
+"Reference image characters from left to right are: @[role 1]. hand-drawn illustration, warm color palette, children's storybook style. Wide shot from a high angle looking down. A tiny figure @[role 1] in a bright red cloak walks along a narrow winding dirt path through a vast dense forest, towering pine and oak trees stretching in all directions, golden god rays slanting through the canopy, patches of colorful wildflowers along the path edges, butterflies in the warm air. The girl appears small against the grand forest, conveying innocence and vulnerability."
 
 参数：
-- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/char_red.png"]
+- reference_image_paths: ["assets/images/appear_red_neat.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
@@ -107,7 +107,9 @@ shot plan 数据：
 6. **互动方式**：`interactions[].style` — 角色之间怎么互动
 7. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
 8. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
-9. **参考图标记**：`<<<image_1>>>` ... `<<<image_N>>>`，按 `reference_images` 参数中的图片顺序（即从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集的 `reference_image` / `entity_reference_image`）
+9. **参考图-角色关联标记**：首帧图和视频 prompt 使用不同的标记语法（因为底层 API 不同），但目的相同——让模型知道哪张参考图对应哪个角色：
+   - **首帧图 prompt**（GenerateImage，Seedream/Gemini）：使用 `@[role N]` 标记。在 prompt 最前面加前缀 `"Reference image characters from left to right are: @[role 1], @[role 2]."` 说明参考图顺序，然后在角色首次出现的描述旁放 `@[role N]`。编号按 `reference_image_paths` 参数顺序。
+   - **视频 prompt**（GenerateVideoSync，Kling 等）：使用 `<<<image_N>>>` 标记，放在对应角色首次出现的描述旁边。编号按 `reference_images` 参数顺序。
 10. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
 
 ### 示例：中景 + 双人互动
@@ -141,7 +143,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. In a sunlit forest clearing with god rays and scattered wildflowers, a little girl in a red velvet cloak stops on the path, tilting her head with wide curious eyes and a flicker of unease. From behind a large oak tree, a tall gray-brown wolf slowly emerges, crouching low and hunching his body to appear smaller and less threatening. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness. <<<image_1>>> <<<image_2>>>"
+"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. In a sunlit forest clearing with god rays and scattered wildflowers, a little girl in a red velvet cloak <<<image_1>>> stops on the path, tilting her head with wide curious eyes and a flicker of unease. From behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low and hunching his body to appear smaller and less threatening. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -173,7 +175,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from high angle, camera slowly craning down. A vast dense forest with towering pines, golden god rays streaming through the canopy, gentle breeze stirring the leaves. A tiny red-cloaked figure skips merrily along a winding dirt path, hopping and looking around with childlike wonder, pausing to pick a wildflower, butterflies dancing in the warm sunlit air. The girl appears small and innocent against the grand ancient woodland. <<<image_1>>>"
+"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from high angle, camera slowly craning down. A vast dense forest with towering pines, golden god rays streaming through the canopy, gentle breeze stirring the leaves. A tiny red-cloaked figure <<<image_1>>> skips merrily along a winding dirt path, hopping and looking around with childlike wonder, pausing to pick a wildflower, butterflies dancing in the warm sunlit air. The girl appears small and innocent against the grand ancient woodland."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -207,7 +209,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown and lace nightcap, wisps of gray hair peeking out, her frail pale face lit by the dim flicker of a fireplace. Her eyes widen in shock, mouth falling slightly open, body instinctively shrinking backward as terror washes over her expression. The cozy cottage interior shifts from warmth to an oppressive, claustrophobic feeling. <<<image_1>>>"
+"hand-drawn illustration, warm color palette, children's storybook style. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown and lace nightcap <<<image_1>>>, wisps of gray hair peeking out, her frail pale face lit by the dim flicker of a fireplace. Her eyes widen in shock, mouth falling slightly open, body instinctively shrinking backward as terror washes over her expression. The cozy cottage interior shifts from warmth to an oppressive, claustrophobic feeling."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -226,7 +228,9 @@ shot plan 数据：
 2. **动作是视频 prompt 的核心**：`minds[].behavior` 和 `interactions[].style` 决定画面中发生什么。首帧图只描述"即将发生"的瞬间，视频 prompt 要描述动作的完整过程。
 3. **镜头语言要明确**：在 prompt 开头标明 shot_type + angle + movement（如 "Medium shot, eye level, static camera"），视频模型会据此控制构图和运镜。
 4. **角色外形从简**：因为 reference_images 已经传入了角色参考图，prompt 中不需要重复所有服装细节，用最显著的视觉特征标识角色即可（如 "red-cloaked girl"、"gray-brown wolf"）。
-5. **`<<<image_N>>>` 标记**：放在 prompt 末尾、negative_prompt 之前。按 `reference_images` 参数中的图片顺序编号。这些标记让视频模型将参考图与 prompt 关联。
+5. **参考图-角色关联**：必须在 prompt 中标注哪张参考图对应哪个角色，否则相似角色会混淆。两种标记语法：
+   - **首帧图**（GenerateImage）：使用 `@[role N]`。prompt 最前面加前缀 `"Reference image characters from left to right are: @[role 1], @[role 2]."` ，角色描述旁加 `@[role N]`。编号按 `reference_image_paths` 顺序。
+   - **视频**（GenerateVideoSync）：使用 `<<<image_N>>>`，放在角色描述旁（如 "a girl in a red cloak <<<image_1>>>"）。编号按 `reference_images` 顺序。
 6. **style_prefix 放 prompt 开头，negative_prefix 放 `negative_prompt` 参数**：不要混放，不要通过 `style` 参数重复传入。
 7. **relationships 影响氛围描写**：如果两个角色是"陌生人"，描述中体现初次相遇的试探感；如果是"信任的朋友"，体现亲密随意的互动。不需要直接写出关系名称，而是融入动作和氛围。
 8. **prop_states 按需提及**：道具只在画面中有重要作用时提及（如"clutches her basket tighter"），不需要每个 shot 都描述所有道具。

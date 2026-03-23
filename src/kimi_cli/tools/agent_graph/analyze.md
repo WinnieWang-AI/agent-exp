@@ -1,7 +1,13 @@
-Analyze agent structure and generate a visual topology graph.
+Analyze agent structure, workflow, and behavior.
 
-Recursively parses agent.yaml definitions to extract agent nodes, their tools, and subagent relationships. Outputs an interactive graph visualization.
+Recursively parses agent.yaml definitions to extract agent nodes, their tools, and subagent relationships. Supports multiple analysis modes.
 
 **Parameters:**
 - `agents`: List of agent names to analyze, e.g. `["video-director"]`. Use `["*"]` for all agents.
-- `mode`: `"topology"` (static structure only), `"workflow"` (+ workflow extraction), or `"full"` (+ log analysis).
+- `mode`:
+  - `"topology"`: Static agent structure only.
+  - `"workflow"`: + LLM-extracted workflow from system.md.
+  - `"full"`: + log deviation analysis (workflow vs actual).
+  - `"compare"`: Three-layer comparison — ideal plan vs prompt prediction vs actual behavior. Requires single agent.
+- `task`: (compare mode) Task description. If empty, extracted from session logs.
+- `session_id`: (compare mode) Specific session to analyze. Empty = most recent.

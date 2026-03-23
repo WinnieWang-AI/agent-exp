@@ -128,14 +128,9 @@ Linearizer 会预计算相邻 shot 之间的接续建议。如果当前 shot 的
 从 `prompt_materials` 中选择传给生成 API 的参考图。
 
 **基本规则：**
-- `focus_on` 中的每个角色 → 用其 appearance state 的 `reference_image`（比 entity 级的图更具体，包含当前装扮）
-- 如果 appearance state 没有 `reference_image`，退回使用 `entity_reference_image`
+- `focus_on` 中的每个角色 → 用其 appearance state 的 `reference_image`
 - 环境参考图（location state）→ 当场景氛围对画面重要时传入
 - 参考图数量上限通常为 4 张 → 超出时优先保角色
-
-**状态图 vs 实体图：**
-- 角色有特定装扮变化（如"逃跑后凌乱"）→ 用状态图
-- 角色装扮与实体默认一致 → 状态图和实体图效果相同
 
 ### Step 5: 确定生成方式
 

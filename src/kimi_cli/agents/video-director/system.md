@@ -46,13 +46,13 @@ Story Graph 确认后，生成参考图。
 
 #### Step 1.8a: 第 1 层 — 实体图
 
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 1（init）+ Phase 2 第 1 层（实体参考图）。Creator 会对每张生成的图片进行自检，不符合要求的会自动重试。
+调用 video-creator（session_id=`create_{project_name}`），执行 Phase 1（init）+ Phase 2 第 1 层（实体参考图）。
 
 完成后向用户展示生成结果摘要（各类实体图数量），等用户确认后进入 Step 1.8b。
 
 #### Step 1.8b: 第 2 层 — 状态图
 
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 2 第 2 层（状态参考图）。Creator 同样会自检。
+调用 video-creator（session_id=`create_{project_name}`），执行 Phase 2 第 2 层（状态参考图）。
 
 完成后向用户展示参考图摘要。等用户确认角色和环境形象后再进入视频生成。
 
@@ -62,22 +62,16 @@ Story Graph 确认后，生成参考图。
 
 **告知用户规模**：根据 Step 1.6 中 screenwriter 返回的镜头数量告知用户（如"共 12 个镜头，开始生成视频……"）。
 
-#### Step 2a: 首帧图生成
-
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3 Step 3a（生成 shot plan）+ Step 3b 中需要首帧图的 shot 的首帧生成。
-
-完成后进入 Step 2b。
-
-#### Step 2b + 2c: 视频生成与音频生成（并行）
+#### Step 2a + 2b: 视频生成与音频生成（并行）
 
 视频和音频互不依赖，**同时启动**（使用不同 session 避免并发冲突）：
 
-- **视频**：调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3 剩余步骤（逐 shot 生成视频）。
+- **视频**：调用 video-creator（session_id=`create_{project_name}`），执行 Phase 3（生成 shot plan + 逐 shot 生成视频）。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 creator 根据 generation-strategy.md 自主决策的，director 不应干预。
 - **音频**：调用 video-creator（session_id=`create_audio_{project_name}`），执行 Phase 4（音频生产：BGM + 对白/旁白）。音频 session 需要传入 story-graph.json 路径和项目目录，让 creator 能读取 audio_states 和 video_info。
 
-**两者都完成后**进入 Step 2d。
+**两者都完成后**进入 Step 2c。
 
-#### Step 2d: 组装
+#### Step 2c: 组装
 
 视频和音频都完成后，调用 video-creator（session_id=`create_{project_name}`），执行 Phase 5（剪辑与组装），输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
 

@@ -219,16 +219,11 @@ def _collect_shot_reference_images(shot: dict[str, Any]) -> list[str]:
 
     for app in materials.get("appearances", []):
         _add(app.get("reference_image", ""))
-    for app in materials.get("appearances", []):
-        _add(app.get("entity_reference_image", ""))
     loc = materials.get("location_state")
     if loc:
         _add(loc.get("reference_image", ""))
-        _add(loc.get("entity_reference_image", ""))
     for ps in materials.get("prop_states", []):
         _add(ps.get("reference_image", ""))
-    for ps in materials.get("prop_states", []):
-        _add(ps.get("entity_reference_image", ""))
     return refs
 
 

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.agent_graph.static import build_topology
-from kimi_cli.tools.agent_graph.view import build_agent_graph_view
+from kimi_cli.tools.agent_graph.view import build_agent_graph_view, build_compare_view
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
 __all__ = ["AnalyzeAgentGraph"]
@@ -19,14 +19,26 @@ class Params(BaseModel):
             'Use ["*"] to analyze all agents.'
         ),
     )
-    mode: Literal["topology", "workflow", "full"] = Field(
+    mode: Literal["topology", "workflow", "full", "compare"] = Field(
         default="topology",
         description=(
             "Analysis mode. "
             '"topology": static agent topology only. '
             '"workflow": topology + workflow extraction (requires LLM). '
-            '"full": topology + workflow + log analysis.'
+            '"full": topology + workflow + log analysis. '
+            '"compare": three-layer comparison (ideal plan vs prompt prediction vs actual behavior).'
         ),
+    )
+    task: str = Field(
+        default="",
+        description=(
+            "Task description for compare mode. "
+            "If empty, will be extracted from the most recent session log."
+        ),
+    )
+    session_id: str = Field(
+        default="",
+        description="Specific session ID to analyze. Empty = most recent session.",
     )
 
 
@@ -53,9 +65,19 @@ class AnalyzeAgentGraph(CallableTool2[Params]):
         n_edges = len(topology.edges)
         total_tools = sum(n.tool_count for n in topology.nodes)
 
+        is_single_agent = len(params.agents) == 1 and params.agents[0] != "*"
+
+        # --- Compare mode (early return) ---
+        if params.mode == "compare":
+            if not is_single_agent:
+                return builder.error(
+                    "Compare mode requires a single agent name (not '*' or multiple agents).",
+                    brief="Error",
+                )
+            return await self._run_compare(params, topology, builder)
+
         # --- Workflow extraction (if requested) ---
         workflow = None
-        is_single_agent = len(params.agents) == 1 and params.agents[0] != "*"
 
         if params.mode in ("workflow", "full"):
             llm = self._runtime.llm
@@ -129,5 +151,110 @@ class AnalyzeAgentGraph(CallableTool2[Params]):
             brief += f", {len(workflow.steps)} steps"
         return builder.ok(
             message=f"Topology: {n_agents} agents, {n_edges} edges",
+            brief=brief,
+        )
+
+    async def _run_compare(
+        self,
+        params: Params,
+        topology: "AgentGraphTopology",
+        builder: ToolResultBuilder,
+    ) -> ToolReturnValue:
+        """Execute three-layer comparison analysis."""
+        from kimi_cli.agentspec import get_agents_dir, load_agent_spec
+        from kimi_cli.tools.agent_graph.actual_tracer import find_chat_jsonl, trace_session
+        from kimi_cli.tools.agent_graph.comparator import compare
+        from kimi_cli.tools.agent_graph.ideal_planner import plan_ideal
+        from kimi_cli.tools.agent_graph.prompt_predictor import predict_behavior
+
+        agent_name = params.agents[0]
+        work_dir = str(self._runtime.builtin_args.KIMI_WORK_DIR)
+        llm = self._runtime.llm
+
+        # --- Layer 3: Actual behavior (no LLM needed) ---
+        actual = None
+        chat_path = find_chat_jsonl(work_dir, params.session_id)
+        if chat_path:
+            try:
+                actual = trace_session(chat_path)
+                builder.write(
+                    f"Layer 3 (actual): {len(actual.steps)} steps from {chat_path.name}\n"
+                )
+            except Exception as e:
+                builder.write(f"[WARN] Layer 3 failed: {e}\n")
+        else:
+            builder.write("[WARN] No session log found, skipping layer 3 (actual behavior).\n")
+
+        # Determine task description
+        task = params.task
+        if not task and actual:
+            task = actual.task_description
+        if not task:
+            return builder.error(
+                "No task description provided and none found in session logs. "
+                "Use the 'task' parameter to specify the task.",
+                brief="No task",
+            )
+
+        # --- Layer 1: Ideal plan (requires LLM) ---
+        ideal = None
+        if llm:
+            agents_dir = get_agents_dir()
+            agent_file = agents_dir / agent_name / "agent.yaml"
+            if agent_file.exists():
+                spec = load_agent_spec(agent_file)
+                try:
+                    ideal = await plan_ideal(task, spec, llm.chat_provider)
+                    builder.write(f"Layer 1 (ideal): {len(ideal.steps)} steps\n")
+                except Exception as e:
+                    builder.write(f"[WARN] Layer 1 failed: {e}\n")
+        else:
+            builder.write("[WARN] LLM not available, skipping layer 1 (ideal plan).\n")
+
+        # --- Layer 2: Prompt prediction (requires LLM) ---
+        predicted = None
+        if llm:
+            try:
+                predicted = await predict_behavior(task, agent_name, llm.chat_provider)
+                builder.write(f"Layer 2 (predicted): {len(predicted.steps)} steps\n")
+            except Exception as e:
+                builder.write(f"[WARN] Layer 2 failed: {e}\n")
+        else:
+            builder.write("[WARN] LLM not available, skipping layer 2 (prompt prediction).\n")
+
+        builder.write("\n")
+
+        # --- Compare ---
+        comparison = compare(ideal, predicted, actual, task)
+
+        # --- Build view ---
+        view_block = build_compare_view(comparison, topology)
+        builder.display(view_block)
+
+        # --- Text summary ---
+        n_gaps = len(comparison.gaps)
+        n_errors = sum(1 for g in comparison.gaps if g.severity == "error")
+        n_warnings = sum(1 for g in comparison.gaps if g.severity == "warning")
+
+        builder.write(f"Comparison: {n_gaps} gaps found ")
+        builder.write(f"({n_errors} errors, {n_warnings} warnings)\n\n")
+
+        if comparison.gaps:
+            builder.write("Gaps:\n")
+            for g in comparison.gaps:
+                builder.write(
+                    f"  [{g.severity}] {g.gap_type} ({g.layers[0]} vs {g.layers[1]}): "
+                    f"{g.description}\n"
+                )
+                if g.suggestion:
+                    builder.write(f"    -> {g.suggestion}\n")
+
+        if comparison.diagnosis:
+            builder.write(f"\nDiagnosis:\n{comparison.diagnosis}\n")
+
+        layers_used = sum(1 for x in [ideal, predicted, actual] if x is not None)
+        brief = f"{layers_used} layers, {n_gaps} gaps"
+        return builder.ok(
+            message=f"Three-layer comparison: {n_gaps} gaps ({n_errors} errors, {n_warnings} warnings)",
             brief=brief,
         )

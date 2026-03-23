@@ -352,63 +352,105 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
     return summary
 
 
-def _build_resume_context(summary: dict[str, Any]) -> str:
-    """Build an actionable resume context string from a session summary.
+def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
+    """Build an actionable resume context from the op graph (execution history).
 
-    This tells the director agent exactly what exists on disk and which step to resume from,
-    so it doesn't need to call subagents just to scan the project state.
+    Uses parse_chat_to_op_graph() to extract the actual sequence of completed/failed
+    delegations, rather than guessing progress from disk artifacts alone.
     """
-    if not summary.get("story_graph") and not summary.get("project_name"):
-        return ""
-
-    lines = ["[Session resumed. Project state scanned from disk — no need to call subagents to check files.]"]
+    # Parse op graph from chat.jsonl
+    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    op_graph = parse_chat_to_op_graph(chat_path) if chat_path.exists() else None
 
     project_name = summary.get("project_name", "unknown")
-    lines.append(f"Project name: {project_name}")
-    lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, eval_{project_name}")
 
+    lines = ["[Session resumed. Execution history from op graph — do NOT repeat completed steps.]"]
+    lines.append(f"Project name: {project_name}")
+    lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
+
+    # --- Section 1: Execution history from op graph ---
+    if op_graph and op_graph.get("nodes"):
+        nodes = op_graph["nodes"]
+        delegations = [n for n in nodes if n["type"] == "delegation"]
+
+        if delegations:
+            lines.append("")
+            lines.append("## Completed steps (do NOT redo these):")
+            for d in delegations:
+                goal = d.get("goal", "")
+                agent = d.get("agent", "?")
+                label = d.get("label", "")
+                report = d.get("subagent_report", "")
+
+                # Check if this delegation had errors in its child tool calls
+                did = d["id"]
+                child_tools = [n for n in nodes if n.get("parent_delegation") == did]
+                n_errors = sum(1 for t in child_tools if t.get("is_error"))
+                n_total = len(child_tools)
+
+                status = "ERROR" if n_errors > 0 and n_errors == n_total else \
+                         "PARTIAL" if n_errors > 0 else "DONE"
+
+                step_line = f"- [{status}] {agent}: {goal or label}"
+                if status == "PARTIAL":
+                    step_line += f" ({n_total - n_errors}/{n_total} tool calls succeeded)"
+                if status == "ERROR":
+                    # Find the last error message
+                    error_tools = [t for t in child_tools if t.get("is_error")]
+                    if error_tools:
+                        last_err = error_tools[-1].get("result", "")[:150]
+                        step_line += f" — last error: {last_err}"
+                lines.append(step_line)
+
+                # Include brief report for context
+                if report and len(report) > 20:
+                    # Truncate long reports
+                    brief = report[:200] + ("..." if len(report) > 200 else "")
+                    lines.append(f"    report: {brief}")
+
+        # Identify incomplete delegations (in current_parallel_batch from op graph)
+        steps = op_graph.get("steps", [])
+        if steps:
+            last_step = steps[-1]
+            last_ids = last_step.get("delegation_ids", [])
+            # Check if any delegation in last step has no subagent_report (possibly incomplete)
+            incomplete = []
+            for did in last_ids:
+                d = next((n for n in nodes if n["id"] == did), None)
+                if d and not d.get("subagent_report") and not d.get("director_summary"):
+                    incomplete.append(d)
+            if incomplete:
+                lines.append("")
+                lines.append("## Possibly interrupted (no completion report):")
+                for d in incomplete:
+                    goal = d.get("goal", d.get("label", ""))
+                    agent = d.get("agent", "?")
+                    child_tools = [n for n in nodes if n.get("parent_delegation") == d["id"]]
+                    lines.append(f"- {agent}: {goal} ({len(child_tools)} tool calls executed before interruption)")
+
+    # --- Section 2: Current disk state (supplementary) ---
+    lines.append("")
+    lines.append("## Current disk state:")
     sg = summary.get("story_graph")
     if sg:
         lines.append(f"Story Graph: {sg['path']}")
-        lines.append(f"  - {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events")
+        lines.append(f"  - {sg['characters']} chars, {sg['locations']} locs, {sg['events']} events")
         lines.append(f"  - camera_directives: {'present' if sg['has_camera_directives'] else 'EMPTY'}")
         lines.append(f"  - audio_states: {'present' if sg['has_audio_states'] else 'EMPTY'}")
-        if sg.get("production_style"):
-            ps = sg["production_style"]
-            lines.append(f"  - style: {ps.get('style_prefix', '')[:80]}, aspect_ratio: {ps.get('aspect_ratio', '16:9')}")
-        lines.append(f"  - Entity reference images: {sg['entity_reference_images']}/{sg['total_entities']}")
-        lines.append(f"  - State reference images: {sg['state_reference_images']}/{sg['total_states']}")
-
+        lines.append(f"  - Entity ref images: {sg['entity_reference_images']}/{sg['total_entities']}")
+        lines.append(f"  - State ref images: {sg['state_reference_images']}/{sg['total_states']}")
     if summary.get("shot_plan"):
-        lines.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots (path: {summary['shot_plan']['path']})")
-
+        lines.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
     clips = summary.get("clips")
     if clips:
         lines.append(f"Video Clips: {clips['total']} files, {clips['valid']} valid (>1MB)")
-
     if summary.get("final_video"):
         lines.append(f"Final video: {summary['final_video']}")
 
-    # Determine the resume phase (must match system.md Phase naming)
-    if not sg:
-        resume_step = "Phase 1 (read story graph & init project — no story graph found)"
-    elif not sg["has_camera_directives"]:
-        resume_step = "Phase 1 (story structure exists but camera directives & audio are missing)"
-    elif sg["entity_reference_images"] < sg["total_entities"] or sg["state_reference_images"] < sg["total_states"]:
-        resume_step = "Phase 2 (generate reference images — story graph is complete)"
-    elif not summary.get("shot_plan"):
-        resume_step = "Phase 3, Step 3a (generate shot plan via LinearizeStoryGraph — reference images are ready)"
-    elif not clips or clips["valid"] == 0:
-        resume_step = "Phase 3, Step 3b (generate video clips — shot plan is ready)"
-    elif summary.get("final_video"):
-        resume_step = "Complete — final video exists. Ask user what they want to do next."
-    else:
-        resume_step = "Phase 3 (continue video generation / assembly)"
+    lines.append("")
+    lines.append("Resume instruction: Continue from where the last step left off. Do NOT repeat DONE steps. For PARTIAL/ERROR steps, only redo the failed parts. Do NOT re-ask the user for topic/style/duration.")
 
-    lines.append(f"\nResume from: {resume_step}")
-    lines.append("Do NOT re-ask the user for topic/style/duration — these are already confirmed in chat history.")
-
-    return "\n".join(lines) + "\n\n"
+    return "\n".join(lines) + "\n]\n\n"
 
 
 def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
@@ -568,7 +610,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
         summary = _build_session_summary(session_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
         # Build a rich context hint so the agent knows exactly where to resume
-        resume_context = _build_resume_context(summary)
+        resume_context = _build_resume_context(summary, session_id)
 
     await websocket.send_json({"type": "status", "status": "ready"})
 
@@ -719,20 +761,7 @@ async def ws_auto(websocket: WebSocket):
     if resumed:
         summary = _build_session_summary(session_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
-        hints = []
-        if summary.get("story_graph"):
-            sg = summary["story_graph"]
-            n_refs = sg.get('entity_reference_images', 0) + sg.get('state_reference_images', 0)
-            hints.append(f"Story Graph: {sg['characters']} characters, {sg['locations']} locations, {sg['events']} events, {n_refs} ref images (path: {sg['path']})")
-        if summary.get("shot_plan"):
-            hints.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
-        if summary.get("clips"):
-            clips = summary["clips"]
-            hints.append(f"Video Clips: {clips['total']} total, {clips['valid']} valid (>1MB)")
-        if summary.get("images"):
-            hints.append(f"Images: {summary['images']} generated")
-        if hints:
-            resume_context = "[Session resumed. Current project state:\n" + "\n".join(f"- {h}" for h in hints) + "\n]\n\n"
+        resume_context = _build_resume_context(summary, session_id)
 
     await websocket.send_json({"type": "status", "status": "ready"})
 

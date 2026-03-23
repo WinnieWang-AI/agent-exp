@@ -310,6 +310,13 @@ class PlanStep(BaseModel):
     parallel_group: str = ""
     result_summary: str = ""
     is_error: bool = False
+    # From structured step declarations (【目标】/【验证】)
+    goal: str = ""
+    check_criteria: str = ""
+    # Subagent/director narrative
+    intent: str = ""
+    subagent_report: str = ""
+    director_summary: str = ""
 
 
 class ExecutionPlan(BaseModel):
