@@ -1,7 +1,6 @@
 from kimi_cli.tools.video.analyze_image import AnalyzeImage
 from kimi_cli.tools.video.analyze_video import AnalyzeVideo
 from kimi_cli.tools.video.check_job import CheckVideoJob
-from kimi_cli.tools.video.compare_videos import CompareVideos
 from kimi_cli.tools.video.edit import VideoEdit
 from kimi_cli.tools.video.extract_frame import ExtractFrame
 from kimi_cli.tools.video.generate import GenerateVideo
@@ -19,5 +18,4 @@ __all__ = [
     "GenerateImage",
     "AnalyzeImage",
     "AnalyzeVideo",
-    "CompareVideos",
 ]

@@ -187,6 +187,8 @@ class Agent:
     toolset: Toolset
     runtime: Runtime
     """Each agent has its own runtime, which should be derived from its main agent."""
+    compaction_prompt: str | None = None
+    """Optional custom compaction prompt for this agent."""
 
 
 class LaborMarket:
@@ -297,11 +299,16 @@ async def load_agent(
                 )
                 runtime.labor_market.add_dynamic_subagent(subagent_spec.name, subagent)
 
+    compaction_prompt = None
+    if agent_spec.compaction_prompt_path and agent_spec.compaction_prompt_path.exists():
+        compaction_prompt = agent_spec.compaction_prompt_path.read_text(encoding="utf-8").strip()
+
     return Agent(
         name=agent_spec.name,
         system_prompt=system_prompt,
         toolset=toolset,
         runtime=runtime,
+        compaction_prompt=compaction_prompt,
     )
 
 

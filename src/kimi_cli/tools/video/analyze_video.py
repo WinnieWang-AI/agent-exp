@@ -10,12 +10,20 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
+_CAPTION_PROMPT = """Describe this video in detail. Include:
+- Scene: what is happening, the narrative/action sequence from start to end
+- Characters/subjects: who appears, their appearance, clothing, actions, expressions
+- Setting/environment: location, objects, background elements
+- Camera work: shot type, angle, movement (pan, zoom, static, etc.)
+- Visual style: art style, color palette, lighting, mood/atmosphere
+- Audio (if perceivable): music, dialogue, sound effects
+- Timing: pacing, key moments, transitions
+
+Be specific and objective. Describe the progression of events chronologically. Output in Chinese."""
+
 
 class Params(BaseModel):
-    video_path: str = Field(description="Path to the video file to analyze")
-    prompt: str = Field(
-        description="What to analyze about the video. Be specific about aspects to focus on."
-    )
+    video_path: str = Field(description="Path to the video file to caption.")
 
 
 class AnalyzeVideo(CallableTool2[Params]):
@@ -43,25 +51,23 @@ class AnalyzeVideo(CallableTool2[Params]):
                 brief="File not found",
             )
 
-        # Get objective metadata via ffprobe (duration, resolution, fps, audio).
         meta = await self._probe_metadata(params.video_path)
 
         try:
-            result = await self._client.analyze(params.video_path, params.prompt)
+            result = await self._client.analyze(params.video_path, _CAPTION_PROMPT)
         except Exception as e:
             return builder.error(
-                message=f"VLM analysis failed: {e}",
-                brief="Analysis failed",
+                message=f"VLM video captioning failed: {e}",
+                brief="Captioning failed",
             )
 
-        # Prepend objective metadata so the LLM doesn't need to guess.
         if meta:
-            builder.write("[Video Metadata (from ffprobe)]\n")
+            builder.write("[Video Metadata]\n")
             for k, v in meta.items():
                 builder.write(f"  {k}: {v}\n")
-            builder.write("\n[VLM Analysis]\n")
+            builder.write("\n[Caption]\n")
         builder.write(result)
-        return builder.ok(message="Video analysis complete.")
+        return builder.ok(message="Video caption complete.")
 
     @staticmethod
     async def _probe_metadata(video_path: str) -> dict[str, str]:

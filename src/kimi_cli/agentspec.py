@@ -52,6 +52,9 @@ class AgentSpec(BaseModel):
     subagents: dict[str, SubagentSpec] | None | Inherit = Field(
         default=inherit, description="Subagents"
     )
+    compaction_prompt_path: Path | None | Inherit = Field(
+        default=inherit, description="Custom compaction prompt path"
+    )
 
 
 class SubagentSpec(BaseModel):
@@ -71,6 +74,7 @@ class ResolvedAgentSpec:
     tools: list[str]
     exclude_tools: list[str]
     subagents: dict[str, SubagentSpec]
+    compaction_prompt_path: Path | None
 
 
 def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
@@ -93,6 +97,8 @@ def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
         agent_spec.exclude_tools = []
     if isinstance(agent_spec.subagents, Inherit):
         agent_spec.subagents = {}
+    if isinstance(agent_spec.compaction_prompt_path, Inherit):
+        agent_spec.compaction_prompt_path = None
     return ResolvedAgentSpec(
         name=agent_spec.name,
         system_prompt_path=agent_spec.system_prompt_path,
@@ -100,6 +106,7 @@ def load_agent_spec(agent_file: Path) -> ResolvedAgentSpec:
         tools=agent_spec.tools or [],
         exclude_tools=agent_spec.exclude_tools or [],
         subagents=agent_spec.subagents or {},
+        compaction_prompt_path=agent_spec.compaction_prompt_path,
     )
 
 
@@ -123,6 +130,10 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
         agent_spec.system_prompt_path = (
             agent_file.parent / agent_spec.system_prompt_path
         ).absolute()
+    if isinstance(agent_spec.compaction_prompt_path, Path):
+        agent_spec.compaction_prompt_path = (
+            agent_file.parent / agent_spec.compaction_prompt_path
+        ).absolute()
     if isinstance(agent_spec.subagents, dict):
         for v in agent_spec.subagents.values():
             v.path = (agent_file.parent / v.path).absolute()
@@ -145,5 +156,7 @@ def _load_agent_spec(agent_file: Path) -> AgentSpec:
             base_agent_spec.exclude_tools = agent_spec.exclude_tools
         if not isinstance(agent_spec.subagents, Inherit):
             base_agent_spec.subagents = agent_spec.subagents
+        if not isinstance(agent_spec.compaction_prompt_path, Inherit):
+            base_agent_spec.compaction_prompt_path = agent_spec.compaction_prompt_path
         agent_spec = base_agent_spec
     return agent_spec

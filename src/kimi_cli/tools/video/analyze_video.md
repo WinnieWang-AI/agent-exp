@@ -1,9 +1,6 @@
-Analyze a video using a VLM (vision-language model). Sends the video to the VLM along with your prompt, and returns the VLM's analysis as text.
-
-Use this to understand video content: scenes, visual style, motion, timing, colors, objects, characters, etc.
+Generate a detailed caption for a video using a VLM (vision-language model). Describes the scene, characters, actions, camera work, visual style, and progression of events. Also returns objective metadata (duration, resolution, fps) via ffprobe.
 
 Parameters:
-- `video_path`: Path to the video file to analyze.
-- `prompt`: What you want to know about the video. Be specific about what aspects to focus on.
+- `video_path`: Path to the video file.
 
-Returns the VLM's text analysis of the video.
+Returns video metadata and a detailed text description of the video content.

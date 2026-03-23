@@ -27,6 +27,7 @@ from kaos.path import KaosPath
 
 from kimi_cli.agentspec import VIDEO_DIRECTOR_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE
 from kimi_cli.tools.story_graph.view import build_story_graph_view
+from web.op_graph import parse_chat_to_op_graph
 from kimi_cli.app import KimiCLI, enable_logging
 from kimi_cli.session import Session
 from kimi_cli.wire.types import (
@@ -498,6 +499,15 @@ async def get_session(session_id: str):
             if line.strip():
                 messages.append(json.loads(line))
     return {"meta": meta, "messages": messages}
+
+
+@app.get("/api/sessions/{session_id}/op-graph")
+async def get_session_op_graph(session_id: str):
+    """Return the agent operation graph parsed from a session's chat.jsonl."""
+    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    if not chat_path.exists():
+        raise HTTPException(status_code=404, detail="No chat log found for this session")
+    return parse_chat_to_op_graph(chat_path)
 
 
 async def handle_question(websocket: WebSocket, msg: QuestionRequest, pending: dict):

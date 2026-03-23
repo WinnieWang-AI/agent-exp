@@ -70,9 +70,25 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 3. 回填 `reference_image` 和 `generation_prompt`
 4. 报告重新生成结果
 
+#### 生成后自检（参考图）
+
+每生成一张参考图后，调用 **AnalyzeImage** 获取图片描述（caption）。仅检查以下**客观硬伤**，命中任一条才重新生成（最多重试 1 次），否则视为通过：
+
+| 类型 | 硬伤条件（命中则重试） |
+|------|----------------------|
+| 角色图 | caption 描述的**主体类型**与 `fixed_traits` 不符（如 fixed_traits 描述的是兔子但 caption 显示是人类，或反之） |
+| 角色图 | caption 显示画面中出现 **≥2 个主体**（应只有 1 个） |
+| 角色图 | caption 显示 **非白色/纯色背景**（出现了具体场景环境） |
+| 场景图 | caption 显示画面中 **出现了人物/角色** |
+| 状态图 | caption 显示画面与实体图 **完全相同**（差异点未体现） |
+
+**不判断主观质量**（如"不够好看"、"风格略有偏差"、"姿态不理想"）。重试时在 prompt 中针对性修正命中的硬伤（如加强"solo, one person"、"pure white background"）。重试后无论结果如何都接受，不再检查。
+
+将 caption 记录到 `generation_caption` 字段，随 `reference_image` 和 `generation_prompt` 一起回填到 story-graph.json，供调用方和用户参考。
+
 #### 即时回填 reference_image 和 generation_prompt
 
-**每生成一张参考图，立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径，同时在该节点添加 `"generation_prompt"` 字段，记录你传给 GenerateImage 的完整 prompt 文本。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
+**每生成一张参考图（自检通过后），立即更新 story-graph.json**：用 StrReplaceFile 将对应节点的 `"reference_image"` 字段填入图片路径，同时在该节点添加 `"generation_prompt"` 字段，记录你传给 GenerateImage 的完整 prompt 文本。不要等所有图片生成完再批量回填——逐张回填可以让前端实时展示生成进度。
 
 示例（StrReplaceFile 替换前后）：
 ```json
@@ -170,7 +186,19 @@ GenerateVideoSync(
 )
 ```
 
-**5. 回写执行结果**：每个 shot 生成后，用 StrReplaceFile 在 `shot-plan.json` 对应 shot 中添加 `execution` 字段，记录实际使用的参数：
+**5. 生成后自检（视频）**：每个 shot 生成后，调用 **AnalyzeVideo** 获取视频描述（caption）。仅检查以下**客观硬伤**，命中任一条才重新生成（最多重试 1 次），否则视为通过：
+
+| 硬伤条件（命中则重试） |
+|----------------------|
+| caption 显示 **画面静止无运动**（生成了静态图而非视频） |
+| caption 显示 **画面全黑/全白/纯噪点**（生成失败） |
+| `focus_on` 指定了角色但 caption 显示 **画面中无人物出现** |
+
+**不判断主观质量**（如"运动不够流畅"、"角色不够像"、"构图不理想"）。重试后无论结果如何都接受。
+
+将 caption 记录到 `execution.caption` 字段。
+
+**6. 回写执行结果**：每个 shot 生成后（自检通过），用 StrReplaceFile 在 `shot-plan.json` 对应 shot 中添加 `execution` 字段，记录实际使用的参数：
 ```json
 "execution": {
   "mode": "reference_to_video",
@@ -244,6 +272,24 @@ GenerateVideoSync(
 8. 输出最终视频到调用方指定的路径（如 `output/attempt_1.mp4`）。如果调用方未指定，输出到 `output/` 子目录。**不要覆盖已有的输出文件**——如果目标路径已存在，追加序号（如 `output/final_1.mp4`）。
 9. **验证最终成片**：确认总时长、完整性、音视频同步。如有问题修复后重新输出。
 10. Use ManageVideoProject(action="update_metadata") 标记项目完成。
+
+## Step Declaration
+
+**Before every tool call**, output a structured step declaration in the following format:
+
+```
+【目标】<what this step aims to achieve>
+【验证】<how to verify this step succeeded>
+```
+
+Then call the tool. Example:
+
+```
+【目标】Generate entity reference image for char_hare (rabbit)
+【验证】GenerateImage returns success, file exists at assets/images/char_hare.png
+```
+
+These declarations are recorded by the system for operation graph construction and context compaction. **Do not skip this step.**
 
 ## Rules
 

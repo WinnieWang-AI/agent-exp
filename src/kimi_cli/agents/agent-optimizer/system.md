@@ -181,12 +181,33 @@ AnalyzeAgentGraph(agents=["video-director"], mode="full")
 
 结果会以可视化 Graph 的形式展示，支持逐层下钻到单个步骤的执行 trace。
 
+#### 4d. 三层对比分析
+
+对单个 agent 进行三层对比分析，从三个角度审视同一个任务的执行：
+
+```
+AnalyzeAgentGraph(agents=["video-director"], mode="compare", task="根据剧本生成视频")
+```
+
+三层分别是：
+- **Layer 1（理想方案）**：不看 agent prompt，纯从任务出发规划最优执行路径
+- **Layer 2（Prompt 预测）**：根据 agent 的 system.md 和配置，预测它会怎么执行
+- **Layer 3（实际行为）**：从 session 日志中解析 agent 的真实执行链路（含 subagent 内部的工具调用、资源流、并行关系）
+
+对比结果揭示问题根因：
+- **(1) vs (2)** 差异大 → **prompt 设计问题**，prompt 没有引导 agent 走最优路径
+- **(2) vs (3)** 差异大 → **执行偏差**，agent 没有按 prompt 做
+- **(1) vs (3)** 差异大 → **整体效果差距**，结合前两组判断根因
+
+如果不提供 `task` 参数，会自动从最近一次 session 日志中提取用户的任务描述。
+
 #### 使用场景
 
 - 快速了解一个不熟悉的 agent 系统架构：`mode="topology"`, `agents=["*"]`
 - 审查单个 agent 的工作流设计是否合理：`mode="workflow"`
 - 分析 agent 实际执行是否符合 prompt 设计意图：`mode="full"`
 - 定位具体某一步的执行问题：查看可视化中的 trace 下钻
+- **全面诊断 agent 问题根因**：`mode="compare"` — 区分是 prompt 设计问题还是执行偏差
 
 ### 执行优化
 

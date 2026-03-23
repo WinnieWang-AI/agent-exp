@@ -3,6 +3,7 @@ agent:
   extend: default
   name: video-director
   system_prompt_path: ./system.md
+  compaction_prompt_path: ./compact.md
   system_prompt_args:
     ROLE_ADDITIONAL: ""
   tools:

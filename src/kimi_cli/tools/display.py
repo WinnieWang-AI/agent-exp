@@ -289,3 +289,70 @@ class AgentGraphViewDisplayBlock(DisplayBlock):
     deviation_report: DeviationReport | None = None
     traces: dict[str, list[StepTrace]] = {}
     summary: dict[str, Any] = {}
+
+
+# ---------------------------------------------------------------------------
+# Three-layer comparison models
+# ---------------------------------------------------------------------------
+
+
+class PlanStep(BaseModel):
+    """A single step in an execution plan."""
+
+    id: str
+    label: str
+    kind: Literal["tool_call", "delegation", "decision", "read", "write"]
+    agent: str = ""
+    tool: str = ""
+    resources_in: list[str] = []
+    resources_out: list[str] = []
+    rationale: str = ""
+    parallel_group: str = ""
+    result_summary: str = ""
+    is_error: bool = False
+
+
+class ExecutionPlan(BaseModel):
+    """Unified execution plan representation for all three layers."""
+
+    source: Literal["ideal", "predicted", "actual"]
+    task_description: str
+    steps: list[PlanStep]
+    step_order: list[list[str]] = []  # [[s1], [s2, s3], [s4]] — inner list = parallel
+
+
+class Gap(BaseModel):
+    """A difference found between two layers."""
+
+    gap_type: Literal[
+        "missing_step",
+        "extra_step",
+        "order_diff",
+        "parallel_diff",
+        "tool_diff",
+        "resource_diff",
+    ]
+    layers: tuple[str, str]  # e.g. ("ideal", "actual")
+    step_id: str = ""
+    description: str
+    severity: Literal["info", "warning", "error"]
+    suggestion: str = ""
+
+
+class PlanComparison(BaseModel):
+    """Three-way comparison result."""
+
+    task_description: str
+    ideal: ExecutionPlan | None = None
+    predicted: ExecutionPlan | None = None
+    actual: ExecutionPlan | None = None
+    gaps: list[Gap] = []
+    diagnosis: str = ""
+
+
+class PlanCompareViewDisplayBlock(DisplayBlock):
+    """Display block for the three-layer comparison visualization."""
+
+    type: str = "plan_compare_view"
+    comparison: PlanComparison
+    summary: dict[str, Any] = {}

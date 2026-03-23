@@ -29,6 +29,9 @@ agent:
     - "kimi_cli.tools.video:VideoEdit"
     - "kimi_cli.tools.video:ExtractFrame"
     - "kimi_cli.tools.video:GenerateImage"
+    # Caption tools for self-check
+    - "kimi_cli.tools.video:AnalyzeImage"
+    - "kimi_cli.tools.video:AnalyzeVideo"
     # Audio-specific tools
     - "kimi_cli.tools.audio:GenerateMusic"
     - "kimi_cli.tools.audio:CheckMusicJob"

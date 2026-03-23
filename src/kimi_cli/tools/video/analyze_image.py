@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
@@ -9,21 +8,19 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
+_CAPTION_PROMPT = """Describe this image in detail. Include:
+- Main subject(s): who/what is depicted, their appearance, pose, expression, clothing
+- Setting/background: environment, location, objects
+- Visual style: art style, color palette, lighting, mood/atmosphere
+- Composition: framing, perspective, layout
+- Any text or symbols visible
 
-class ImageInput(BaseModel):
-    label: str = Field(description="A label to identify this image in the analysis (e.g. 'entity_ref', 'state_ref', 'first_frame')")
-    path: str = Field(description="Path to the image file")
+Be specific and objective. Output in the same language as any text in the image, otherwise use Chinese."""
 
 
 class Params(BaseModel):
-    images: list[ImageInput] = Field(
-        description="One or more images to analyze. Each has a label and path. "
-        "For single image analysis, provide one item. "
-        "For comparison (e.g. entity vs state reference), provide multiple items."
-    )
-    prompt: str = Field(
-        description="What to analyze about the image(s). Be specific about aspects to focus on. "
-        "Reference images by their labels."
+    image_path: str = Field(
+        description="Path to the image file to caption."
     )
 
 
@@ -45,23 +42,22 @@ class AnalyzeImage(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
 
-        image_paths: list[tuple[str, str]] = []
-        for img in params.images:
-            p = Path(img.path)
-            if not p.exists():
-                return builder.error(
-                    message=f"Image file not found: {img.path}",
-                    brief="File not found",
-                )
-            image_paths.append((img.label, img.path))
+        p = Path(params.image_path)
+        if not p.exists():
+            return builder.error(
+                message=f"Image file not found: {params.image_path}",
+                brief="File not found",
+            )
 
         try:
-            result = await self._client.analyze_image(image_paths, params.prompt)
+            result = await self._client.analyze_image(
+                [("image", params.image_path)], _CAPTION_PROMPT
+            )
         except Exception as e:
             return builder.error(
-                message=f"VLM image analysis failed: {e}",
-                brief="Analysis failed",
+                message=f"VLM image captioning failed: {e}",
+                brief="Captioning failed",
             )
 
         builder.write(result)
-        return builder.ok(message="Image analysis complete.")
+        return builder.ok(message="Image caption complete.")
