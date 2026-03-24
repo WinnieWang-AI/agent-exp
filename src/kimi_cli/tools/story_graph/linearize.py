@@ -528,6 +528,11 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
                 "movement": cam_shot.get("movement", ""),
                 "intent": cam_shot.get("intent", ""),
                 "focus_on": focus_on,
+                "composition": cam_shot.get("composition", ""),
+                "lens": cam_shot.get("lens", ""),
+                "focus_depth": cam_shot.get("focus_depth", ""),
+                "transition_in": cam_shot.get("transition_in", ""),
+                "transition_out": cam_shot.get("transition_out", ""),
                 "prompt_materials": materials,
             }
 

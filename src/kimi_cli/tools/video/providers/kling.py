@@ -14,6 +14,8 @@ from kimi_cli.tools.video.providers.base import (
     VideoJobStatus,
     VideoJobSubmission,
     VideoProvider,
+    is_data_uri,
+    parse_data_uri,
     resolve_image_to_url,
 )
 
@@ -54,22 +56,24 @@ class KlingVideoProvider(VideoProvider):
 
         # Image-to-video: attach single reference image as starting frame.
         if request.mode == "image_to_video" and request.reference_image_path:
-            body["image"] = {"url": resolve_image_to_url(request.reference_image_path, self._tos_config)}
+            body["image"] = _to_kling_image(resolve_image_to_url(request.reference_image_path, self._tos_config))
 
         # Multi-reference images (max 4) for reference_to_video and image_to_video modes.
         # Referenced in prompt as <<<image_1>>>, <<<image_2>>> etc.
         if request.mode in ("reference_to_video", "image_to_video") and request.reference_images:
             images = request.reference_images[:4]
             body["images"] = [
-                {"url": resolve_image_to_url(img, self._tos_config)}
+                _to_kling_image(resolve_image_to_url(img, self._tos_config))
                 for img in images
             ]
 
         # First-last-frame (FLF) mode.
         if request.first_frame_path:
-            body["firstFrame"] = resolve_image_to_url(request.first_frame_path, self._tos_config)
+            resolved = resolve_image_to_url(request.first_frame_path, self._tos_config)
+            body["firstFrame"] = _to_kling_image(resolved)
         if request.last_frame_path:
-            body["lastFrame"] = resolve_image_to_url(request.last_frame_path, self._tos_config)
+            resolved = resolve_image_to_url(request.last_frame_path, self._tos_config)
+            body["lastFrame"] = _to_kling_image(resolved)
 
         async with self._client() as client:
             resp = await client.post("/v1/videos/generations", json=body)
@@ -153,6 +157,18 @@ class KlingVideoProvider(VideoProvider):
             timeout=300,
             follow_redirects=True,
         )
+
+
+def _to_kling_image(url_or_data_uri: str) -> dict[str, str]:
+    """Convert a URL or data URI to the Kling image dict format.
+
+    Kling accepts ``{"url": "..."}`` for HTTP URLs and
+    ``{"base64": "..."}`` for base64-encoded images.
+    """
+    if is_data_uri(url_or_data_uri):
+        _, b64_data = parse_data_uri(url_or_data_uri)
+        return {"base64": b64_data}
+    return {"url": url_or_data_uri}
 
 
 def _raise_for_status(resp: httpx.Response, context: str) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import mimetypes
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -50,35 +52,61 @@ class VideoJobStatus(BaseModel):
     error_message: str = ""
 
 
-def resolve_image_to_url(path_or_url: str, tos_config: TOSConfig | None = None) -> str:
-    """Resolve a local file path to a public URL by uploading to TOS.
+def _file_to_data_uri(path: Path) -> str:
+    """Read a local file and return a base64 data URI."""
+    mime, _ = mimetypes.guess_type(str(path))
+    if not mime:
+        mime = "application/octet-stream"
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
-    If *path_or_url* is already an HTTP(S) URL it is returned as-is.
-    If it is a local file path, the file is uploaded to TOS and the
-    resulting public URL is returned.
+
+def is_data_uri(value: str) -> bool:
+    """Check if a string is a base64 data URI."""
+    return value.startswith("data:")
+
+
+def parse_data_uri(data_uri: str) -> tuple[str, str]:
+    """Parse a data URI into (media_type, base64_data).
+
+    Returns:
+        Tuple of (media_type, raw_base64_string).
+    """
+    # data:<media_type>;base64,<data>
+    header, _, data = data_uri.partition(",")
+    media_type = header.split(";")[0].removeprefix("data:")
+    return media_type, data
+
+
+def resolve_image_to_url(path_or_url: str, tos_config: TOSConfig | None = None) -> str:
+    """Resolve a local file path to a public URL (via TOS) or a base64 data URI.
+
+    If *path_or_url* is already an HTTP(S) URL or data URI it is returned as-is.
+    If it is a local file path:
+      - Uploads to TOS and returns the public URL (when TOS is configured).
+      - Falls back to a base64 data URI (when TOS is not configured).
 
     Args:
         path_or_url: A local path or URL string.
-        tos_config: TOS configuration.  Required when *path_or_url* is a
-            local file; raises ``RuntimeError`` if not provided.
+        tos_config: TOS configuration.  When not provided or not configured,
+            local files are encoded as base64 data URIs.
     """
     if not path_or_url:
         return path_or_url
-    # Already a URL — pass through.
+    # Already a URL or data URI — pass through.
     if path_or_url.startswith(("http://", "https://", "data:")):
         return path_or_url
-    # Local file — upload to TOS.
+    # Local file — upload to TOS or encode as base64.
     p = Path(path_or_url)
     if not p.is_file():
         raise FileNotFoundError(f"Reference image not found: {path_or_url}")
-    if tos_config is None or not tos_config.is_configured:
-        raise RuntimeError(
-            f"Cannot convert local file '{path_or_url}' to URL: "
-            "TOS is not configured. Please add [tos] section to your config."
-        )
-    from kimi_cli.tools.video.providers.tos_upload import upload_file
+    if tos_config is not None and tos_config.is_configured:
+        from kimi_cli.tools.video.providers.tos_upload import upload_file
 
-    return upload_file(tos_config, path_or_url)
+        return upload_file(tos_config, path_or_url)
+    # Fallback: base64 data URI so providers can use their base64 input path.
+    return _file_to_data_uri(p)
 
 
 class VideoProvider(ABC):

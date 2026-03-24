@@ -100,17 +100,18 @@ shot plan 数据：
 将 `prompt_materials` 编织成自然语言，覆盖以下要素（不需要按固定顺序，但都要包含）：
 
 1. **风格**：`style_prefix` 放在开头
-2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）
-3. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
-4. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
-5. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
-6. **互动方式**：`interactions[].style` — 角色之间怎么互动
-7. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
-8. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
-9. **参考图-角色关联标记**：首帧图和视频 prompt 使用不同的标记语法（因为底层 API 不同），但目的相同——让模型知道哪张参考图对应哪个角色：
+2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）、镜头焦距（`lens`）、景深（`focus_depth`）
+3. **画面构图与空间关系**：`composition` — 描述人物在画面中的位置和空间关系（如"角色 A 在画面左侧前景，角色 B 在右侧远处"）。这是保证镜头间空间连续性的关键信息，必须体现在 prompt 中
+5. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
+6. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
+7. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
+8. **互动方式**：`interactions[].style` — 角色之间怎么互动
+9. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
+10. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
+11. **参考图-角色关联标记**：首帧图和视频 prompt 使用不同的标记语法（因为底层 API 不同），但目的相同——让模型知道哪张参考图对应哪个角色：
    - **首帧图 prompt**（GenerateImage，Seedream/Gemini）：使用 `@[role N]` 标记。在 prompt 最前面加前缀 `"Reference image characters from left to right are: @[role 1], @[role 2]."` 说明参考图顺序，然后在角色首次出现的描述旁放 `@[role N]`。编号按 `reference_image_paths` 参数顺序。
    - **视频 prompt**（GenerateVideoSync，Kling 等）：使用 `<<<image_N>>>` 标记，放在对应角色首次出现的描述旁边。编号按 `reference_images` 参数顺序。
-10. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
+12. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
 
 ### 示例：中景 + 双人互动
 
@@ -121,6 +122,9 @@ shot plan 数据：
   "shot_type": "medium",
   "angle": "eye_level",
   "movement": "static",
+  "composition": "小红帽在画面左侧前景，面朝右侧；大灰狼从右侧大橡树后探出半身，两者相距约3米",
+  "lens": "50mm",
+  "focus_depth": "shallow, focus on girl",
   "intent": "小红帽停步，感觉有什么在看她",
   "focus_on": ["appear_red_neat", "appear_wolf_natural"],
   "prompt_materials": {
@@ -143,7 +147,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. In a sunlit forest clearing with god rays and scattered wildflowers, a little girl in a red velvet cloak <<<image_1>>> stops on the path, tilting her head with wide curious eyes and a flicker of unease. From behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low and hunching his body to appear smaller and less threatening. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness."
+"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera, 50mm lens, shallow depth of field with focus on the girl. On the left foreground of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the path, facing right, tilting her head with wide curious eyes and a flicker of unease. About three meters away on the right side, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low and hunching his body to appear smaller and less threatening. Sunlit forest clearing with god rays and scattered wildflowers. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"

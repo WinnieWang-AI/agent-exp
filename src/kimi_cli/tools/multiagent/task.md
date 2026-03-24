@@ -32,6 +32,19 @@ Use cases for stateful dialogue:
 
 Example: Use `session_id="eval_project1"` for all calls to an evaluator subagent within the same project, so it remembers its earlier analysis when comparing new results.
 
+**Context Files (Data Passing)**
+
+Use `context_files` to pass structured data files to the subagent instead of copying file content into the prompt. The subagent will see each file's content prepended to the prompt in `<file>` tags.
+
+This is the preferred way to share project data (story graph, shot plan, configuration) with subagents:
+- Keeps the prompt focused on the instruction (what to do)
+- Avoids duplicating large file contents in the director's context
+- The subagent gets the latest file content at call time
+
+Example: `context_files: ["/path/to/story-graph.json", "/path/to/shot-plan.json"]`
+
+Note: For stateful sessions (with `session_id`), the subagent already remembers files it read in previous calls. Only pass `context_files` on the first call or when files have changed.
+
 **Available Subagents:**
 
 ${SUBAGENTS_MD}

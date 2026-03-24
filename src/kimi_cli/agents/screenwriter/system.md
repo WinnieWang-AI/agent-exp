@@ -184,12 +184,20 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
       "shot_type": "medium",          // extreme_wide|wide|medium|close_up|extreme_close|detail_insert|over_shoulder|pov
       "angle": "eye_level",           // eye_level|low_angle|high_angle|dutch_angle|bird_eye
       "movement": "static",           // static|pan_left|push_in|pull_out|tracking|handheld_shake|crane_down|slow_360_orbit|fast_tracking|...
+      "composition": "小红帽在画面左侧前景，大灰狼从右侧树后探出，相距约3米",  // 画面构图与人物空间关系
+      "lens": "50mm",                 // 镜头焦距（可选）
+      "focus_depth": "shallow, focus on girl",  // 景深（可选）
       "focus_on": ["appear_red_neat", "appear_wolf_natural"],  // 引用状态 ID
-      "intent": "小红帽停步，感觉有什么在看她"
+      "intent": "小红帽停步，感觉有什么在看她",
+      "duration": 7,                  // 该 shot 时长（秒），5-10 之间
+      "transition_in": "cut",         // 入场转场方式（可选）
+      "transition_out": "dissolve"    // 出场转场方式（可选）
     }
   ]
 }
 ```
+
+**`composition` 是关键字段**：必须描述人物在画面中的空间位置和相对关系（如"A在左侧前景，B在右侧远处"），这是保证镜头间空间连续性的核心信息。`lens`、`focus_depth`、`transition_in`、`transition_out` 为可选字段。
 
 #### video_info（视频全局规格）
 

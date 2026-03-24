@@ -72,7 +72,20 @@ class ManageVideoProject(CallableTool2[Params]):
                 fp.write_text("[]", encoding="utf-8")
 
         project_json = project / "project.json"
-        project_data = {"name": project.name, "status": "initialized", **metadata}
+        project_name = project.name
+        project_data = {
+            "name": project_name,
+            "status": "initialized",
+            "story_graph_path": str(project / "story-graph.json"),
+            "shot_plan_path": str(project / "shot-plan.json"),
+            "session_ids": {
+                "graph": f"graph_{project_name}",
+                "create": f"create_{project_name}",
+                "create_audio": f"create_audio_{project_name}",
+                "eval": f"eval_{project_name}",
+            },
+            **metadata,
+        }
         project_json.write_text(
             json.dumps(project_data, ensure_ascii=False, indent=2), encoding="utf-8"
         )

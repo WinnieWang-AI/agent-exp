@@ -16,4 +16,5 @@ agent:
     - "kimi_cli.tools.video:AnalyzeImage"
     - "kimi_cli.tools.video:AnalyzeVideo"
     - "kimi_cli.tools.video:CompareVideos"
+    - "kimi_cli.tools.video:ExtractFrame"
   subagents: {}

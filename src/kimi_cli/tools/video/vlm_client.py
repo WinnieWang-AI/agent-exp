@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from google import genai
@@ -43,6 +44,14 @@ class GeminiVLMClient:
     - Vertex AI: Service account credentials with project/location
     """
 
+    _shared_semaphore: asyncio.Semaphore | None = None
+
+    @classmethod
+    def _get_semaphore(cls) -> asyncio.Semaphore:
+        if cls._shared_semaphore is None:
+            cls._shared_semaphore = asyncio.Semaphore(2)
+        return cls._shared_semaphore
+
     def __init__(self, config: VLMProviderConfig) -> None:
         self._model = config.model_name or _DEFAULT_MODEL
 
@@ -76,6 +85,8 @@ class GeminiVLMClient:
                 "VLM provider requires either api_key or credentials_json + project_id"
             )
 
+        self._semaphore = self._get_semaphore()
+
     async def analyze_image(
         self,
         image_paths: list[tuple[str, str]],
@@ -96,11 +107,12 @@ class GeminiVLMClient:
             parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime))
         parts.append(types.Part.from_text(text=prompt))
 
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=parts,
-            config=types.GenerateContentConfig(response_modalities=["TEXT"]),
-        )
+        async with self._semaphore:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=parts,
+                config=types.GenerateContentConfig(response_modalities=["TEXT"]),
+            )
 
         if not response.candidates:
             raise RuntimeError("Gemini returned no candidates")
@@ -117,11 +129,12 @@ class GeminiVLMClient:
             types.Part.from_text(text=prompt),
         ]
 
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=parts,
-            config=types.GenerateContentConfig(response_modalities=["TEXT"]),
-        )
+        async with self._semaphore:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=parts,
+                config=types.GenerateContentConfig(response_modalities=["TEXT"]),
+            )
 
         if not response.candidates:
             raise RuntimeError("Gemini returned no candidates")
@@ -145,11 +158,12 @@ class GeminiVLMClient:
             types.Part.from_text(text=prompt),
         ]
 
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=parts,
-            config=types.GenerateContentConfig(response_modalities=["TEXT"]),
-        )
+        async with self._semaphore:
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=parts,
+                config=types.GenerateContentConfig(response_modalities=["TEXT"]),
+            )
 
         if not response.candidates:
             raise RuntimeError("Gemini returned no candidates")

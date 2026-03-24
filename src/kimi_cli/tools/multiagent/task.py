@@ -44,9 +44,9 @@ class Params(BaseModel):
     )
     prompt: str = Field(
         description=(
-            "The task for the subagent to perform. "
-            "You must provide a detailed prompt with all necessary background information "
-            "because the subagent cannot see anything in your context."
+            "The task instruction for the subagent. Keep this focused on WHAT to do. "
+            "Use context_files to pass data files (story graph, shot plan, etc.) "
+            "instead of copying their content into the prompt."
         )
     )
     session_id: str | None = Field(
@@ -61,6 +61,48 @@ class Params(BaseModel):
             "across multiple rounds of feedback)."
         ),
     )
+    context_files: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional list of file paths whose contents will be automatically "
+            "prepended to the subagent's prompt as reference data. Use this to "
+            "pass structured data (e.g., story-graph.json, shot-plan.json, "
+            "project-context.json) without copying them into the prompt text. "
+            "The subagent will see: '<file: path>\\ncontent\\n</file>' for each file."
+        ),
+    )
+
+
+def _build_prompt_with_context_files(
+    prompt: str, context_files: list[str] | None
+) -> str:
+    """Prepend context file contents to the prompt.
+
+    Each file is wrapped in <file> tags so the subagent can distinguish
+    reference data from the actual instruction.
+    """
+    if not context_files:
+        return prompt
+
+    parts: list[str] = []
+    for file_path in context_files:
+        p = Path(file_path)
+        if not p.exists():
+            parts.append(f"<file path=\"{file_path}\">\n[File not found]\n</file>")
+            continue
+        try:
+            content = p.read_text(encoding="utf-8")
+            # Truncate very large files to avoid blowing up the subagent context
+            max_chars = 50_000
+            if len(content) > max_chars:
+                content = content[:max_chars] + f"\n... [truncated, {len(content)} chars total]"
+            parts.append(f"<file path=\"{file_path}\">\n{content}\n</file>")
+        except Exception as e:
+            parts.append(f"<file path=\"{file_path}\">\n[Read error: {e}]\n</file>")
+
+    if parts:
+        return "\n".join(parts) + "\n\n" + prompt
+    return prompt
 
 
 class Task(CallableTool2[Params]):
@@ -116,13 +158,23 @@ class Task(CallableTool2[Params]):
                 brief="Subagent not found",
             )
         agent = subagents[params.subagent_name]
+
+        # Build the effective prompt: prepend context_files content if provided
+        effective_prompt = _build_prompt_with_context_files(
+            params.prompt, params.context_files
+        )
+
         try:
-            result = await self._run_subagent(agent, params.prompt, params.session_id)
+            result = await self._run_subagent(agent, effective_prompt, params.session_id)
             return result
         except Exception as e:
+            # Truncate long error messages to avoid polluting parent context
+            error_str = str(e)
+            if len(error_str) > 300:
+                error_str = error_str[:300] + "..."
             return ToolError(
-                message=f"Failed to run subagent: {e}",
-                brief="Failed to run subagent",
+                message=f"Failed to run subagent: {error_str}",
+                brief="Subagent error",
             )
 
     async def _run_subagent(
@@ -191,5 +243,17 @@ class Task(CallableTool2[Params]):
             if len(context.history) == 0 or context.history[-1].role != "assistant":
                 return ToolError(message=_error_msg, brief="Failed to run subagent")
             final_response = context.history[-1].extract_text(sep="\n")
+
+        # If the response is very long, save to file and return a summary + pointer
+        # to avoid bloating the parent agent's context
+        max_inline_chars = 2000
+        if len(final_response) > max_inline_chars:
+            report_file = subagent_context_file.with_suffix(".report.md")
+            report_file.write_text(final_response, encoding="utf-8")
+            # Keep the first portion as inline summary, point to file for full content
+            summary = final_response[:max_inline_chars]
+            return ToolOk(
+                output=f"{summary}\n\n[Full report ({len(final_response)} chars) saved to: {report_file}]"
+            )
 
         return ToolOk(output=final_response)

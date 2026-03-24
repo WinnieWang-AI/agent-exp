@@ -104,6 +104,9 @@ LinearizeStoryGraph(
 - `shot_id`：镜头唯一 ID（格式 `{event_id}_shot_{order}`，超长镜头拆分为 `{shot_id}_part_N`）
 - `event_id`：所属事件
 - `shot_type`、`angle`、`movement`、`intent`、`focus_on`：运镜信息，用于 prompt 组装
+- `composition`：画面构图和人物空间关系描述（如"兔子在画面右侧领先，乌龟在左侧远处"），用于 prompt 中描述空间布局
+- `lens`、`focus_depth`：镜头焦距和景深信息，用于 prompt 中描述视觉风格
+- `transition_in`、`transition_out`：转场方式，用于剪辑组装阶段
 - `prompt_materials`：所有活跃的 appearances（含 reference_image）、minds、location_state、prop_states、interactions、relationships、style
 - `is_continuation`：是否为同一镜头的 duration-split 后续部分
 - `prev_shot`：仅当 `is_continuation: true` 时有值，包含前一 part 的 shot_id 和 output_path

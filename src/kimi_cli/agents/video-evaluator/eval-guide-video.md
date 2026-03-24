@@ -8,8 +8,42 @@
 
 1. 调用方会提供：视频路径、shot/成片的描述信息（intent、角色、场景等）、**要求的 aspect_ratio**、**出镜角色的参考图路径**。如果是对比评估，还会提供原始视频路径。
 2. **画面比例检查（确定性）**：用 **AnalyzeVideo** 获取视频元数据（resolution），从返回的 `resolution` 字段（如 `960x960`、`720x1280`）计算实际宽高比，与调用方提供的要求 aspect_ratio 对比。这是确定性检查，不依赖 VLM 判断。
-3. **视觉评估（VLM）**：用 AnalyzeVideo 的 VLM 分析结果，结合调用方提供的角色参考图（用 AnalyzeImage 加载参考图供对比），按下方维度评分。
+3. **视觉评估**：优先使用 AnalyzeVideo（VLM 整片分析）。如果 VLM 限流（429）或失败，**切换到截图评估方案**（见下文）。
 4. 输出结构化报告。
+
+### 截图评估方案（VLM 不可用时的替代方案，或成片多 shot 评估的标准方案）
+
+当 AnalyzeVideo 限流/失败，或评估多 shot 成片时，使用 **ExtractFrame + ReadMediaFile** 逐 shot 提取关键帧进行评估：
+
+**提取策略**：对每个 shot 视频提取**首帧和尾帧**：
+```
+ExtractFrame(video_path=shot.mp4, output_path=frames/{shot_id}_start.png, position="first")
+ExtractFrame(video_path=shot.mp4, output_path=frames/{shot_id}_end.png, position="last")
+```
+
+**查看方式**：用 **ReadMediaFile** 查看提取的截图。每次可同时查看多张截图（如一个 shot 的首尾帧 + 参考图）进行对比。
+
+**基于截图可评估的维度**：
+| 维度 | 截图可评估 | 评估方法 |
+|------|-----------|---------|
+| Character Consistency 人物一致性 | ✓ | 对比首尾帧中角色外观与参考图 |
+| Content Fidelity 内容匹配 | ✓ | 首帧构图是否符合 intent 描述 |
+| Composition 构图 | ✓ | 从首帧判断画面布局 |
+| Color & Lighting 色彩光影 | ✓ | 从截图判断色调、光照 |
+| Shot Continuity 镜头衔接 | ✓ | 对比前一 shot 尾帧与后一 shot 首帧，检查跳切 |
+| Props Consistency 道具一致性 | ✓ | 跨 shot 对比同一道具（如终点线）外观是否一致 |
+
+**基于截图无法评估的维度**（标注 N/A 并说明原因）：
+| 维度 | 原因 |
+|------|------|
+| Motion & Dynamics 运动 | 需要看视频才能判断运动流畅度、抖动、穿模 |
+| Timing & Rhythm 节奏 | 需要看视频才能判断节奏感 |
+| Audio & Sync 音频 | 需要播放视频 |
+
+**成片评估时的额外检查**：
+- **跨 shot 一致性**：依次查看所有 shot 的首帧，检查角色外观、场景风格是否跨镜头统一
+- **叙事完整性**：按时间顺序查看所有首帧，判断故事是否可理解（如龟兔赛跑：起跑→领先→打盹→超越→冲线）
+- **镜头衔接**：对比相邻 shot 的尾帧→首帧，检查是否有突兀跳切
 
 ---
 
