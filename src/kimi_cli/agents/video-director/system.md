@@ -22,7 +22,7 @@ When a user describes a video they want to create:
 - **收到主题后直接执行，不要提供选项或询问技术细节。** 唯一允许提问的场景：用户未提供主题、风格、画面比例或语言中的**任意一项**时，用一个简短问题确认缺少的项（可合并为一个问题，如"风格、横屏还是竖屏、中文还是英文？"）。**语言和画面比例都是必填项，不可省略或默认——必须由用户明确指定。** 时长可选，未指定时默认 1min。确认后立即进入 Step 1.5。
 - 如果用户已在描述中提到了这些信息，无需再问，直接采用。**画面比例不可默认，必须和用户确认。**
 - 确认后的画面比例、时长和语言将写入 Story Graph 的顶层 `video_info` 字段；视觉风格写入 `production_styles` 节点。video-creator 和 linearizer 直接从图中读取，无需额外传递。
-- Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `create_audio_{project_name}`（音频并行生成专用）。
+- Choose a project name based on the topic. Session IDs: `graph_{project_name}`, `create_{project_name}`, `create_audio_{project_name}`（音频并行生成专用）, `eval_{project_name}`, `edit_{project_name}`。
 
 ### Step 1.5: Build Story Graph — 阶段一（故事结构）
 
@@ -42,17 +42,19 @@ When a user describes a video they want to create:
 
 ### Step 1.8: Generate Reference Images
 
-Story Graph 确认后，生成参考图。
+Story Graph 确认后，生成参考图。Creator 内部会自动调用 evaluator 进行 prompt 校验和生成后质检，Director 不需要手动编排校验流程。
 
 #### Step 1.8a: 第 1 层 — 实体图
 
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 1（init）+ Phase 2 第 1 层（实体参考图）。
+调用 video-creator（session_id=`create_{project_name}`），执行 Phase 1（init）+ Phase 2 第 1 层（实体参考图）。Creator 会自动完成：组装 prompt → 调 evaluator 校验 → 生成图片 → 调 evaluator 质检 → 重试失败项。
 
-完成后向用户展示生成结果摘要（各类实体图数量），等用户确认后进入 Step 1.8b。
+完成后向用户展示生成结果摘要（各类实体图数量、PASS/FAIL 统计），等用户确认后进入 Step 1.8b。
 
 #### Step 1.8b: 第 2 层 — 状态图
 
-调用 video-creator（session_id=`create_{project_name}`），执行 Phase 2 第 2 层（状态参考图）。
+调用 video-creator（session_id=`create_{project_name}`），执行 Phase 2 第 2 层（状态参考图）。同样 Creator 内部自动完成校验和质检。
+
+完成后向用户展示参考图摘要。等用户确认角色和环境形象后再进入视频生成。
 
 完成后向用户展示参考图摘要。等用户确认角色和环境形象后再进入视频生成。
 
@@ -73,7 +75,7 @@ Story Graph 确认后，生成参考图。
 
 #### Step 2c: 组装
 
-视频和音频都完成后，调用 video-creator（session_id=`create_{project_name}`），执行 Phase 5（剪辑与组装），输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
+视频和音频都完成后，调用 video-editor（session_id=`edit_{project_name}`），传入 story-graph.json 和 shot-plan.json 路径，执行组装（裁剪、拼接、转场、对白合成、BGM 叠加、字幕），输出到 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`。
 
 ### Step 3: Deliver
 
@@ -84,8 +86,8 @@ Story Graph 确认后，生成参考图。
 如果用户要求修改，根据反馈拆分修改任务：
 - **视频问题**（角色变形、运动异常、内容不匹配等）→ 调用 creator 重新生成对应的 shots（Phase 3，指明需要重做的 shot_id 列表和每个 shot 的具体修改建议）
 - **音频问题**（BGM 不匹配、对白节奏等）→ 调用 creator 重新生成对应的音频（Phase 4，指明需要重做的 audio_state_id 和修改建议）
-- **组装问题**（转场、时长裁剪、音视频同步等）→ 调用 creator 重新执行组装（Phase 5）
-- 每个 Phase 的修改单独一次 Task 调用，最后再调用 creator 执行 Phase 5 组装，**在 prompt 中明确指定输出路径** `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_{N+1}.mp4`
+- **组装问题**（转场、时长裁剪、音视频同步等）→ 调用 video-editor 重新执行组装
+- 每个修改单独一次 Task 调用，最后再调用 video-editor 执行组装，**在 prompt 中明确指定输出路径** `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_{N+1}.mp4`
 
 ## Workflow: Story Editing (without regenerating video)
 
@@ -102,7 +104,7 @@ Story Graph 确认后，生成参考图。
 
 ## Workflow: Video Evaluation（用户主动要求时）
 
-**仅在用户主动要求评估时使用**，不在常规生成流程中自动触发。
+视觉评估（参考图、首帧图、视频）**仅在用户主动要求评估时使用**。Prompt 语义校验则在 Step 1.8 中作为常规流程自动执行。
 
 调用 video-evaluator（session_id=`eval_{project_name}`），传入需要评估的视频路径、shot 描述信息、要求的 aspect_ratio 和角色参考图路径。evaluator 会返回结构化评估报告（逐维度评分 + 问题列表 + 修改建议）。
 

@@ -26,7 +26,6 @@ agent:
     - "kimi_cli.tools.video:GenerateVideo"
     - "kimi_cli.tools.video:GenerateVideoSync"
     - "kimi_cli.tools.video:CheckVideoJob"
-    - "kimi_cli.tools.video:VideoEdit"
     - "kimi_cli.tools.video:ExtractFrame"
     - "kimi_cli.tools.video:GenerateImage"
     # Audio-specific tools
@@ -37,3 +36,6 @@ agent:
     coder:
       path: ../default/sub.yaml
       description: "Good at general software engineering tasks."
+    video-evaluator:
+      path: ../video-evaluator/agent.yaml
+      description: "视觉评估 agent。校验 prompt 语义准确性、评估参考图/首帧图/视频质量。支持 Prompt 校验（eval-guide-prompt.md）、参考图评估（eval-guide-refimage.md）、首帧图评估（eval-guide-first-frame.md）、视频评估（eval-guide-video.md）。"

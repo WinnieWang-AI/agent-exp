@@ -14,6 +14,7 @@ ${ROLE_ADDITIONAL}
 
 | 评估类型 | 指南文件 | 典型场景 |
 |---------|---------|---------|
+| **Prompt 语义校验** | `${AGENT_DIR}/eval-guide-prompt.md` | 生成参考图/首帧图前，校验 prompt 是否准确表达原始数据 |
 | **参考图评估** | `${AGENT_DIR}/eval-guide-refimage.md` | 实体参考图、状态参考图（白背景全身像等） |
 | **首帧图评估** | `${AGENT_DIR}/eval-guide-first-frame.md` | 视频生成前的首帧构图图 |
 | **视频评估** | `${AGENT_DIR}/eval-guide-video.md` | 生成的视频片段或成片 |

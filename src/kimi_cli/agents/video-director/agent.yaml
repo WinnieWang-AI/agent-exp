@@ -21,6 +21,9 @@ agent:
     video-creator:
       path: ../video-creator/agent.yaml
       description: "Generates videos from script to final output. Has access to GenerateVideo, CheckVideoJob, VideoEdit, GenerateImage for visuals, and GenerateMusic, CheckMusicJob, GenerateSpeech for audio (background music via Suno, TTS narration via Minimax)."
+    video-editor:
+      path: ../video-editor/agent.yaml
+      description: "后期编辑 agent。负责视频组装：裁剪、拼接、转场、逐 shot 合成对白、叠加 BGM、字幕。不生成素材，只用已有的视频片段和音频文件组装成片。"
     video-evaluator:
       path: ../video-evaluator/agent.yaml
-      description: "视觉评估 agent。评估参考图、首帧图、视频片段和成片的质量。支持 VLM 分析和截图评估两种模式。仅在用户主动要求评估时调用，不在常规生成流程中自动触发。"
+      description: "评估 agent。(1) Prompt 语义校验：在生成图片前校验 prompt 是否准确表达原始数据。(2) 视觉评估：评估参考图、首帧图、视频片段和成片的质量。支持 VLM 分析和截图评估两种模式。"

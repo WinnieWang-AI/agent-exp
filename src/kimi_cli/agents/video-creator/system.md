@@ -38,7 +38,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **每个实体只生成一张图**：Character 一张正面全身、Location 一张环境、Prop 一张特写。文件路径严格为 `assets/images/{entity_id}.png`。
 
-**Prompt 输出与外部校验**：每条 prompt 组装完后，将所有 prompt 以结构化列表输出（不调用 GenerateImage），写入 `prompt-review.json`，格式如下：
+**Prompt 校验（自动）**：每条 prompt 组装完后，将所有 prompt 写入 `prompt-review.json`，格式如下：
 ```json
 {
   "layer": 1,
@@ -55,11 +55,29 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
   ]
 }
 ```
-输出后 STOP，等待调用方发回校验结果。收到"全部 PASS"后再执行生成；收到 FAIL 项和 issues 时，修改对应 prompt 并更新 `prompt-review.json`，再次 STOP 等待校验。
+然后调用 `video-evaluator` 子 agent 进行 prompt 语义校验：
+```
+Task(
+  subagent_name="video-evaluator",
+  prompt="执行 Prompt 语义校验。prompt-review.json 路径: {project_dir}/prompt-review.json",
+  session_id="eval_{project_name}_prompt_L1"
+)
+```
+收到校验报告后：PASS 的直接进入生成；FAIL 的按建议修改 prompt，更新 `prompt-review.json`，再次调用 evaluator 复检。**最多 2 轮校验**，仍有 FAIL 则带着 FAIL 信息继续生成（不阻塞流程）。
 
-**执行生成**：收到校验通过的指令后，按 `prompt-review.json` 中的列表调用 GenerateImage。并行策略（并行度 ≤ 3）：每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
+**执行生成**：校验通过后，按 `prompt-review.json` 中的列表调用 GenerateImage。并行策略（并行度 ≤ 3）：每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
 
-**第 1 层完成后 STOP**：报告生成完成（各类实体图数量和路径），等待调用方指示。不要自动进入第 2 层。
+**生成后质检（自动）**：全部实体图生成完后，调用 `video-evaluator` 评估参考图质量：
+```
+Task(
+  subagent_name="video-evaluator",
+  prompt="执行参考图评估。项目目录: {project_dir}，评估以下图片: {图片路径列表}。每张图对应的 entity_id 和 fixed_traits 如下: {entity 信息}。style_prefix: {style_prefix}",
+  session_id="eval_{project_name}_refimg_L1"
+)
+```
+对 FAIL 的图片：按评估建议调整 prompt 后重新生成，**最多重试 1 次**。重试后不再评估，直接采用。
+
+**第 1 层完成后 STOP**：报告生成和评估结果（各类实体图数量、PASS/FAIL 统计），等待调用方指示。不要自动进入第 2 层。
 
 #### 第 2 层：状态参考图（基于实体图派生）
 
@@ -77,11 +95,13 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **不要重复生成已存在的图片**：生成前先检查目标路径的文件是否已存在。如果文件已存在且 `reference_image` 字段已填充，跳过该节点。
 
-**Prompt 自查（同第 1 层）**：每条 prompt 组装完后，对照 `prompt-guide-refimage.md` 中的核心规则和常见错误表逐项检查，不通过的当场修正，全部通过后再调用 GenerateImage。
+**Prompt 校验（自动，同第 1 层）**：组装完所有状态 prompt 后，写入 `prompt-review.json`（layer 设为 2），调用 `video-evaluator`（session_id=`eval_{project_name}_prompt_L2`）校验。FAIL 的修改后复检，最多 2 轮。
 
-**并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
+**执行生成**：校验通过后，按 `based_on` 拓扑排序，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
-**第 2 层完成后 STOP**：报告生成完成（各类状态图数量和路径），等待调用方指示。
+**生成后质检（自动，同第 1 层）**：全部状态图生成完后，调用 `video-evaluator`（session_id=`eval_{project_name}_refimg_L2`）评估。FAIL 的重试 1 次。
+
+**第 2 层完成后 STOP**：报告生成和评估结果（各类状态图数量、PASS/FAIL 统计），等待调用方指示。
 
 #### 重新生成指定图片
 
@@ -253,25 +273,9 @@ GenerateVideoSync(
    )
    ```
 
-3. **STOP**: 等待确认再进入 Phase 5。
+3. **STOP**: 音频素材生成完成后，报告结果（BGM 和对白的数量和路径），等待调用方指示。
 
-### Phase 5: Editing & Assembly（基于 Graph 组装）
-
-1. **按 `event_sequence` 排列 shots**：
-   - `THEN` → 顺序拼接
-   - `PARALLEL` → 交叉剪辑（参考 `camera_directive` 中 `for_event` 为数组的镜头指导交叉顺序）
-   - `is_continuation` parts → 按顺序拼接为完整镜头
-2. Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长。
-3. **逐 shot 合成对白**：根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。**回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
-4. Use VideoEdit(operation="transition") 添加转场效果（优先使用 `_merged.mp4` 版本，无则用原始 shot 视频）。
-5. Use VideoEdit(operation="concat") 按顺序拼接所有 shots。
-6. **叠加 BGM**：按 `audio_active_during` 确定每段 BGM 的时间范围。
-   - **单段 BGM**：直接用 VideoEdit(operation="add_audio") 叠加。BGM 过长则先 trim 裁剪，过短则设置 `audio_loop=true` 循环。
-   - **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `assets/audio/bgm_mixed.mp3`，再用 add_audio 叠加到视频。
-7. 如有对白，生成 SRT 字幕文件，用 VideoEdit(operation="add_subtitles") 叠加。
-8. 输出最终视频到调用方指定的路径（如 `output/attempt_1.mp4`）。如果调用方未指定，输出到 `output/` 子目录。**不要覆盖已有的输出文件**——如果目标路径已存在，追加序号（如 `output/final_1.mp4`）。
-9. **验证最终成片**：确认总时长、完整性、音视频同步。如有问题修复后重新输出。
-10. Use ManageVideoProject(action="update_metadata") 标记项目完成。
+**注意**：音频混合、时间对齐、叠加到视频等后期工作由 Editor agent 负责，Creator 只负责生成原始音频文件。
 
 ## Step Declaration
 

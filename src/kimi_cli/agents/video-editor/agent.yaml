@@ -1,0 +1,21 @@
+version: 1
+agent:
+  extend: default
+  name: video-editor
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:StrReplaceFile"
+    # Story graph tools
+    - "kimi_cli.tools.story_graph:LinearizeStoryGraph"
+    # Editing tools
+    - "kimi_cli.tools.video:VideoEdit"
+    - "kimi_cli.tools.video:ExtractFrame"
+    - "kimi_cli.tools.video:ManageVideoProject"
+  subagents: {}
