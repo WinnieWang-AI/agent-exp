@@ -97,22 +97,6 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 }
 ```
 
-**CharacterMind（心态状态）**
-
-描述角色的**情绪和行为模式**。心态变化频率通常高于外形变化。不需要参考图，用于指导表演和对白。
-
-```json
-{
-  "id": "mind_red_innocent",  // mind_ 前缀
-  "entity": "char_red",
-  "phase": "天真无忧",
-  "emotion": "开心，天真，对世界充满好奇",
-  "behavior": "蹦蹦跳跳，东张西望，和陌生人也会友善交谈"
-}
-```
-
-层级关系：Character → Appearance → Mind。Mind 通过 HAS_MIND 边挂在 Appearance 上（根据 active_during 事件重叠自动关联）。
-
 **PropState（道具状态）**
 
 > 只在**道具本身外观发生变化**时创建。"挂在腰间"vs"使用中"是角色动作，不是道具状态。只有"完好"→"皱巴巴"、"整洁"→"撕碎"这种道具本身的视觉变化才需要。
@@ -268,7 +252,6 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 ```json
 {
   "appearance_active_during": { "appear_red_neat": ["evt_farewell", "evt_forest_walk", ...] },
-  "mind_active_during":       { "mind_red_innocent": ["evt_farewell", "evt_forest_walk", ...] },
   "prop_active_during":       { "pstate_basket_full": ["evt_farewell", ...] },
   "location_active_during":   { "lstate_forest_bright": ["evt_forest_walk"] },
   "audio_active_during":      { "astate_bgm_pastoral": ["evt_farewell", "evt_forest_walk"] },
@@ -282,9 +265,6 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 {
   "appearance_transitions": [
     {"from": "appear_red_neat", "to": "appear_red_disheveled", "trigger": "evt_rescue", "delta": {"costume": "斗篷变皱沾灰"}}
-  ],
-  "mind_transitions": [
-    {"from": "mind_red_innocent", "to": "mind_red_uneasy", "trigger": "evt_red_arrives", "delta": {"emotion": "天真→不安"}}
   ],
   "audio_transitions": [
     {"from": "astate_bgm_pastoral", "to": "astate_bgm_uneasy", "trigger": "evt_wolf_encounter", "method": "crossfade_3s"}
@@ -341,14 +321,13 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 **Step 3: 推导状态**
 - **角色外形（appearances）**：只有服饰更换或肢体明显变化（受伤、断手等）才建新节点。同一外形跨多个事件共享。
-- **角色心态（minds）**：情绪/行为模式变化时创建。频率高于外形。
 - **道具状态（prop_states）**：仅在道具本身外观变化时创建。使用方式变化不算。
 - **环境状态（location_states）**：环境物理状态变化时创建。用物理描述命名。
 - 设定 `based_on` 关系（视觉衍生状态指向基准）
 
 **Step 4: 关联 active_during**
 - 为每个状态指定它在哪些事件期间生效
-- 确保每个事件中出现的角色都有对应的 appearance + mind
+- 确保每个事件中出现的角色都有对应的 appearance
 - 确保每个有地点的事件都有对应的 location_state
 - 确保每个事件都有对应的 production_style（`style_active_during`）
 
@@ -358,7 +337,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 3. 如果发现问题，**必须修复后重新写入并再次验证**，直到通过。
 4. 向用户汇报故事结构摘要（角色、事件、状态数量及主要剧情脉络），**等待用户确认后再进入阶段二**。
 
-常见的截断问题：LLM 生成长 JSON 时可能丢失中间部分（如 `character_appearances`、`character_minds` 数组为空，但 `appearance_active_during`、`mind_active_during` 却引用了这些 ID）。ValidateStoryGraph 会检测这类不一致，发现后必须补全缺失的节点定义。
+常见的截断问题：LLM 生成长 JSON 时可能丢失中间部分（如 `character_appearances` 数组为空，但 `appearance_active_during` 却引用了这些 ID）。ValidateStoryGraph 会检测这类不一致，发现后必须补全缺失的节点定义。
 
 ---
 
@@ -409,8 +388,8 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 | 操作 | 需要更新的部分 |
 |------|----------------|
 | 修改角色属性 | Character.fixed_traits, 可能影响 Appearance.visual |
-| 新增角色 | characters, 新增 appearances + minds, 扩展相关事件的 active_during, 可能更新 camera |
-| 删除角色 | characters, 删除其所有 appearances + minds, 清理 relationships, interactions, active_during, camera focus_on |
+| 新增角色 | characters, 新增 appearances, 扩展相关事件的 active_during, 可能更新 camera |
+| 删除角色 | characters, 删除其所有 appearances, 清理 relationships, interactions, active_during, camera focus_on |
 | 新增事件 | events, event_sequence, 扩展/新增 states 的 active_during, 可能需新增 camera + audio |
 | 删除事件 | events, event_sequence, 清理 active_during, 删除关联 camera, 检查 transitions 的 trigger |
 | 修改事件内容 | event.description, 可能影响 interactions, camera_directives |
@@ -444,7 +423,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - **输出路径**：优先使用调用方指定的保存路径。如果调用方未指定，则使用 `${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json`。绝对不要保存到其他位置。
 - 输出的 JSON 必须完整、合法，可以直接被可视化工具加载
 - **`reference_image` 字段必须为 `null`**。禁止写入占位符（如 `"ref_char_xxx"`）、空字符串或任何非真实文件路径的值。该字段由 video-creator 在生成参考图后回填真实路径，screenwriter 永远只写 `null`。
-- ID 命名规范：`char_`, `prop_`, `loc_`, `time_`, `evt_`, `appear_`, `mind_`, `pstate_`, `lstate_`, `style_`, `astate_`, `cam_`
+- ID 命名规范：`char_`, `prop_`, `loc_`, `time_`, `evt_`, `appear_`, `pstate_`, `lstate_`, `style_`, `astate_`, `cam_`
 - 所有文本内容使用中文（除 music_prompt、voice_direction 等需要英文的字段）
 - 使用 WriteFile 将 graph 写入文件时，确保 JSON 格式化（缩进 2 空格）
 

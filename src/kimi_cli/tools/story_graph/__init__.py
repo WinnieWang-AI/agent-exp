@@ -26,7 +26,6 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         "timeline": set(),
         "event": set(),
         "character_appearance": set(),
-        "character_mind": set(),
         "prop_state": set(),
         "location_state": set(),
         "audio_state": set(),
@@ -45,8 +44,6 @@ def _collect_ids(data: dict[str, Any]) -> dict[str, set[str]]:
         ids["event"].add(e["id"])
     for a in data.get("character_appearances", []):
         ids["character_appearance"].add(a["id"])
-    for m in data.get("character_minds", []):
-        ids["character_mind"].add(m["id"])
     for ps in data.get("prop_states", []):
         ids["prop_state"].add(ps["id"])
     for ls in data.get("location_states", []):
@@ -106,11 +103,6 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
                     f"Remove this node and describe other changes (posture, glow, movement) in the video prompt."
                 )
 
-    # character_minds.entity -> character
-    for m in data.get("character_minds", []):
-        if m.get("entity") not in ids["character"]:
-            issues.append(f'mind {m["id"]}: entity "{m.get("entity")}" not found in characters')
-
     # prop_states.entity -> prop
     for ps in data.get("prop_states", []):
         if ps.get("entity") not in ids["prop"]:
@@ -140,7 +132,7 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
             issues.append(f'event_sequence: to "{seq.get("to")}" not found')
 
     # *_active_during maps
-    for map_name in ["appearance_active_during", "mind_active_during", "prop_active_during",
+    for map_name in ["appearance_active_during", "prop_active_during",
                       "location_active_during", "audio_active_during", "style_active_during"]:
         mapping = data.get(map_name, {})
         for state_id, event_list in mapping.items():
@@ -151,7 +143,7 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
                     issues.append(f'{map_name}[{state_id}]: event "{evt}" not found')
 
     # transitions
-    for trans_name in ["appearance_transitions", "mind_transitions", "audio_transitions", "style_transitions"]:
+    for trans_name in ["appearance_transitions", "audio_transitions", "style_transitions"]:
         for t in data.get(trans_name, []):
             if t.get("from") not in all_ids:
                 issues.append(f'{trans_name}: from "{t.get("from")}" not defined')
@@ -200,18 +192,11 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
 
     # Check for truncated output: active_during maps reference IDs but definition arrays are empty
     appear_active = data.get("appearance_active_during", {})
-    mind_active = data.get("mind_active_during", {})
     if appear_active and not data.get("character_appearances"):
         issues.append(
             "CRITICAL: appearance_active_during references IDs but character_appearances array is empty or missing. "
             "This usually means the JSON was truncated during generation. "
             "Regenerate the full story graph with all character_appearances defined."
-        )
-    if mind_active and not data.get("character_minds"):
-        issues.append(
-            "CRITICAL: mind_active_during references IDs but character_minds array is empty or missing. "
-            "This usually means the JSON was truncated during generation. "
-            "Regenerate the full story graph with all character_minds defined."
         )
 
     # Build reverse maps: event -> which states are active
@@ -229,19 +214,10 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
         for e in evts:
             evt_appear.setdefault(e, []).append(state_id)
 
-    # event -> minds active
-    evt_mind: dict[str, list[str]] = {}
-    for state_id, evts in mind_active.items():
-        for e in evts:
-            evt_mind.setdefault(e, []).append(state_id)
-
     # Build appearance entity map
     appear_entity: dict[str, str] = {}
     for a in data.get("character_appearances", []):
         appear_entity[a["id"]] = a.get("entity", "")
-    mind_entity: dict[str, str] = {}
-    for m in data.get("character_minds", []):
-        mind_entity[m["id"]] = m.get("entity", "")
 
     for e in data.get("events", []):
         eid = e["id"]
@@ -250,25 +226,17 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
         if e.get("happens_at") and eid not in evt_loc:
             issues.append(f'event {eid}: no location_state active (happens_at {e["happens_at"]})')
 
-        # Characters in interactions should have appearance + mind
+        # Characters in interactions should have appearance
         for inter in e.get("interactions", []):
             for char_id in inter.get("between", []):
                 if char_id not in ids["character"]:
                     continue
-                # Check appearance
                 has_appear = any(
                     appear_entity.get(aid) == char_id
                     for aid in evt_appear.get(eid, [])
                 )
                 if not has_appear:
                     issues.append(f'event {eid}: character {char_id} in interactions but no appearance active')
-                # Check mind
-                has_mind = any(
-                    mind_entity.get(mid) == char_id
-                    for mid in evt_mind.get(eid, [])
-                )
-                if not has_mind:
-                    issues.append(f'event {eid}: character {char_id} in interactions but no mind active')
 
     # Check video_info has required fields (aspect_ratio, duration, language)
     vi = data.get("video_info")
@@ -301,7 +269,7 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
             issues.append(f'event {e["id"]}: no production_style active (style_active_during)')
 
     # Check no state has empty active_during
-    for map_name in ["appearance_active_during", "mind_active_during", "prop_active_during",
+    for map_name in ["appearance_active_during", "prop_active_during",
                       "location_active_during", "audio_active_during", "style_active_during"]:
         mapping = data.get(map_name, {})
         for state_id, evts in mapping.items():

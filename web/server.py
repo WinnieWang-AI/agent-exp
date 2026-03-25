@@ -355,8 +355,9 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
 def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
     """Build an actionable resume context from the op graph (execution history).
 
-    Uses parse_chat_to_op_graph() to extract the actual sequence of completed/failed
-    delegations, rather than guessing progress from disk artifacts alone.
+    Writes the full execution history to a resume-state.md file in the project
+    output directory, and returns a short pointer message for the agent context.
+    This avoids bloating the agent context with repeated long resume messages.
     """
     # Parse op graph from chat.jsonl
     chat_path = _get_session_dir(session_id) / "chat.jsonl"
@@ -364,25 +365,25 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
 
     project_name = summary.get("project_name", "unknown")
 
-    lines = ["[Session resumed. Execution history from op graph — do NOT repeat completed steps.]"]
-    lines.append(f"Project name: {project_name}")
-    lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
+    # --- Build the full execution history (written to file) ---
+    detail_lines: list[str] = []
+    detail_lines.append("# Resume State — Execution History")
+    detail_lines.append(f"Project name: {project_name}")
+    detail_lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
 
-    # --- Section 1: Execution history from op graph ---
     if op_graph and op_graph.get("nodes"):
         nodes = op_graph["nodes"]
         delegations = [n for n in nodes if n["type"] == "delegation"]
 
         if delegations:
-            lines.append("")
-            lines.append("## Completed steps (do NOT redo these):")
+            detail_lines.append("")
+            detail_lines.append("## Completed steps (do NOT redo these):")
             for d in delegations:
                 goal = d.get("goal", "")
                 agent = d.get("agent", "?")
                 label = d.get("label", "")
                 report = d.get("subagent_report", "")
 
-                # Check if this delegation had errors in its child tool calls
                 did = d["id"]
                 child_tools = [n for n in nodes if n.get("parent_delegation") == did]
                 n_errors = sum(1 for t in child_tools if t.get("is_error"))
@@ -395,62 +396,114 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
                 if status == "PARTIAL":
                     step_line += f" ({n_total - n_errors}/{n_total} tool calls succeeded)"
                 if status == "ERROR":
-                    # Find the last error message
                     error_tools = [t for t in child_tools if t.get("is_error")]
                     if error_tools:
                         last_err = error_tools[-1].get("result", "")[:150]
                         step_line += f" — last error: {last_err}"
-                lines.append(step_line)
+                detail_lines.append(step_line)
 
-                # Include brief report for context
                 if report and len(report) > 20:
-                    # Truncate long reports
                     brief = report[:200] + ("..." if len(report) > 200 else "")
-                    lines.append(f"    report: {brief}")
+                    detail_lines.append(f"    report: {brief}")
 
-        # Identify incomplete delegations (in current_parallel_batch from op graph)
         steps = op_graph.get("steps", [])
         if steps:
             last_step = steps[-1]
             last_ids = last_step.get("delegation_ids", [])
-            # Check if any delegation in last step has no subagent_report (possibly incomplete)
             incomplete = []
             for did in last_ids:
                 d = next((n for n in nodes if n["id"] == did), None)
                 if d and not d.get("subagent_report") and not d.get("director_summary"):
                     incomplete.append(d)
             if incomplete:
-                lines.append("")
-                lines.append("## Possibly interrupted (no completion report):")
+                detail_lines.append("")
+                detail_lines.append("## Possibly interrupted (no completion report):")
                 for d in incomplete:
                     goal = d.get("goal", d.get("label", ""))
                     agent = d.get("agent", "?")
                     child_tools = [n for n in nodes if n.get("parent_delegation") == d["id"]]
-                    lines.append(f"- {agent}: {goal} ({len(child_tools)} tool calls executed before interruption)")
+                    detail_lines.append(f"- {agent}: {goal} ({len(child_tools)} tool calls executed before interruption)")
 
-    # --- Section 2: Current disk state (supplementary) ---
-    lines.append("")
-    lines.append("## Current disk state:")
+    # --- Section 2: Current disk state ---
+    detail_lines.append("")
+    detail_lines.append("## Current disk state:")
     sg = summary.get("story_graph")
     if sg:
-        lines.append(f"Story Graph: {sg['path']}")
-        lines.append(f"  - {sg['characters']} chars, {sg['locations']} locs, {sg['events']} events")
-        lines.append(f"  - camera_directives: {'present' if sg['has_camera_directives'] else 'EMPTY'}")
-        lines.append(f"  - audio_states: {'present' if sg['has_audio_states'] else 'EMPTY'}")
-        lines.append(f"  - Entity ref images: {sg['entity_reference_images']}/{sg['total_entities']}")
-        lines.append(f"  - State ref images: {sg['state_reference_images']}/{sg['total_states']}")
+        detail_lines.append(f"Story Graph: {sg['path']}")
+        detail_lines.append(f"  - {sg['characters']} chars, {sg['locations']} locs, {sg['events']} events")
+        detail_lines.append(f"  - camera_directives: {'present' if sg['has_camera_directives'] else 'EMPTY'}")
+        detail_lines.append(f"  - audio_states: {'present' if sg['has_audio_states'] else 'EMPTY'}")
+        detail_lines.append(f"  - Entity ref images: {sg['entity_reference_images']}/{sg['total_entities']}")
+        detail_lines.append(f"  - State ref images: {sg['state_reference_images']}/{sg['total_states']}")
     if summary.get("shot_plan"):
-        lines.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
+        detail_lines.append(f"Shot Plan: {summary['shot_plan']['total_shots']} shots")
     clips = summary.get("clips")
     if clips:
-        lines.append(f"Video Clips: {clips['total']} files, {clips['valid']} valid (>1MB)")
+        detail_lines.append(f"Video Clips: {clips['total']} files, {clips['valid']} valid (>1MB)")
     if summary.get("final_video"):
-        lines.append(f"Final video: {summary['final_video']}")
+        detail_lines.append(f"Final video: {summary['final_video']}")
 
-    lines.append("")
-    lines.append("Resume instruction: Continue from where the last step left off. Do NOT repeat DONE steps. For PARTIAL/ERROR steps, only redo the failed parts. Do NOT re-ask the user for topic/style/duration.")
+    detail_lines.append("")
+    detail_lines.append("Resume instruction: Continue from where the last step left off. Do NOT repeat DONE steps. For PARTIAL/ERROR steps, only redo the failed parts. Do NOT re-ask the user for topic/style/duration.")
 
-    return "\n".join(lines) + "\n]\n\n"
+    # --- Write full history to file ---
+    session_output_dir = Path.cwd() / "output" / session_id
+    project_dir = session_output_dir / project_name if project_name != "unknown" else session_output_dir
+    project_dir.mkdir(parents=True, exist_ok=True)
+    resume_file = project_dir / "resume-state.md"
+    resume_file.write_text("\n".join(detail_lines), encoding="utf-8")
+
+    # --- Build compact context pointer (this is what goes into agent context) ---
+    # Include only: project name, session IDs, disk state summary, and file pointer
+    compact_lines = [f"[Session resumed. Project: {project_name}]"]
+    compact_lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
+    if sg:
+        compact_lines.append(f"Disk state: {sg['characters']} chars, {sg['locations']} locs, {sg['events']} events, "
+                             f"camera={'Y' if sg['has_camera_directives'] else 'N'}, "
+                             f"audio={'Y' if sg['has_audio_states'] else 'N'}, "
+                             f"entity_refs={sg['entity_reference_images']}/{sg['total_entities']}, "
+                             f"state_refs={sg['state_reference_images']}/{sg['total_states']}")
+    if summary.get("shot_plan"):
+        compact_lines.append(f"Shot plan: {summary['shot_plan']['total_shots']} shots")
+    if clips:
+        compact_lines.append(f"Clips: {clips['valid']}/{clips['total']} valid")
+    if summary.get("final_video"):
+        compact_lines.append(f"Final video: {summary['final_video']}")
+    compact_lines.append(f"Full execution history: ReadFile {resume_file}")
+    compact_lines.append("Resume: continue from where last step left off. Read resume-state.md if you need step details.")
+
+    return "\n".join(compact_lines) + "\n\n"
+
+
+def _context_has_recent_resume(cli) -> bool:
+    """Check if the agent context already contains a recent resume message.
+
+    This prevents injecting duplicate resume messages when the websocket
+    reconnects multiple times for the same session.
+    """
+    try:
+        history = cli.soul.context.history
+        # Check the last few user messages for a resume marker
+        for msg in reversed(history):
+            if msg.role == "user":
+                # Extract text content from the message
+                text = ""
+                if isinstance(msg.content, str):
+                    text = msg.content
+                elif isinstance(msg.content, list):
+                    for part in msg.content:
+                        if hasattr(part, "text") and part.text:
+                            text += part.text
+                        elif isinstance(part, dict) and part.get("text"):
+                            text += part["text"]
+                if "[Session resumed" in text:
+                    return True
+                # Only check recent messages (stop at first non-resume user msg)
+                if text.strip() and "[Session resumed" not in text:
+                    break
+    except Exception:
+        pass
+    return False
 
 
 def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
@@ -609,8 +662,11 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     if resumed:
         summary = _build_session_summary(session_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
-        # Build a rich context hint so the agent knows exactly where to resume
+        # Build resume context (writes full history to file, returns compact pointer)
         resume_context = _build_resume_context(summary, session_id)
+        # Dedup: skip injection if the agent context already has a recent resume message
+        if _context_has_recent_resume(cli):
+            resume_context = ""
 
     await websocket.send_json({"type": "status", "status": "ready"})
 
@@ -762,6 +818,8 @@ async def ws_auto(websocket: WebSocket):
         summary = _build_session_summary(session_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
         resume_context = _build_resume_context(summary, session_id)
+        if _context_has_recent_resume(cli):
+            resume_context = ""
 
     await websocket.send_json({"type": "status", "status": "ready"})
 

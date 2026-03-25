@@ -28,10 +28,12 @@ class ViduVideoProvider(VideoProvider):
     """Vidu video generation provider using the Shengshu API.
 
     API contract (derived from ace-backend-go):
-      - T2V:   POST {base_url}/ent/v2/text2video
-      - I2V:   POST {base_url}/ent/v2/img2video
-      - Poll:  GET  {base_url}/ent/v2/tasks/{task_id}/creations
-      - Auth:  Authorization: Token {api_key}
+      - T2V:    POST {base_url}/ent/v2/text2video
+      - I2V:    POST {base_url}/ent/v2/img2video
+      - Ref2V:  POST {base_url}/ent/v2/reference2video
+      - SE2V:   POST {base_url}/ent/v2/start-end2video
+      - Poll:   GET  {base_url}/ent/v2/tasks/{task_id}/creations
+      - Auth:   Authorization: Token {api_key}
       - States: created → queueing → processing → success | failed
       - Result: ``creations[].url`` (HTTP URL, valid 24h)
     """
@@ -48,42 +50,69 @@ class ViduVideoProvider(VideoProvider):
     # ------------------------------------------------------------------
 
     async def submit_job(self, request: GenerationRequest) -> VideoJobSubmission:
-        is_i2v = request.mode == "image_to_video" and request.reference_image_path
-        is_ref = request.mode == "reference_to_video" and request.reference_images
-        endpoint = "/ent/v2/img2video" if is_i2v else "/ent/v2/text2video"
+        # Detect mode following ace-backend-go detectVideoMode logic:
+        #   1. SE2V: requires BOTH first_frame AND last_frame
+        #   2. Ref2V: has reference_images (character consistency)
+        #   3. I2V: has a single source image (reference_image_path or first_frame_path)
+        #   4. T2V: text only
+        has_both_frames = bool(request.first_frame_path and request.last_frame_path)
+        has_refs = bool(request.reference_images)
+        # I2V source: explicit reference_image_path, or first_frame_path as fallback
+        # (matches Go: only first_frame without last_frame → treated as I2V source)
+        i2v_source = request.reference_image_path or request.first_frame_path
 
-        aspect_ratio = request.aspect_ratio if request.aspect_ratio in _VALID_ASPECT_RATIOS else "16:9"
+        if has_refs:
+            endpoint = "/ent/v2/reference2video"
+        elif has_both_frames:
+            endpoint = "/ent/v2/start-end2video"
+        elif i2v_source:
+            endpoint = "/ent/v2/img2video"
+        else:
+            endpoint = "/ent/v2/text2video"
+
+        # Ref2V hardcodes model to "viduq2" (Go: submitRef2VTask line 288).
+        # SE2V: "viduq2" base not supported, upgrade to "viduq2-pro".
+        if endpoint == "/ent/v2/reference2video":
+            model = "viduq2"
+        elif endpoint == "/ent/v2/start-end2video" and self._model == "viduq2":
+            model = "viduq2-pro"
+        else:
+            model = self._model
 
         body: dict = {
-            "model": self._model,
+            "model": model,
             "prompt": request.prompt,
             "duration": int(request.duration_seconds),
-            "aspect_ratio": aspect_ratio,
             "resolution": "720p",
         }
 
+        # aspect_ratio is only supported by T2V and Ref2V.
+        # I2V and SE2V derive aspect ratio from input images (no AspectRatio field
+        # in ViduI2VRequest / ViduSE2VRequest structs).
+        if endpoint in ("/ent/v2/text2video", "/ent/v2/reference2video"):
+            aspect_ratio = request.aspect_ratio if request.aspect_ratio in _VALID_ASPECT_RATIOS else "16:9"
+            body["aspect_ratio"] = aspect_ratio
+
         # Q3 models support audio-video sync by default.
-        if "q3" in self._model:
+        if "q3" in model:
             body["audio"] = True
             body["moderation"] = "disabled"
 
-        if is_i2v:
-            body["images"] = [resolve_image_to_url(request.reference_image_path, self._tos_config)]
-
-        # Multi-reference images for visual consistency (max 7).
-        # Only sent for reference_to_video and image_to_video modes.
-        if request.mode in ("reference_to_video", "image_to_video") and request.reference_images:
+        # Build the "images" field based on the selected endpoint.
+        if endpoint == "/ent/v2/reference2video":
             refs = request.reference_images[:7]
-            body["reference_images"] = [
+            body["images"] = [
                 resolve_image_to_url(img, self._tos_config)
                 for img in refs
             ]
-
-        # First-last-frame (SE2V) mode.
-        if request.first_frame_path:
-            body["start_frame"] = resolve_image_to_url(request.first_frame_path, self._tos_config)
-        if request.last_frame_path:
-            body["end_frame"] = resolve_image_to_url(request.last_frame_path, self._tos_config)
+        elif endpoint == "/ent/v2/start-end2video":
+            # SE2V requires exactly 2 images: [start_frame_url, end_frame_url]
+            body["images"] = [
+                resolve_image_to_url(request.first_frame_path, self._tos_config),
+                resolve_image_to_url(request.last_frame_path, self._tos_config),
+            ]
+        elif endpoint == "/ent/v2/img2video":
+            body["images"] = [resolve_image_to_url(i2v_source, self._tos_config)]
 
         async with self._client() as client:
             resp = await client.post(endpoint, json=body)

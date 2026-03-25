@@ -11,7 +11,6 @@ from kimi_cli.tools.display import (
     StoryGraphEntity,
     StoryGraphEvent,
     StoryGraphInteraction,
-    StoryGraphMind,
     StoryGraphOutput,
     StoryGraphProductionStyle,
     StoryGraphShot,
@@ -136,36 +135,6 @@ def _build_audio_by_event(
     return result
 
 
-def _build_minds_by_event(
-    data: dict[str, Any],
-    char_names: dict[str, str],
-) -> dict[str, list[StoryGraphMind]]:
-    """Build event_id -> list of active character minds."""
-    mind_nodes: dict[str, dict[str, Any]] = {}
-    for m in data.get("character_minds", []):
-        mind_nodes[m["id"]] = m
-
-    minds_by_event: dict[str, list[str]] = defaultdict(list)
-    for mind_id, evt_list in data.get("mind_active_during", {}).items():
-        for eid in evt_list:
-            minds_by_event[eid].append(mind_id)
-
-    result: dict[str, list[StoryGraphMind]] = {}
-    for eid, mind_ids in minds_by_event.items():
-        items: list[StoryGraphMind] = []
-        for mid in mind_ids:
-            mnode = mind_nodes.get(mid, {})
-            entity_id = mnode.get("entity", "")
-            items.append(StoryGraphMind(
-                id=mid,
-                entity=entity_id,
-                entity_name=char_names.get(entity_id, entity_id),
-                phase=mnode.get("phase", ""),
-                emotion=mnode.get("emotion", ""),
-                behavior=mnode.get("behavior", ""),
-            ))
-        result[eid] = items
-    return result
 
 
 def _build_outputs(project_dir: str) -> list[StoryGraphOutput]:
@@ -323,8 +292,6 @@ def build_story_graph_view(
     for c in data.get("characters", []):
         char_names[c["id"]] = c.get("name", c["id"])
 
-    # --- Minds by event ---
-    minds_by_event = _build_minds_by_event(data, char_names)
 
     # --- Shot lookup from shot_plan ---
     shots_by_event: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -439,7 +406,7 @@ def build_story_graph_view(
             happens_at=event.get("happens_at", ""),
             character_ids=char_ids,
             active_appearance_ids=active_appear_ids,
-            minds=minds_by_event.get(eid, []),
+            minds=[],
             shots=shots,
             interactions=interactions,
             audio_states=event_audio,

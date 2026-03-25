@@ -71,7 +71,7 @@ class _GraphIndex:
         self.nodes: dict[str, dict[str, Any]] = {}
         for key in (
             "characters", "props", "locations",
-            "character_appearances", "character_minds",
+            "character_appearances",
             "prop_states", "location_states", "audio_states",
             "camera_directives", "production_styles",
         ):
@@ -95,7 +95,7 @@ class _GraphIndex:
         # Reverse maps: event_id -> list[state_id] for each active_during category
         self.active_states: dict[str, dict[str, list[str]]] = {}
         for map_name in (
-            "appearance_active_during", "mind_active_during",
+            "appearance_active_during",
             "prop_active_during", "location_active_during",
             "audio_active_during", "style_active_during",
         ):
@@ -264,17 +264,6 @@ def _extract_prompt_materials(
             "reference_image": a.get("reference_image") or "",
         })
 
-    # Active minds
-    minds = []
-    for m in g.get_active("mind_active_during", event_id):
-        minds.append({
-            "id": m["id"],
-            "entity": m.get("entity", ""),
-            "phase": m.get("phase", ""),
-            "emotion": m.get("emotion", ""),
-            "behavior": m.get("behavior", ""),
-        })
-
     # Location state — with reference image
     location_state = None
     for ls in g.get_active("location_active_during", event_id):
@@ -336,7 +325,6 @@ def _extract_prompt_materials(
         "happens_at": event.get("happens_at", ""),
         "happens_during": event.get("happens_during", ""),
         "appearances": appearances,
-        "minds": minds,
         "location_state": location_state,
         "prop_states": prop_states,
         "audio_states": audio_states,

@@ -36,7 +36,7 @@ When a user describes a video they want to create:
 
 ### Step 1.6: Build Story Graph — 阶段二（镜头与音频）
 
-用户确认故事结构后，再次调用 screenwriter（session_id=`graph_{project_name}`），指示其执行**阶段二**：为每个事件设计镜头语言（camera_directives）和音频（audio_states），补充到已有的 `story-graph.json` 中。screenwriter 写入后会自动运行 ValidateStoryGraph。
+用户确认故事结构后，再次调用 screenwriter（session_id=`graph_{project_name}`），指示其执行**阶段二**：为每个事件设计镜头语言（camera_directives）和音频（audio_states），补充到已有的 `story-graph.json` 中。screenwriter 写入后会自动运行 ValidateStoryGraph。**不要在 prompt 中重复视频规格（时长、比例、语言、风格）——这些已在阶段一写入 story-graph.json，screenwriter session 中也有记忆。**
 
 向用户展示镜头与音频设计摘要（镜头总数、音频层次），确认后进入 Step 1.8。
 
@@ -166,9 +166,11 @@ Story Graph 确认后，生成参考图。
       context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
     )
     ```
-  - **后续调用（同一 session_id）**：subagent 已有完整记忆，只传**增量指令**，不需要 context_files（除非文件已更新且 subagent 需要看到最新版本）。例如：
-    - ✅ `prompt="继续 Phase 3，补齐缺失的 shot"`
-    - ✅ `prompt="执行 Phase 5 组装，输出到 attempt_1.mp4"`
+  - **后续调用（同一 session_id）**：subagent 已有完整记忆，只传**增量指令**，**不要传 context_files**。这包括重试场景——429 或其他错误后重试同一 session 时也不要再传 context_files。例如：
+    - ✅ `prompt="继续 Phase 3，补齐缺失的 shot"` （无 context_files）
+    - ✅ `prompt="执行 Phase 5 组装，输出到 attempt_1.mp4"` （无 context_files）
+    - ✅ 重试：`prompt="重试：执行 Phase 4 音频生产"` （无 context_files，subagent 已有数据）
+    - ❌ 重试时再次传 context_files（subagent 已经在上一轮收到过）
     - ❌ 在 prompt 中复述 video_info、shot 列表、文件路径等 subagent 已知或可从文件中读取的信息
   - **新 session 的子 agent**（如 `create_audio_{project_name}` 第一次调用）：用 context_files 传入 story-graph.json，让它自己读取 audio_states 和 video_info。
 - **Track round numbers** and include them in your prompts (e.g., "This is round 3 of 5").

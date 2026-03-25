@@ -34,6 +34,4 @@ echo ""
 
 PYTHONPATH="src:$PYTHONPATH" exec python -m uvicorn web.server:app \
     --host "$HOST" \
-    --port "$PORT" \
-    --reload \
-    --reload-dir web
+    --port "$PORT"

@@ -6,7 +6,7 @@
 
 ## 核心规则
 
-1. **Prompt 总长度 ≤ 60 词**（style_prefix 计入）。超长 prompt 会导致末尾指令被忽略。
+1. **Prompt 总长度 ≤ 200 词**（style_prefix 计入）。利用充足的词数详细描述外观特征，但避免无意义的堆砌。
 2. **结构固定**：`{style_prefix}. {构图指令}, {外观描述}`。构图指令紧跟 style_prefix，不要放到末尾。
 3. **style_prefix 放在 prompt 开头**，不要通过 `style` 参数重复传入。
 4. **negative_prefix 通过 `negative_prompt` 参数传入**，不要拼进 prompt 正文。
@@ -205,7 +205,6 @@ prompt:
 
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
-| Prompt 超过 60 词 | 末尾指令（白背景、全身）被忽略 | 精简描述，只保留关键视觉特征 |
 | 构图指令放在末尾 | 模型注意力不足，脚被截断或背景脏 | `Full-body standing figure on plain white background` 紧跟 style_prefix |
 | 参考图 prompt 含 `cinematic lighting` | 背景产生阴影和灰色渐变 | 从 style_prefix 中去掉光影词 |
 | 角色穿白衣 + 白背景 | 衣服和背景融为一体 | negative_prompt 加 `low contrast`；prompt 中强调衣服的边缘细节或纹理 |

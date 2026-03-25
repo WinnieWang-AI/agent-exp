@@ -10,7 +10,7 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 ### Phase 1: Read Story Graph & Init Project
 
-1. Read the `story-graph.json` file provided in the prompt.
+1. 获取 `story-graph.json` 的内容：**如果用户消息中已包含 `<file>` 标签（由调用方通过 context_files 注入），直接使用其中的内容，无需再 ReadFile**。只有当消息中没有 `<file>` 标签时才用 ReadFile 读取。
 2. Use ManageVideoProject(action="init") to set up the project directory.
 3. 从 `story-graph.json` 读取两类信息：
    - **视频规格**：从顶层 `video_info` 字段读取 `aspect_ratio`（画面比例）和 `language`（视频语言）。
@@ -38,7 +38,26 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 **每个实体只生成一张图**：Character 一张正面全身、Location 一张环境、Prop 一张特写。文件路径严格为 `assets/images/{entity_id}.png`。
 
-**并行策略（并行度 ≤ 3）**：第 1 层所有实体图之间无依赖，每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
+**Prompt 输出与外部校验**：每条 prompt 组装完后，将所有 prompt 以结构化列表输出（不调用 GenerateImage），写入 `prompt-review.json`，格式如下：
+```json
+{
+  "layer": 1,
+  "prompts": [
+    {
+      "entity_id": "char_xxx",
+      "type": "character",
+      "prompt": "...",
+      "negative_prompt": "...",
+      "aspect_ratio": "1:1",
+      "reference_image_paths": [],
+      "source": { "fixed_traits": "原始 fixed_traits 文本" }
+    }
+  ]
+}
+```
+输出后 STOP，等待调用方发回校验结果。收到"全部 PASS"后再执行生成；收到 FAIL 项和 issues 时，修改对应 prompt 并更新 `prompt-review.json`，再次 STOP 等待校验。
+
+**执行生成**：收到校验通过的指令后，按 `prompt-review.json` 中的列表调用 GenerateImage。并行策略（并行度 ≤ 3）：每次在同一个 response 中并行调用 **3 个** GenerateImage。按 Character → Location → Prop 顺序排列，每批取 3 个，等当前批完成后再发下一批。
 
 **第 1 层完成后 STOP**：报告生成完成（各类实体图数量和路径），等待调用方指示。不要自动进入第 2 层。
 
@@ -57,6 +76,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 **去重规则**：生成第 2 层前，先将每个状态的 prompt 与其所属实体的 prompt 对比。如果状态描述的视觉外观与实体默认外观**没有实质差异**（如角色只有一个外观状态、或状态仅描述"自然/默认"姿态），则**跳过生成**，直接将该状态的 `reference_image` 设为其所属实体的参考图路径（如 `assets/images/{character_id}.png`）。只有当状态在服装、发型、体态、光照、氛围等方面与实体有**明确可见的差异**时，才生成新的参考图。
 
 **不要重复生成已存在的图片**：生成前先检查目标路径的文件是否已存在。如果文件已存在且 `reference_image` 字段已填充，跳过该节点。
+
+**Prompt 自查（同第 1 层）**：每条 prompt 组装完后，对照 `prompt-guide-refimage.md` 中的核心规则和常见错误表逐项检查，不通过的当场修正，全部通过后再调用 GenerateImage。
 
 **并行策略（并行度 ≤ 3）**：按 `based_on` 拓扑排序后，将无依赖的状态节点排入队列，每次在同一个 response 中并行调用 **3 个** GenerateImage。当前批完成后，将依赖已满足的节点加入下一批，继续每批 3 个并行生成。
 
@@ -160,9 +181,12 @@ GenerateImage(
 **如果调用方指定"仅生成首帧图"**：完成所有需要首帧的 shot 后 STOP，报告首帧图列表（shot_id + 路径 + shot 信息），等待调用方评估确认后再继续。
 
 **4. 组装 Prompt 并调用生成**（参考 `prompt-guide-video.md` 的写作规范）：
+
+**⚠️ `<<<image_N>>>` 标记是必须的**：视频 prompt 中，每个出镜角色/环境/道具在首次描述时必须插入 `<<<image_N>>>` 标记（N 从 1 开始，按 `reference_images` 参数中的顺序编号）。没有这个标记，视频模型无法将参考图与角色关联，角色一致性会完全丧失。示例：`"a woman in white gown <<<image_1>>> stands in a moonlit courtyard <<<image_2>>>"`。
+
 ```
 GenerateVideoSync(
-  prompt=<组装好的 prompt>,
+  prompt=<组装好的 prompt，必须包含 <<<image_N>>> 标记>,
   mode=<决策确定的模式>,
   reference_images=<决策选定的参考图列表>,
   reference_image_path=<首帧图或尾帧路径（如果用了 image_to_video）>,
@@ -283,6 +307,7 @@ These declarations are recorded by the system for operation graph construction a
   4. **换 provider 后仍失败（累计 3 次）** → 停止该 shot 并上报调用方
   - 注意：错误返回中包含 `available_providers` 列表，据此选择替代 provider，不要猜测。
 - **诚实汇报，禁止编造。** 不编造原因（如"凭证过期"）、不承诺做不到的事（如"正在刷新凭证"）、不因历史错误放弃重试。Session resume 后必须重新尝试 API 调用。
+- **视频 prompt 必须包含 `<<<image_N>>>` 标记。** 这是角色一致性的关键。每传入一张 reference_image，prompt 中对应角色/环境首次出现时必须放 `<<<image_N>>>`（N 按 `reference_images` 顺序从 1 编号）。缺少标记 = 模型无法关联参考图 = 角色面部/外观不一致。**生成 prompt 后自查：reference_images 有几张，prompt 中就必须有几个 `<<<image_N>>>` 标记。**
 
 ## Working Environment
 

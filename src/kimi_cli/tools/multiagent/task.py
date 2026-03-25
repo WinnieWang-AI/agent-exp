@@ -105,6 +105,16 @@ def _build_prompt_with_context_files(
     return prompt
 
 
+_STEP_DECL_RE = re.compile(
+    r"^(【目标】[^\n]*\n【验证】[^\n]*\n*)+", re.MULTILINE
+)
+
+
+def _strip_step_declarations(text: str) -> str:
+    """Remove leading 【目标】/【验证】 blocks from subagent responses."""
+    return _STEP_DECL_RE.sub("", text).lstrip("\n")
+
+
 class Task(CallableTool2[Params]):
     name: str = "Task"
     params: type[Params] = Params
@@ -159,9 +169,16 @@ class Task(CallableTool2[Params]):
             )
         agent = subagents[params.subagent_name]
 
-        # Build the effective prompt: prepend context_files content if provided
+        # Build the effective prompt: prepend context_files content if provided,
+        # but skip injection if this is a resumed session (dialogue file already exists)
+        # to avoid duplicating data the subagent already has in its history.
+        context_files = params.context_files
+        if context_files and params.session_id is not None:
+            subagent_file = await self._get_subagent_context_file(params.session_id)
+            if subagent_file.exists():
+                context_files = None
         effective_prompt = _build_prompt_with_context_files(
-            params.prompt, params.context_files
+            params.prompt, context_files
         )
 
         try:
@@ -234,6 +251,10 @@ class Task(CallableTool2[Params]):
             return ToolError(message=_error_msg, brief="Failed to run subagent")
 
         final_response = context.history[-1].extract_text(sep="\n")
+
+        # Strip leading step declarations (【目标】...【验证】...) that are internal
+        # to the subagent and not useful for the parent agent's context.
+        final_response = _strip_step_declarations(final_response)
 
         # Check if response is too brief, if so, run again with continuation prompt
         n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
