@@ -215,7 +215,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 }
 ```
 - `description`：风格的自然语言描述（给人类看）
-- `style_prefix`：注入视频/图片生成 prompt 前缀（英文）
+- `style_prefix`：注入视频/图片生成 prompt 前缀（英文）。**只写通用视觉风格**（画风、色调、质感大类），如 `"hand-drawn illustration, warm color palette"` 或 `"realistic oriental ancient style, subtle cool tones"`。**禁止包含任何特定实体类型的描述词**，因为 style_prefix 会被无差别地加到所有实体类型（角色、场景、道具、动物）的 prompt 前面，特定类型的词会污染其他类型的图。
 - `negative_prefix`：注入 negative prompt（英文）
 
 #### AudioState（音频状态）

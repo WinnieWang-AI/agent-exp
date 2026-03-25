@@ -80,6 +80,7 @@ class ManageVideoProject(CallableTool2[Params]):
             "shot_plan_path": str(project / "shot-plan.json"),
             "session_ids": {
                 "graph": f"graph_{project_name}",
+                "create_image": f"create_image_{project_name}",
                 "create": f"create_{project_name}",
                 "create_audio": f"create_audio_{project_name}",
                 "eval": f"eval_{project_name}",

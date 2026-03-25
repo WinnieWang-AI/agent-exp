@@ -6,38 +6,29 @@
 
 ## 评估流程
 
-1. 调用方会提供 `prompt-review.json` 的路径，用 ReadFile 读取。
-2. 同时读取 `${AGENT_DIR}/../video-creator/prompt-guide-refimage.md` 作为规范参考。
-3. 对每条 prompt，逐项执行下方 Checklist 中的检查。
-4. 输出结构化校验报告。
+调用方会在 prompt 中直接提供**单条** prompt 的完整信息（entity_id、type、prompt、negative_prompt、source 等）。
+
+1. 读取 `${AGENT_DIR}/../video-creator/prompt-guide-refimage.md` 作为规范参考。
+2. 对该条 prompt，逐项执行下方 Checklist 中的检查。
+3. 输出结构化校验结果。
+
+**注意**：每次调用只校验一条 prompt，不需要读取 `prompt-review.json`。
 
 ---
 
-## 输入格式
+## 输入字段说明
 
-`prompt-review.json` 包含：
-```json
-{
-  "layer": 1,
-  "prompts": [
-    {
-      "entity_id": "char_xxx",
-      "type": "character | location | prop | character_appearance | location_state | prop_state",
-      "prompt": "实际要传给 GenerateImage 的英文 prompt",
-      "negative_prompt": "negative prompt",
-      "aspect_ratio": "1:1",
-      "reference_image_paths": [],
-      "source": {
-        "fixed_traits": "原始中文描述（实体图）",
-        "visual": { "costume": "...", "hair": "...", "physical": "..." },
-        "appearance": { "lighting": "...", "weather": "...", "condition": "...", "atmosphere": "..." }
-      }
-    }
-  ]
-}
-```
+调用方在 prompt 中提供的字段：
 
-`source` 字段包含 story-graph 中的原始数据，是校验 prompt 语义准确性的唯一依据。
+| 字段 | 说明 |
+|------|------|
+| `entity_id` | 实体/状态 ID |
+| `type` | `character / location / prop / character_appearance / location_state / prop_state` |
+| `prompt` | 实际要传给 GenerateImage 的英文 prompt |
+| `negative_prompt` | 负面提示词 |
+| `aspect_ratio` | 画面比例 |
+| `reference_image_paths` | 参考图路径列表（Layer 2 必填） |
+| `source` | story-graph 中的原始数据（`fixed_traits`、`visual`、`appearance`），是校验语义准确性的唯一依据 |
 
 ---
 
@@ -86,25 +77,19 @@
 ## 输出格式
 
 ```
-## Prompt 语义校验报告
+## {entity_id} ({type}) — PASS/FAIL
 
-### 总览
-- 总数: N
-- PASS: X
-- FAIL: Y
+### 检查结果
+- **语义覆盖**: PASS/FAIL — {说明}
+- **语义准确**: PASS/FAIL — {说明}
+- **规范合规**: PASS/FAIL — {说明}
+- **reference_image_paths**: PASS/FAIL/N/A — {说明}
 
-### 逐条结果
+### 综合判定: PASS / FAIL
 
-#### char_chang_e (character) — PASS
-全部检查项通过。
-
-#### char_hou_yi (character) — FAIL
-- **语义覆盖 — 关键特征遗漏**: source 中"肩背常负弓囊（象征性）"在 prompt 中未体现，建议添加 "symbolic bow quiver over shoulder"
-- **语义准确 — 翻译不当**: source 是"眉目坚毅"(determined expression)，prompt 写了 "gentle expression"，应改为 "resolute/determined expression"
-
-#### appear_chang_e_plain (character_appearance) — FAIL
-- **规范合规 — 光影禁词**: prompt 包含 "cinematic lighting"，参考图中应去掉
-- **reference_image_paths**: 缺少实体图 "assets/images/char_chang_e.png"
+### 修改建议（仅 FAIL 时）
+1. {具体修改建议，直接可操作}
+2. ...
 ```
 
-**每个 FAIL 项必须给出具体的问题描述和修改建议。**
+**每个 FAIL 项必须给出具体的问题描述和可直接执行的修改建议（如"将 X 改为 Y"、"在 Z 后添加 W"）。**

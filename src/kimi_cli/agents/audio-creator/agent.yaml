@@ -1,0 +1,17 @@
+version: 1
+agent:
+  extend: default
+  name: audio-creator
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.audio:GenerateMusic"
+    - "kimi_cli.tools.audio:CheckMusicJob"
+    - "kimi_cli.tools.audio:GenerateSpeech"
+  subagents: {}
