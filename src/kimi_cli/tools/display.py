@@ -114,13 +114,6 @@ class StoryGraphMind(BaseModel):
     behavior: str = ""
 
 
-class StoryGraphInteraction(BaseModel):
-    """Interaction between characters within an event."""
-
-    between: list[str] = []
-    style: str = ""
-
-
 class StoryGraphOutput(BaseModel):
     """An assembled output video."""
 
@@ -131,13 +124,13 @@ class StoryGraphOutput(BaseModel):
 
 class StoryGraphEvent(BaseModel):
     id: str
+    name: str = ""
     description: str = ""
     happens_at: str = ""
     character_ids: list[str] = []
     active_appearance_ids: list[str] = []
     minds: list[StoryGraphMind] = []
     shots: list[StoryGraphShot] = []
-    interactions: list[StoryGraphInteraction] = []
     audio_states: list[StoryGraphAudioState] = []
 
 

@@ -674,18 +674,18 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     incoming_queue: asyncio.Queue = asyncio.Queue()
 
     # Re-inject the first message into the queue
-    if resumed and resume_context:
-        # On resume, always send resume_context (+ user content if any) as the first message
+    if resumed:
         first_raw = dict(first_raw)
         user_content = first_raw.get("content", "")
-        if user_content:
-            first_raw["content"] = resume_context + user_content
+        if resume_context:
+            # First resume: inject compact pointer + user content
+            first_raw["content"] = resume_context + (user_content or "继续")
         else:
-            first_raw["content"] = resume_context + "继续"
-            first_raw["type"] = "message"
-        resume_context = ""  # already injected
+            # Dedup (reconnect): skip duplicate resume_context, but still trigger the agent
+            first_raw["content"] = user_content or "继续"
+        first_raw["type"] = "message"
         await incoming_queue.put(first_raw)
-    elif not resumed and first_raw.get("content"):
+    elif first_raw.get("content"):
         await incoming_queue.put(first_raw)
 
     async def ws_reader():

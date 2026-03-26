@@ -42,7 +42,6 @@ shot plan 数据：
       {"entity": "char_wolf", "emotion": "伪装友善，暗藏贪婪", "behavior": "缓缓走出，弓着身体显得矮小"}
     ],
     "location_state": {"appearance": {"lighting": "丁达尔光束", "weather": "晴，微风", "condition": "野花，蝴蝶", "atmosphere": "童话美好"}},
-    "interactions": [{"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽，语气温柔"}]
   }
 }
 ```
@@ -105,8 +104,7 @@ shot plan 数据：
 5. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
 6. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
 7. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
-8. **互动方式**：`interactions[].style` — 角色之间怎么互动
-9. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
+8. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
 10. **道具**：`prop_states[].appearance` — 如果道具在画面中有重要作用
 11. **参考图-角色关联标记**：首帧图和视频 prompt 使用不同的标记语法（因为底层 API 不同），但目的相同——让模型知道哪张参考图对应哪个角色：
    - **首帧图 prompt**（GenerateImage，Seedream/Gemini）：使用 `@[role N]` 标记。在 prompt 最前面加前缀 `"Reference image characters from left to right are: @[role 1], @[role 2]."` 说明参考图顺序，然后在角色首次出现的描述旁放 `@[role N]`。编号按 `reference_image_paths` 参数顺序。
@@ -139,7 +137,6 @@ shot plan 数据：
       {"entity": "char_wolf", "emotion": "伪装友善，暗藏贪婪", "behavior": "缓缓走出，弓着身体显得矮小"}
     ],
     "location_state": {"appearance": {"lighting": "丁达尔光束", "condition": "野花", "atmosphere": "童话美好"}},
-    "interactions": [{"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽，语气温柔"}],
     "relationships": [{"pair": ["char_red", "char_wolf"], "current_kind": "陌生人"}],
     "prop_states": [{"entity": "prop_basket", "appearance": {"visual": "藤篮盖着红白格子布", "condition": "完好"}}]
   },
@@ -229,7 +226,7 @@ shot plan 数据：
 ## 写作要点
 
 1. **自然语言而非字段罗列**：不要写成 "costume: red cloak, hair: curly brown"，而是 "a girl in a red cloak, curly brown hair framing her face"。把结构化数据编织成连贯的画面描述。
-2. **动作是视频 prompt 的核心**：`minds[].behavior` 和 `interactions[].style` 决定画面中发生什么。首帧图只描述"即将发生"的瞬间，视频 prompt 要描述动作的完整过程。
+2. **动作是视频 prompt 的核心**：`minds[].behavior` 和 `event_description` 决定画面中发生什么。首帧图只描述"即将发生"的瞬间，视频 prompt 要描述动作的完整过程。
 3. **镜头语言要明确**：在 prompt 开头标明 shot_type + angle + movement（如 "Medium shot, eye level, static camera"），视频模型会据此控制构图和运镜。
 4. **角色外形从简**：因为 reference_images 已经传入了角色参考图，prompt 中不需要重复所有服装细节，用最显著的视觉特征标识角色即可（如 "red-cloaked girl"、"gray-brown wolf"）。
 5. **参考图-角色关联**：必须在 prompt 中标注哪张参考图对应哪个角色，否则相似角色会混淆。两种标记语法：

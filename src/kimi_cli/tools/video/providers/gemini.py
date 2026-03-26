@@ -87,14 +87,31 @@ class GeminiImageProvider(ImageProvider):
         if not response.candidates:
             raise RuntimeError("Gemini returned no candidates")
 
-        for part in response.candidates[0].content.parts:
+        candidate = response.candidates[0]
+
+        # Check finish_reason for content safety or other rejections
+        finish_reason = getattr(candidate, "finish_reason", None)
+        if finish_reason and str(finish_reason) not in ("STOP", "0", "FinishReason.STOP"):
+            raise RuntimeError(
+                f"Gemini generation blocked (finish_reason={finish_reason}). "
+                f"This may be due to content safety filters or model policy."
+            )
+
+        content = getattr(candidate, "content", None)
+        if content is None or content.parts is None:
+            raise RuntimeError(
+                "Gemini response contained no content. "
+                f"finish_reason={finish_reason}"
+            )
+
+        for part in content.parts:
             if part.inline_data and part.inline_data.data:
                 return ImageGenerationResult(
                     image_bytes=part.inline_data.data,
                     mime_type=part.inline_data.mime_type or "image/png",
                 )
 
-        raise RuntimeError("Gemini response contained no image data")
+        raise RuntimeError("Gemini response contained no image data in parts")
 
 
 def _guess_mime(path: str) -> str:

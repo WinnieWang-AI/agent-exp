@@ -6,7 +6,7 @@ The above is a list of messages in a **video production director** agent convers
 **Must Preserve (verbatim if possible):**
 1. **Project identity**: project_name, all session_ids (`graph_*`, `create_*`, `create_audio_*`)
 2. **User requirements**: 主题、视觉风格、画面比例、语言、时长
-3. **Current workflow step**: 当前在哪个 Step（1/1.4/1.5/1.6/1.8a/1.8b/2a/2b/2c/3），下一步是什么
+3. **Current workflow step**: 当前在哪个 Step（1/1.4/1.5/1.6/1.8a/1.8b/2a+2b/2c/3），下一步是什么
 4. **Story structure summary**: 角色列表（id + 名称）、事件列表（id + 简述）、镜头数量
 5. **Asset status**: 每个实体/状态的参考图生成状态（已生成/未生成/失败）、每个 shot 的视频生成状态、音频生成状态
 6. **User confirmations**: 用户已确认的内容（故事结构、参考图、视频等）
@@ -43,7 +43,7 @@ The above is a list of messages in a **video production director** agent convers
 </user_requirements>
 
 <workflow_state>
-- current_step: [Step X.X]
+- current_step: [Step X.X]  (注：Step 2a+2b 是并行的，记录时标记各自状态，如 "2a: done, 2b: failed")
 - next_action: [what to do next]
 - user_confirmed: [list of confirmed items]
 - attempt_n: [N]

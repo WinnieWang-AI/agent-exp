@@ -33,7 +33,22 @@ ${ROLE_ADDITIONAL}
 
 ## Phase 2: 生成参考图
 
-**开始前必读**：用 ReadFile 读取 `${AGENT_DIR}/prompt-guide-refimage.md`，按其中的规范写 prompt。不可跳过。
+**开始前按需读取对应的 prompt guide**：
+- 生成人物图（Character / CharacterAppearance）→ 读取 `${AGENT_DIR}/prompt-guide-character.md`
+- 生成环境图（Location / LocationState）→ 读取 `${AGENT_DIR}/prompt-guide-location.md`
+- 生成道具图（Prop / PropState）→ 读取 `${AGENT_DIR}/prompt-guide-prop.md`
+
+按其中的规范写 prompt。不可跳过。
+
+### 每层的执行顺序（必须严格遵守）
+
+每层（第 1 层或第 2 层）按以下三步依次执行：
+
+1. **组装全部 prompt**：为当前层的所有实体/状态组装好 prompt（跳过去重和已有图片的条目）
+2. **批量校验**：将全部 prompt 一次性提交给 evaluator 校验（见"公共流程 → Prompt 校验"）。根据返回结果修正 FAIL 的 prompt
+3. **批量生成**：校验通过后，按并行策略（每批 3 个 GenerateImage）生成图片，逐张即时回填
+
+**不要写一条就验一条、验一条就生成一条。** 必须先完成全部组装，再统一校验，再统一生成。
 
 ### 第 1 层：实体参考图（身份锚点）
 
@@ -41,7 +56,7 @@ ${ROLE_ADDITIONAL}
 
 | 类型 | Prompt 来源 | 要求 | 比例 | 路径 |
 |---|---|---|---|---|
-| Character | `fixed_traits` | 全身正面、纯白背景、居中 | 1:1 | `assets/images/{character_id}.png` |
+| Character | `fixed_traits` | 全身正面（从头到脚）、纯白背景、居中 | 1:1 | `assets/images/{character_id}.png` |
 | Location | `fixed_traits` | 无角色、纯环境 | 1:1 | `assets/images/{location_id}.png` |
 | Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `assets/images/{prop_id}.png` |
 
@@ -69,20 +84,20 @@ ${ROLE_ADDITIONAL}
 
 以下三个机制贯穿所有生成步骤。
 
-### Prompt 校验
+### Prompt 校验（按层批量）
 
-每条 prompt 组装完后，调用 `video-evaluator` 逐条校验：
+先为当前层的所有实体组装好全部 prompt，然后**一次性**提交给 evaluator 批量校验：
 
 ```
 Task(
   subagent_name="video-evaluator",
-  prompt="执行 Prompt 语义校验（单条）。\n\nentity_id: {id}\ntype: {type}\nprompt: {prompt}\nnegative_prompt: {negative_prompt}\naspect_ratio: {aspect_ratio}\nreference_image_paths: {paths}\nsource: {原始数据}\n\n请按 eval-guide-prompt.md 的 Checklist 逐项检查，输出 PASS 或 FAIL + 修改建议。",
-  session_id="eval_{project_name}_prompt_{layer}_{id}"
+  prompt="执行 Prompt 语义校验（批量）。\n\n<prompts>\n[{entity_id, type, prompt, negative_prompt, aspect_ratio, reference_image_paths, source}, ...]\n</prompts>\n\n请按 eval-guide-prompt.md 的 Checklist 逐条检查，输出每条的 PASS 或 FAIL + 修改建议。",
+  session_id="eval_{project_name}_prompt_layer{N}"
 )
 ```
 
-- 每条用独立 session_id，可并行调用多条
-- PASS → 通过；FAIL → 按建议修改后复检，每条最多 2 轮，仍 FAIL 则继续生成（不阻塞）
+- **每层只调用一次 evaluator**（第 1 层一次，第 2 层一次），不要逐条调用
+- evaluator 返回后，对 FAIL 的条目按建议修改 prompt，修改后的条目打包再提交一次复检（同一 session_id，不传 context_files）。**最多 2 轮**，仍 FAIL 则继续生成（不阻塞）
 - 校验完成后写入 `prompt-review.json` 记录（含 entity_id、prompt、eval_result、source）
 
 ### 即时回填

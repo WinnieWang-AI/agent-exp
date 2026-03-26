@@ -75,17 +75,17 @@ ManageVideoProject(
 
 ### Step 1.8: Generate Reference Images
 
-调用 image-creator 生成参考图。image-creator 内部会自动调用 evaluator 进行 prompt 语义校验（生成前），Director 不需要手动编排校验流程。图片质量评估（VLM 看图）不自动执行，由用户查看后主动发起。
+调用 image-creator 生成参考图。image-creator 内部会按层批量调用 evaluator 进行 prompt 语义校验（每层一次，生成前），Director 不需要手动编排校验流程。图片质量评估（VLM 看图）不自动执行，由用户查看后主动发起。
 
 #### Step 1.8a: 第 1 层 — 实体图
 
-调用 image-creator（session_id=`create_image_{project_name}`），执行第 1 层（实体参考图）。image-creator 会自动完成：组装 prompt → 调 evaluator 校验 prompt → 生成图片。
+调用 image-creator（session_id=`create_image_{project_name}`），执行第 1 层（实体参考图）。image-creator 会自动完成：组装全部 prompt → 批量调 evaluator 校验 → 生成图片。
 
 完成后向用户展示生成结果摘要（各类实体图数量与相对项目路径或缩略名），等用户确认后进入 Step 1.8b。**不展示绝对路径、session ID、工具名等内部细节。** 如果用户对某些图片不满意，按其反馈调用 image-creator 重新生成指定图片。
 
 #### Step 1.8b: 第 2 层 — 状态图
 
-调用 image-creator（session_id=`create_image_{project_name}`），执行第 2 层（状态参考图）。同样内部自动完成 prompt 校验。
+调用 image-creator（session_id=`create_image_{project_name}`），执行第 2 层（状态参考图）。同样内部自动完成批量 prompt 校验。
 
 完成后向用户展示参考图摘要（数量与相对项目路径/缩略名），等用户确认角色和环境形象后再进入视频生成。**不展示绝对路径、session ID、工具名等内部细节。**
 
@@ -95,14 +95,34 @@ ManageVideoProject(
 
 **告知用户规模**：根据 Step 1.6 中 screenwriter 返回的镜头数量告知用户（如"共 12 个镜头，开始生成视频……"）。
 
-#### Step 2a + 2b: 视频生成与音频生成（独立会话，顺序启动）
+#### Step 2a + 2b: 视频生成与音频生成（并行）
 
-视频和音频互不依赖，**依次启动两个独立会话**（使用不同 agent 和 session 避免共享冲突）：
+视频和音频互不依赖，**必须在同一次 response 中同时调用两个 Task**，让它们并行执行：
 
-- **视频**：调用 video-creator（session_id=`create_{project_name}`），生成 shot plan + 逐 shot 生成视频。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 video-creator 根据 generation-strategy.md 自主决策的，director 不应干预。首次调用用 `context_files` 传入 story-graph.json。
-- **音频**：调用 audio-creator（session_id=`create_audio_{project_name}`），生成 BGM + 对白/旁白。用 `context_files` 传入 story-graph.json，让 audio-creator 读取 audio_states 和 video_info。
+```
+# 在同一次 response 中同时发起这两个 Task 调用：
 
-两者均启动后，汇报进度；**当两者都完成后**进入 Step 2c。若运行时支持并发，可同时启动两者，但不强制。
+Task(
+  subagent_name="video-creator",
+  session_id="create_{project_name}",
+  prompt="生成视频",
+  context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
+)
+
+Task(
+  subagent_name="audio-creator",
+  session_id="create_audio_{project_name}",
+  prompt="生成 BGM 和对白",
+  context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
+)
+```
+
+- **视频**：调用 video-creator，生成 shot plan + 逐 shot 生成视频。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 video-creator 根据 shot-guide.md 自主决策的，director 不应干预。
+- **音频**：调用 audio-creator，生成 BGM + 对白/旁白。audio-creator 从 story-graph.json 读取 audio_states 和 video_info。
+
+两个 Task 会并行执行。**当两者都完成后**进入 Step 2c。
+
+**部分失败处理**：如果其中一个 Task 失败而另一个成功，只需对失败的 subagent 重试（使用相同 session_id，不传 context_files），不需要重新执行已成功的部分。
 
 #### Step 2c: 组装
 

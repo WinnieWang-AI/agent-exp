@@ -226,18 +226,6 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
         if e.get("happens_at") and eid not in evt_loc:
             issues.append(f'event {eid}: no location_state active (happens_at {e["happens_at"]})')
 
-        # Characters in interactions should have appearance
-        for inter in e.get("interactions", []):
-            for char_id in inter.get("between", []):
-                if char_id not in ids["character"]:
-                    continue
-                has_appear = any(
-                    appear_entity.get(aid) == char_id
-                    for aid in evt_appear.get(eid, [])
-                )
-                if not has_appear:
-                    issues.append(f'event {eid}: character {char_id} in interactions but no appearance active')
-
     # Check video_info has required fields (aspect_ratio, duration, language)
     vi = data.get("video_info")
     if vi:

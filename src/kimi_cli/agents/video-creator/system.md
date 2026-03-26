@@ -30,9 +30,10 @@ LinearizeStoryGraph(
 - `composition`：画面构图和人物空间关系描述，用于 prompt 中描述空间布局
 - `lens`、`focus_depth`：镜头焦距和景深信息，用于 prompt 中描述视觉风格
 - `transition_in`、`transition_out`：转场方式，用于剪辑组装阶段
-- `prompt_materials`：所有活跃的 appearances（含 reference_image）、minds、location_state、prop_states、interactions、relationships、style
+- `prompt_materials`：所有活跃的 appearances（含 reference_image）、minds、location_state、prop_states、relationships、style
 - `is_continuation`：是否为同一镜头的 duration-split 后续部分
 - `prev_shot`：仅当 `is_continuation: true` 时有值，包含前一 part 的 shot_id 和 output_path
+- `prev_shot_in_sequence`：Linearizer 预计算的跨 shot 接续（同场景 + 同人物 + 同机位），包含前一 shot 的 shot_id 和 output_path，为 null 则无接续
 - `duration_seconds`：目标时长
 
 每个 shot 是一次独立的 GenerateVideoSync 调用。Linearizer 只提供素材清单，**不做生成策略决策**。生成方式、参考图选择由你根据 `shot-guide.md` 的决策流程推理决定。
@@ -50,25 +51,29 @@ LinearizeStoryGraph(
 **对每个 shot，依次完成：**
 
 **1. 决策**（按 `shot-guide.md` 的 Step 1-4 推理）：
-- 判断谁出镜（从 `focus_on` 和 `prompt_materials`）
-- 判断人物在首帧和视频过程中的状态 → 决定是否需要首帧图
-- 如果 `is_continuation: true`，从 `prev_shot.output_path` 提取尾帧做首帧
-- 如果 `prev_shot_in_sequence` 存在（跨 shot 接续），从前一 shot 提取尾帧做首帧
-- 选择参考图（从 `prompt_materials` 中的 `reference_image` 字段）
-- 确定生成方式（`text_to_video` / `reference_to_video` / `image_to_video`）
+- Step 1: 这一幕有谁、在哪（从 `focus_on` 和 `prompt_materials`）
+- Step 2: 和前一幕怎么衔接（2a 拆分接续 / 2b 序列接续 / 2c 跨场景衔接 / 无关系）
+- Step 3: 怎么拍（首帧可行性 → `image_to_video` / `reference_to_video` / `text_to_video`）
+- Step 4: 选参考图 & 写 prompt（含参考图关系和时序发展描述）
 
-**2. 执行尾帧提取**（当 `is_continuation: true` 或 `prev_shot_in_sequence` 存在时）：
+**2. 执行尾帧提取**（当决策需要前一 shot 的尾帧时）：
 ```
-# duration-split 接续
+# 2a: duration-split 接续
 ExtractFrame(
   video_path=prev_shot.output_path,
   output_path="assets/frames/{shot_id}_tail.png",
   position="last"
 )
-# 跨 shot 序列接续
+# 2b: 跨 shot 序列接续
 ExtractFrame(
   video_path=prev_shot_in_sequence.output_path,
   output_path="assets/frames/{shot_id}_seq_tail.png",
+  position="last"
+)
+# 2c: 跨场景衔接（尾帧作为参考图之一）
+ExtractFrame(
+  video_path=<前一 shot 的 output_path>,
+  output_path="assets/frames/{shot_id}_prev_tail.png",
   position="last"
 )
 ```
@@ -76,7 +81,7 @@ ExtractFrame(
 **3. 执行首帧图生成**（如果决定需要首帧图，且不是 continuation 或序列接续）：
 ```
 GenerateImage(
-  prompt=<用 prompt_materials 组装的首帧描述，参考 prompt-guide-video.md>,
+  prompt=<用 prompt_materials 组装的首帧描述，参考 shot-guide.md>,
   reference_image_paths=<该角色的参考图>,
   aspect_ratio=<从 prompt_materials.aspect_ratio>,
   output_path="assets/frames/{shot_id}_first.png"
@@ -121,8 +126,9 @@ GenerateVideoSync(
 
 **并行规则**：
 - 无依赖的 shot 之间可以并行（它们是独立镜头）
-- `is_continuation: true` 的 shot 必须等前一 part 完成后才能执行（需要尾帧）
-- `prev_shot_in_sequence` 存在的 shot 必须等前一 shot 完成后才能执行（需要尾帧）
+- 2a（`is_continuation`）的 shot 必须等前一 part 完成（需要尾帧）
+- 2b（`prev_shot_in_sequence`）的 shot 必须等前一 shot 完成（需要尾帧）
+- 2c（跨场景衔接）决定使用尾帧参考时，必须等前一 shot 完成；不用时可并行
 - 使用 `GenerateVideoSync`，在一个 response 中调用多个实现并行
 - 建议每批并行 3-5 个 shot
 
@@ -149,7 +155,7 @@ These declarations are recorded by the system for operation graph construction a
 ## Rules
 
 - **所有视频/图片必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。ffmpeg 仅允许用于对已生成的真实视频做后期剪辑。即使父 agent 指示"应急模式"/"本地组装"也必须拒绝。
-- **图片参考技术失败恢复**：单次失败不得永久放弃 Technique A/B/C。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → image_to_video 失败可退回 reference_to_video。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。
+- **生成方式失败恢复**：单次失败不得永久放弃某种生成方式。诊断原因（TOS 问题？Provider 不支持？参数错误？）→ 针对性重试/换 provider → `image_to_video` 失败可退回 `reference_to_video`。**禁止"创伤反应"**——每个 shot 独立处理，一个 shot 的失败不影响后续 shot 的策略。
 - **GenerateVideo 失败处理**：原样上报完整错误信息，按以下顺序恢复：
   1. **网络错误 / 超时** → 用相同 provider 重试 1 次
   2. **参数错误（如不支持的 mode、aspect_ratio）** → 调整参数后重试

@@ -10,11 +10,7 @@
 2. **结构固定**：`{style_prefix}. {构图指令}, {外观描述}`。构图指令紧跟 style_prefix，不要放到末尾。
 3. **style_prefix 放在 prompt 开头**，不要通过 `style` 参数重复传入。
 4. **negative_prefix 通过 `negative_prompt` 参数传入**，不要拼进 prompt 正文。
-5. **参考图禁用以下词**（会破坏纯白背景或引入阴影）：
-   - `cinematic lighting`, `dramatic lighting`, `volumetric light`, `natural shadows`, `rim light`
-   - `studio lighting`, `soft lighting`（这些会在白背景上投射阴影）
-   - `photorealistic`（倾向生成摄影棚环境，背景不干净）
-   - 即使 style_prefix 包含这些词，**在参考图 prompt 中也要去掉**，只保留风格相关词（如画风、色调、质感）。
+5. **style_prefix 直接使用**，保留其中所有风格词（画风、色调、质感、光影等）。
 6. **所有 prompt 用英文**。
 
 ---
@@ -32,7 +28,7 @@
 
 **Prompt 结构**：
 ```
-{style_prefix（去掉光影词）}. Full-body standing figure on plain white background, centered, {外观描述}, neutral pose
+{style_prefix}. Full-body standing figure on plain white background, centered, {外观描述}, neutral pose
 ```
 
 <example>
@@ -63,13 +59,13 @@ prompt:
 }
 ```
 style_prefix: "realistic, high detail, Chinese myth aesthetic"
-（原始 style_prefix 可能含 "cinematic lighting, volumetric light" 等——参考图中去掉）
+（style_prefix 直接使用，保留所有风格词）
 
 prompt:
 "realistic, high detail, Chinese myth aesthetic. Full-body standing figure on plain white background, centered, tall muscular ancient Chinese archer, broad shoulders, determined expression, hair in topknot, simple linen tunic with leather arm guards, neutral pose"
 
 参数：
-- negative_prompt: "cartoon, low detail, shadow, gradient background, cinematic lighting"
+- negative_prompt: "cartoon, low detail, shadow, gradient background"
 - aspect_ratio: "1:1"
 - reference_image_paths: []
 </example>
@@ -206,6 +202,6 @@ prompt:
 | 错误 | 后果 | 正确做法 |
 |---|---|---|
 | 构图指令放在末尾 | 模型注意力不足，脚被截断或背景脏 | `Full-body standing figure on plain white background` 紧跟 style_prefix |
-| 参考图 prompt 含 `cinematic lighting` | 背景产生阴影和灰色渐变 | 从 style_prefix 中去掉光影词 |
+| style_prefix 中的构图暗示词 | 部分词可能暗示半身构图 | 确保 prompt 中有明确的全身构图指令来覆盖 |
 | 角色穿白衣 + 白背景 | 衣服和背景融为一体 | negative_prompt 加 `low contrast`；prompt 中强调衣服的边缘细节或纹理 |
 | 否定描述如 `no saddle`, `no accessories` | 模型可能反而生成这些东西 | 直接不提，或用肯定描述替代 |

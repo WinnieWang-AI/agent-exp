@@ -137,16 +137,15 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 ```json
 {
   "id": "evt_wolf_encounter",  // evt_ 前缀
-  "description": "大灰狼从树后现身，假装友善地搭话，套出外婆住处",
+  "name": "林间遇狼",          // 简短事件名，用于前端节点显示
+  "description": "阳光斑驳的林间小路上，小红帽正蹦跳前行，忽然一只高大的灰棕色大灰狼从右侧橡树后缓缓走出，弓着身子压低姿态，装出温和的笑容搭话。小红帽停下脚步，歪头好奇又微微不安地打量这个陌生人，手不自觉地攥紧了篮子的提手。大灰狼语气温柔地问起她要去哪里，小红帽天真地说出了外婆家的方向。",
   "happens_at": "loc_forest",
   "happens_during": "time_midday",
-  "interactions": [
-    {"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽，语气温柔"}
-  ]
 }
 ```
 
-- `interactions` 描述**具体互动方式**（动作层面），与 `relationships`（身份关系）不同。
+- `name`：简短的事件名称（3-8字），用于前端节点显示（如"林间遇狼"、"奔月飞升"、"月宫初到"）
+- `description`：详细的事件描述，是下游视频生成的核心叙事来源（见 Step 2 的 `description` 写作要求）。角色间的具体互动方式直接写在 description 中。
 
 #### TimeLine（故事时间线）
 
@@ -317,7 +316,33 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 - 将故事拆解为离散事件（events），每个事件是一个叙事节拍
 - 确定 event_sequence（THEN/PARALLEL 关系）
 - 设定 timelines：`label` 只描述叙事时间（如"清晨"、"午后"、"三天后"），**禁止写入视频秒数或时间区间**（如"3.5s"、"0-6s"）。视频时长信息存储在顶层 `video_info.duration`，不属于 Timeline。
-- 为有角色互动的事件写 `interactions`
+
+**`description` 写作要求**：`description` 是下游视频生成的核心叙事来源，必须提供足够丰富的画面信息。具体要求：
+
+1. **承接上文**：描述开头要自然承接前一事件的结尾状态——角色从哪里来、带着什么情绪或动机进入当前场景。不是机械复述上个事件，而是让读者感知到时间在流动、故事在延续。（首个事件除外，直接开场即可）
+2. **地点与氛围**：交代场景环境和情绪基调（如"清冷的月宫台阶前，银白月光洒落"）
+3. **所有出场人物各自的行为**：该事件中每个出场角色（即 `appearance_active_during` 中关联到该事件的所有角色）都必须有明确的行为描述，不能遗漏任何在场角色。即使某个角色不是本事件的焦点，也要说明它在做什么（如"玉兔安静地蹲在桂树下，竖耳注视着嫦娥"）
+4. **情感与内心状态**：角色的情绪、动机或心理变化（如"目中含泪，神情从不舍渐渐转为坚定"）
+5. **动作的过程性**：不只写"做了X"，要写"怎样做X"——动作的起承转合（如不写"饮下仙药飞升"，而写"双手举起玉瓶，闭眼一饮而尽，脚尖缓缓离地，衣袂翻飞升入云海"）
+6. **铺垫下文**：描述结尾要为下一事件留下叙事动力——一个未完成的动作、一个新产生的意图、一个悬念或转折的开端。避免每个事件都写成完整闭合的小故事。（末尾事件除外，可以自然收束）
+
+**反例 1**（太简略，且遗漏在场角色）：
+> name: "嫦娥回望"
+> description: "广寒宫高处，嫦娥回望人间方向，手抚桂枝，目中含泪而渐渐定心。"
+
+问题：玉兔在场但完全未提及；与前后事件完全割裂，不知道她为什么在这里、接下来要做什么。
+
+**反例 2**（片段拼接，无连续性）：
+> evt_1 description: "后羿在山顶张弓射日，九个太阳接连坠落。"
+> evt_2 description: "嫦娥在庭院中独自望月，神情忧伤。"
+
+问题：两个事件各自独立，读起来像两张不相关的插画。evt_2 没有交代嫦娥为什么忧伤、后羿射日之后发生了什么导致她独处。
+
+**正例**：
+> evt_1 description: "烈日炙烤下的昆仑山巅，后羿双脚稳扎碎石地面，弓弦拉满至耳后，箭尖对准天际第一颗灼目的金日。弦响如雷，火箭划破长空，金日炸裂坠入云海，冲击波掀起后羿的衣襟。他来不及喘息，立刻搭上第二支箭——天空中还有九颗烈日等着他。"
+> evt_2 description: "射落九日后的第三个夜晚，庭院沉浸在银白月光中。后羿出征未归，嫦娥独自坐在石桌旁，面前摆着他留下的玉瓶——西王母赐下的仙药。她一手轻触瓶身，目光望向院门方向，眉间是等不到人的焦虑与隐隐不安。远处传来一声异响，她猛地站起，将玉瓶攥在手中。"
+
+要点：evt_2 开头承接了 evt_1 的结果（"射落九日后"），交代了时间推移和当前处境；结尾的"异响"为下一事件埋下悬念。
 
 **Step 3: 推导状态**
 - **角色外形（appearances）**：只有服饰更换或肢体明显变化（受伤、断手等）才建新节点。同一外形跨多个事件共享。
@@ -389,10 +414,10 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 |------|----------------|
 | 修改角色属性 | Character.fixed_traits, 可能影响 Appearance.visual |
 | 新增角色 | characters, 新增 appearances, 扩展相关事件的 active_during, 可能更新 camera |
-| 删除角色 | characters, 删除其所有 appearances, 清理 relationships, interactions, active_during, camera focus_on |
+| 删除角色 | characters, 删除其所有 appearances, 清理 relationships, active_during, camera focus_on |
 | 新增事件 | events, event_sequence, 扩展/新增 states 的 active_during, 可能需新增 camera + audio |
 | 删除事件 | events, event_sequence, 清理 active_during, 删除关联 camera, 检查 transitions 的 trigger |
-| 修改事件内容 | event.description, 可能影响 interactions, camera_directives |
+| 修改事件内容 | event.description, 可能影响 camera_directives |
 | 新增/合并状态 | states, active_during, transitions 重新连线 |
 | 修改关系 | Character/Prop.relationships |
 

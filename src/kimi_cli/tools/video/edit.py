@@ -145,9 +145,10 @@ class VideoEdit(CallableTool2[Params]):
                 )
             else:
                 # No audio stream — generate silent audio matching the video duration.
+                dur = self._probe_duration(f)
                 filter_parts.append(
                     f"anullsrc=r=44100:cl=stereo[null{i}];"
-                    f"[null{i}]atrim=duration=60[a{i}];"
+                    f"[null{i}]atrim=duration={dur}[a{i}];"
                 )
             concat_parts.append(f"[v{i}][a{i}]")
         filter_str = "".join(filter_parts) + "".join(concat_parts) + f"concat=n={n}:v=1:a=1[outv][outa]"

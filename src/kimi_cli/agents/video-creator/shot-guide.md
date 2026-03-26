@@ -38,7 +38,7 @@
 
 ## Step 2: 和前一幕怎么衔接
 
-检查当前 shot 与前一幕的关系。三种衔接方式**按优先级匹配，互斥**：
+检查当前 shot 与前一幕的关系。2a/2b **优先且互斥**（命中后直接跳 Step 4）；2c 是**可选补充**（继续走 Step 3）：
 
 ### 2a. 同一镜头拆分（`is_continuation: true`）
 
@@ -106,7 +106,6 @@ Linearizer 预计算的接续：同场景 + 同人物（子集）+ 同机位。�
 4. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
 5. **角色外形**：从简，抓关键特征（如"red-cloaked girl"），参考图已传入不需重复全部细节
 6. **角色表演**：`minds[].emotion` + `minds[].behavior` — 视频的核心
-7. **互动方式**：`interactions[].style`
 8. **角色关系**：融入氛围（"陌生人初次相遇的试探感"），不要直接写关系名称
 9. **道具**：按需提及，只在画面中有重要作用时
 10. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
@@ -124,10 +123,11 @@ Linearizer 预计算的接续：同场景 + 同人物（子集）+ 同机位。�
 
 当使用了前一幕尾帧或多张参考图时，prompt 中必须说清楚：
 
-- **各参考图的角色**：哪张是角色参考、哪张是前一幕的画面
-- **时序发展**：这一幕相对前一幕发生了什么变化 — 角色从哪里来、到哪里去、场景如何过渡
+- **尾帧作为起点**：如果用了前一幕尾帧（Step 2c），prompt 用 `"The video starts from <<<image_N>>>"` 告诉模型从这张画面开始，然后描述角色从上一个场景如何过渡到下一个场景
+- **各参考图的角色**：哪张是角色参考、哪张是场景参考、哪张是前一幕的画面
+- **时序发展**：角色从哪里来、到哪里去、场景如何过渡
 
-不能只写"女孩站在小屋里"，要写"女孩刚从森林走进小屋，推开门，屋内昏暗" — 让模型理解从上一幕过渡过来的上下文。
+不能只写"女孩站在小屋里"，要写"视频从上一幕的画面开始，女孩从森林走出，推开小屋的门" — 让模型理解连续的动作过渡。
 
 ### 首帧图 vs 视频 Prompt 的区别
 
@@ -188,7 +188,6 @@ Linearizer 预计算的接续：同场景 + 同人物（子集）+ 同机位。�
       {"entity": "char_red", "emotion": "好奇，微微不安", "behavior": "停下脚步，侧头倾听"},
       {"entity": "char_wolf", "emotion": "伪装友善", "behavior": "缓缓走出，弓着身体"}
     ],
-    "interactions": [{"between": ["char_red", "char_wolf"], "style": "狼蹲下平视小红帽"}],
     "relationships": [{"pair": ["char_red", "char_wolf"], "current_kind": "陌生人"}]
   }
 }
@@ -216,7 +215,7 @@ execution:
 推理：时间连续，同一角色，场景从森林过渡到小屋 → 用前一幕尾帧作为参考图之一。小红帽开头可见但在走动 → `reference_to_video`。
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Wide shot, eye level, slow tracking. A girl in a red cloak <<<image_1>>> emerges from the tree line and walks toward a small cottage <<<image_2>>> at the edge of a sunny clearing. She has just come from the dense forest behind her — the transition from dark canopy to bright open meadow. She approaches the wooden door, basket swinging gently, looking up at the cozy cottage with anticipation."
+"hand-drawn illustration, warm color palette, children's storybook style. Wide shot, eye level, slow tracking. The video starts from <<<image_3>>>, where the girl in a red cloak <<<image_1>>> is at the edge of the forest. She walks out of the tree line and approaches a small cottage <<<image_2>>> at the clearing — transitioning from the dark canopy to the bright open meadow. She approaches the wooden door, basket swinging gently, looking up at the cozy cottage with anticipation."
 
 execution:
 ```json

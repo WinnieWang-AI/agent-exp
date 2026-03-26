@@ -297,24 +297,19 @@ def _extract_prompt_materials(
             "style": aus.get("style", ""),
         })
 
-    # Interactions
-    interactions = event.get("interactions", [])
-
-    # Current relationships between interacting characters
+    # Current relationships between co-appearing characters
     relationships = []
-    for inter in interactions:
-        chars = inter.get("between", [])
-        if len(chars) >= 2:
-            for i in range(len(chars)):
-                for j in range(i + 1, len(chars)):
-                    c1 = g.nodes.get(chars[i])
-                    if c1:
-                        kind = g.current_relationship(c1, chars[j], event_id)
-                        if kind:
-                            relationships.append({
-                                "pair": [chars[i], chars[j]],
-                                "current_kind": kind,
-                            })
+    char_ids = [a.get("entity", "") for a in appearances if a.get("entity", "")]
+    for i in range(len(char_ids)):
+        for j in range(i + 1, len(char_ids)):
+            c1 = g.nodes.get(char_ids[i])
+            if c1:
+                kind = g.current_relationship(c1, char_ids[j], event_id)
+                if kind:
+                    relationships.append({
+                        "pair": [char_ids[i], char_ids[j]],
+                        "current_kind": kind,
+                    })
 
     return {
         "style_prefix": effective_style.get("style_prefix", ""),
@@ -328,7 +323,6 @@ def _extract_prompt_materials(
         "location_state": location_state,
         "prop_states": prop_states,
         "audio_states": audio_states,
-        "interactions": interactions,
         "relationships": relationships,
     }
 

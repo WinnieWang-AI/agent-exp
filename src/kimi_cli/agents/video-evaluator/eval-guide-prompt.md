@@ -6,13 +6,16 @@
 
 ## 评估流程
 
-调用方会在 prompt 中直接提供**单条** prompt 的完整信息（entity_id、type、prompt、negative_prompt、source 等）。
+调用方会在 prompt 中提供**一条或多条** prompt 的完整信息（entity_id、type、prompt、negative_prompt、source 等），包裹在 `<prompts>` 标签中。
 
-1. 读取 `${AGENT_DIR}/../video-creator/prompt-guide-refimage.md` 作为规范参考。
-2. 对该条 prompt，逐项执行下方 Checklist 中的检查。
-3. 输出结构化校验结果。
+1. 根据涉及的 entity type **按需读取**对应的 prompt guide 作为规范参考（每种类型只读一次）：
+   - Character / CharacterAppearance → `${AGENT_DIR}/../image-creator/prompt-guide-character.md`
+   - Location / LocationState → `${AGENT_DIR}/../image-creator/prompt-guide-location.md`
+   - Prop / PropState → `${AGENT_DIR}/../image-creator/prompt-guide-prop.md`
+2. 对**每条** prompt，逐项执行下方 Checklist 中的检查。
+3. 输出结构化校验结果（每条一个检查块）。
 
-**注意**：每次调用只校验一条 prompt，不需要读取 `prompt-review.json`。
+**注意**：不需要读取 `prompt-review.json`。
 
 ---
 
@@ -60,7 +63,6 @@
 |--------|----------|----------|
 | **结构正确** | `{style_prefix}. {构图指令}, {外观描述}` | 构图指令放在末尾 |
 | **style_prefix 在开头** | prompt 以 style_prefix 开头 | style_prefix 混在中间或缺失 |
-| **光影禁词** | 参考图 prompt 中无 cinematic lighting, dramatic lighting, volumetric light, natural shadows, rim light, studio lighting, soft lighting, photorealistic | prompt 包含 "cinematic lighting" |
 | **全英文** | prompt 全部为英文 | prompt 中夹杂中文 |
 | **词数 ≤ 200** | style_prefix 计入，总词数不超过 200 | 超过 200 词 |
 | **negative_prompt 不在 prompt 正文中** | negative 内容只在 negative_prompt 字段 | prompt 中写了 "no shadow, no dark background" |
@@ -76,20 +78,31 @@
 
 ## 输出格式
 
+**核心原则：PASS 从简，FAIL 聚焦动作。** 输出会直接返回给调用方 agent，必须精简以节省上下文。
+
+对每条 prompt 输出一行或一块：
+
+**PASS 时**（一行搞定，不解释理由）：
 ```
-## {entity_id} ({type}) — PASS/FAIL
-
-### 检查结果
-- **语义覆盖**: PASS/FAIL — {说明}
-- **语义准确**: PASS/FAIL — {说明}
-- **规范合规**: PASS/FAIL — {说明}
-- **reference_image_paths**: PASS/FAIL/N/A — {说明}
-
-### 综合判定: PASS / FAIL
-
-### 修改建议（仅 FAIL 时）
-1. {具体修改建议，直接可操作}
-2. ...
+- {entity_id} ({type}): PASS
 ```
 
-**每个 FAIL 项必须给出具体的问题描述和可直接执行的修改建议（如"将 X 改为 Y"、"在 Z 后添加 W"）。**
+**FAIL 时**（只列失败项和修改动作，不解释 PASS 项）：
+```
+- {entity_id} ({type}): FAIL
+  - {失败维度}: {问题} → {修改动作}
+  - {失败维度}: {问题} → {修改动作}
+```
+
+修改动作必须是可直接执行的指令（如 `删除 "soft shadow"`、`在 X 后添加 Y`、`将 "gentle smile" 改为 "determined gaze"`）。**不要给出修改后的完整 prompt**——调用方自己改。
+
+最后输出汇总行：
+```
+**汇总: {PASS数}/{总数} PASS, FAIL: [{FAIL的entity_id列表}]**
+```
+
+**禁止**：
+- PASS 项的逐条论证（"陆地乌龟→land tortoise"这类对应罗列）
+- FAIL 项中对 PASS 维度的说明
+- 修改后的完整 prompt / negative_prompt 全文
+- "前置检查"等额外段落

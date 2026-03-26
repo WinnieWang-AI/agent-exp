@@ -27,7 +27,6 @@
 | **单一视图** | 只有一个角度的全身像 | 生成了多视图 character sheet（正面+侧面+细节） |
 | **特征匹配** | 与提供的描述中的关键特征一致 | 性别、年龄、体型、种族等明显不符 |
 | **风格匹配** | 画面风格与调用方提供的 `style_prefix` 一致 | style_prefix 要求写实但生成了卡通；要求水彩但生成了 3D 渲染 |
-| **无光影污染** | 无 cinematic lighting、体积光、强烈阴影 | 背景有光晕、雾气、明暗渐变 |
 | **无边框** | 图片边缘无白色或其他颜色的边框/画框 | 图片四周有白色边框、装饰性画框 |
 
 **CharacterAppearance 状态图额外检查**：
@@ -69,7 +68,6 @@
 | 单一视图 | **关键** | 多视图 character sheet 不可接受 |
 | 特征匹配（关键特征：性别、种族、体型、物种） | **关键** | 关键特征不符不可接受 |
 | 风格匹配（与 style_prefix 一致） | **关键** | 风格大类不符（如要求写实却生成卡通）不可接受。同一风格大类内的细微差异可接受 |
-| 无光影污染 | **次要** | 轻微阴影可接受，明显光晕/雾气/体积光不可接受 |
 | 无边框 | **关键** | 图片边缘有任何边框/画框均不可接受 |
 | 居中构图 | **次要** | 轻微偏移可接受 |
 | 特征匹配（次要特征：发色深浅、衣服纹理细节） | **次要** | 细节偏差可接受 |
@@ -116,8 +114,7 @@
 
 ### 其他原则
 
-- **修改建议限定在 prompt 层面**：FAIL 时指出 prompt 中可能的问题和具体的措辞修改方向（如"去掉 cinematic lighting"、"prompt 开头加 full-body standing figure on plain white background"、"prompt 超过 60 词需精简"）。**不要给出分辨率、色彩空间、画面比例等技术参数建议**——这些由生成规范决定，不在评估范围内。
-- **无光影污染的边界**：轻微地面阴影（角色脚下的投影）算 ACCEPTABLE；背景整体灰色渐变、雾气、光晕算关键项 FAIL（归入"纯白背景"FAIL）。
+- **修改建议限定在 prompt 层面**：FAIL 时指出 prompt 中可能的问题和具体的措辞修改方向（如"prompt 开头加 full-body standing figure on plain white background"、"prompt 超过 60 词需精简"）。**不要给出分辨率、色彩空间、画面比例等技术参数建议**——这些由生成规范决定，不在评估范围内。
 
 ---
 
@@ -142,9 +139,8 @@
 - 居中构图: PASS / FAIL
 - 单一视图: PASS / FAIL
 - 特征匹配: PASS / FAIL — {哪些特征不符}
-- 无光影污染: PASS / FAIL — {有什么光影问题}
 - **结论: PASS / FAIL / ACCEPTABLE**
-- 修改建议: {具体的 prompt 修改建议，如 "去掉 cinematic lighting"、"prompt 开头加 full-body standing figure on plain white background"}
+- 修改建议: {具体的 prompt 修改建议，如 "prompt 开头加 full-body standing figure on plain white background"}
 
 ...
 
@@ -154,4 +150,4 @@
 | ... | ... | ... | ... |
 ```
 
-**注意**：Location 图不需要检查"全身可见""纯白背景""居中构图""单一视图""无光影污染"这些项，只检查 Location 专属的检查项。Prop 图不需要检查"全身可见""单一视图"。根据类型输出对应的检查项即可。
+**注意**：Location 图不需要检查"全身可见""纯白背景""居中构图""单一视图"这些项，只检查 Location 专属的检查项。Prop 图不需要检查"全身可见""单一视图"。根据类型输出对应的检查项即可。

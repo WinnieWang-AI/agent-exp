@@ -10,7 +10,6 @@ from kimi_cli.tools.display import (
     StoryGraphAudioState,
     StoryGraphEntity,
     StoryGraphEvent,
-    StoryGraphInteraction,
     StoryGraphOutput,
     StoryGraphProductionStyle,
     StoryGraphShot,
@@ -313,15 +312,6 @@ def build_story_graph_view(
         char_ids = _extract_character_ids_for_event(event, appear_by_event, appear_entity)
         active_appear_ids = appear_by_event.get(eid, [])
 
-        # Interactions
-        interactions = [
-            StoryGraphInteraction(
-                between=[char_names.get(cid, cid) for cid in i.get("between", [])],
-                style=i.get("style", ""),
-            )
-            for i in event.get("interactions", [])
-        ]
-
         # Audio states for this event (resolve speaker id -> name)
         event_audio: list[StoryGraphAudioState] = []
         for a in audio_by_event.get(eid, []):
@@ -402,13 +392,13 @@ def build_story_graph_view(
 
         timeline.append(StoryGraphEvent(
             id=eid,
+            name=event.get("name", ""),
             description=event.get("description", ""),
             happens_at=event.get("happens_at", ""),
             character_ids=char_ids,
             active_appearance_ids=active_appear_ids,
             minds=[],
             shots=shots,
-            interactions=interactions,
             audio_states=event_audio,
         ))
 

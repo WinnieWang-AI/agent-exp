@@ -8,16 +8,17 @@ ${ROLE_ADDITIONAL}
 
 Follow this workflow. **收到指令后直接执行，不要反问用户技术细节。** BPM、调性、编制等专业参数全部由你自主决策，选择最合适的默认值。用户只需要描述"想要什么"，不需要了解技术实现。
 
-### Phase 1: Read Story Graph
+### Phase 1: Read Story Graph & Determine Project Directory
 
 1. 获取 `story-graph.json` 的内容：**如果用户消息中已包含 `<file>` 标签（由调用方通过 context_files 注入），直接使用其中的内容，无需再 ReadFile**。只有当消息中没有 `<file>` 标签时才用 ReadFile 读取。
-2. 从 `story-graph.json` 读取：
+2. **确定项目目录（project_dir）**：从 `<file path="...">` 标签中的绝对路径提取项目目录。例如，若路径为 `/home/user/workspace/output/session_id/my_project/story-graph.json`，则 `project_dir` = `/home/user/workspace/output/session_id/my_project`。**后续所有文件路径必须使用 `{project_dir}/assets/audio/` 的绝对路径形式**，不得使用相对路径 `assets/audio/`。
+3. 从 `story-graph.json` 读取：
    - **视频规格**：从顶层 `video_info` 字段读取 `language`（视频语言），影响对白 TTS 语言选择。
    - **音频设计**：从 `audio_states` 和 `audio_active_during` 读取所有音频状态节点。
 
 ### Phase 2: Audio Production
 
-**⚠️ 命名规则：所有音频文件必须以 `{audio_state_id}.mp3` 命名，保存到 `assets/audio/` 目录。这是后期组装和前端展示的查找依据。**
+**⚠️ 命名规则：所有音频文件必须以 `{audio_state_id}.mp3` 命名，保存到 `{project_dir}/assets/audio/` 目录（绝对路径）。这是后期组装和前端展示的查找依据。**
 
 #### 1. Background Music（`layer: "audio_bgm"`）
 
@@ -27,7 +28,7 @@ b. 用 CheckMusicJob 轮询直到完成，**必须指定 `download_filename`** �
 CheckMusicJob(
   job_id=<job_id>,
   provider=<provider>,
-  download_dir="assets/audio",
+  download_dir="{project_dir}/assets/audio",
   download_filename="{audio_state_id}.mp3"
 )
 ```
@@ -37,11 +38,11 @@ d. **BGM 时长适配**：Suno 生成的音乐时长不可精确控制。组装�
 #### 2. Dialogue / Narration（`layer: "audio_dialogue"`）
 
 a. 对每个对白状态节点，使用其 `text`、`speaker`、`voice_direction` 字段调用 GenerateSpeech。
-b. **`output_path` 必须使用 `assets/audio/{audio_state_id}.mp3`**：
+b. **`output_path` 必须使用 `{project_dir}/assets/audio/{audio_state_id}.mp3`**（绝对路径）：
 ```
 GenerateSpeech(
   text=audio_state.text,
-  output_path="assets/audio/{audio_state_id}.mp3",
+  output_path="{project_dir}/assets/audio/{audio_state_id}.mp3",
   voice_id=<根据 speaker 和 voice_direction 选择>,
   language=<从 video_info 获取>
 )
@@ -66,7 +67,7 @@ Then call the tool. Example:
 
 ```
 【目标】Generate BGM for audio_bgm_main (epic orchestral)
-【验证】CheckMusicJob returns completed, file exists at assets/audio/audio_bgm_main.mp3
+【验证】CheckMusicJob returns completed, file exists at {project_dir}/assets/audio/audio_bgm_main.mp3
 ```
 
 These declarations are recorded by the system for operation graph construction and context compaction. **Do not skip this step.**
