@@ -73,7 +73,7 @@ style_prefix: `"cinematic realistic style, Chinese myth-inspired, subtle cool to
 - prompt: `"Full-body character reference, white background. Same girl now wearing a red velvet hooded cloak over a white dress, brown leather ankle boots. Curly hair tucked inside the hood, carrying a woven basket in her right hand."`
 - style: `"hand-drawn illustration, warm color palette, children's storybook style"`
 - negative_prompt: `"dark, horror, oversaturated, cropped, half body, shadow, gradient background"`
-- reference_image_paths: `["assets/images/char_red.png"]`
+- reference_image_paths: `["{project_dir}/assets/images/char_red.png"]`
 </example>
 
 <example>
@@ -90,7 +90,7 @@ style_prefix: `"cinematic realistic style, Chinese myth-inspired, subtle cool to
 - prompt: `"Full-body character reference, white background. Same girl, red cloak hanging askew off one shoulder, white dress hem stained with mud. Hair disheveled with leaf fragments tangled in curls, flushed cheeks, forehead glistening with sweat. Muddy boots."`
 - style: `"hand-drawn illustration, warm color palette, children's storybook style"`
 - negative_prompt: `"dark, horror, oversaturated, cropped, half body, shadow, gradient background"`
-- reference_image_paths: `["assets/images/char_red.png", "assets/images/appear_red_neat.png"]`
+- reference_image_paths: `["{project_dir}/assets/images/char_red.png", "{project_dir}/assets/images/appear_red_neat.png"]`
 </example>
 
 ---

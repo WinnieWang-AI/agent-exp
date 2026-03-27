@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
 _CAPTION_PROMPT = """Describe this image in detail. Include:
@@ -42,16 +42,17 @@ class AnalyzeImage(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
 
-        p = Path(params.image_path)
+        image_path = warn_if_relative_path(params.image_path, param_name="image_path", tool_name="AnalyzeImage")
+        p = Path(image_path)
         if not p.exists():
             return builder.error(
-                message=f"Image file not found: {params.image_path}",
+                message=f"Image file not found: {image_path}",
                 brief="File not found",
             )
 
         try:
             result = await self._client.analyze_image(
-                [("image", params.image_path)], _CAPTION_PROMPT
+                [("image", image_path)], _CAPTION_PROMPT
             )
         except Exception as e:
             return builder.error(

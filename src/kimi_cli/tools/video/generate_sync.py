@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.config import Config
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.error_log import record_error
 from kimi_cli.tools.video.providers import get_default_provider
 from kimi_cli.tools.video.providers.base import GenerationRequest, VideoJobState
@@ -176,9 +176,10 @@ class GenerateVideoSync(CallableTool2[Params]):
                 )
 
         # --- Download ---
+        download_path = warn_if_relative_path(params.download_path, param_name="download_path", tool_name="GenerateVideoSync")
         try:
-            await provider.download_result(status.result_url, params.download_path)
-            builder.write(f"Downloaded to: {params.download_path}\n")
+            await provider.download_result(status.result_url, download_path)
+            builder.write(f"Downloaded to: {download_path}\n")
         except Exception as e:
             record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
                          job_id=job_id, error=f"Download failed: {e}")
@@ -187,4 +188,4 @@ class GenerateVideoSync(CallableTool2[Params]):
                 brief="Download failed",
             )
 
-        return builder.ok(message=f"Video saved to {params.download_path}")
+        return builder.ok(message=f"Video saved to {download_path}")

@@ -5,7 +5,7 @@ from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.soul.approval import Approval
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.utils.environment import Environment
 
 
@@ -67,6 +67,23 @@ class VideoEdit(CallableTool2[Params]):
 
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
+
+        # Resolve all relative paths before building ffmpeg command
+        _w = lambda p, n: warn_if_relative_path(p, param_name=n, tool_name="VideoEdit")
+        updates: dict = {
+            "output_path": _w(params.output_path, "output_path"),
+            "input_files": [_w(f, f"input_files[{i}]") for i, f in enumerate(params.input_files)],
+        }
+        if params.audio_path:
+            updates["audio_path"] = _w(params.audio_path, "audio_path")
+        if params.subtitle_path:
+            updates["subtitle_path"] = _w(params.subtitle_path, "subtitle_path")
+        if params.audio_segments:
+            updates["audio_segments"] = [
+                seg.model_copy(update={"path": _w(seg.path, f"audio_segments[{i}].path")})
+                for i, seg in enumerate(params.audio_segments)
+            ]
+        params = params.model_copy(update=updates)
 
         try:
             cmd = self._build_ffmpeg_command(params)

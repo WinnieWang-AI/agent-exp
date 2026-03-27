@@ -25,7 +25,7 @@ from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.tools.story_graph.view import build_story_graph_view
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +245,10 @@ def _extract_prompt_materials(
 ) -> dict[str, Any]:
     """Extract all prompt-relevant information for an event from the graph.
 
-    Reference images are NOT included — they live in story-graph.json and
-    are looked up at generation time by the video-creator via state IDs.
+    Note: reference_image paths are collected separately at the shot level
+    (via focus_on → state/entity nodes) and stored in each shot entry's
+    ``reference_images`` dict, so the video-creator no longer needs to
+    re-read story-graph.json just for image lookup.
     """
     event_id = event["id"]
 
@@ -263,15 +265,19 @@ def _extract_prompt_materials(
             "visual": a.get("visual", {}),
         })
 
-    # Location state
+    # Location state (with framing info for spatial context)
     location_state = None
     for ls in g.get_active("location_active_during", event_id):
-        location_state = {
+        ls_entry: dict[str, Any] = {
             "id": ls["id"],
             "entity": ls.get("entity", ""),
             "phase": ls.get("phase", ""),
             "appearance": ls.get("appearance", {}),
         }
+        framing = ls.get("framing")
+        if framing:
+            ls_entry["framing"] = framing
+        location_state = ls_entry
         break  # typically one location state per event
 
     # Prop states
@@ -430,14 +436,19 @@ def _add_sequence_continuity(shots: list[dict[str, Any]], g: _GraphIndex) -> Non
 # Main linearization
 # ---------------------------------------------------------------------------
 
-def linearize(data: dict[str, Any]) -> dict[str, Any]:
+def linearize(data: dict[str, Any], project_dir: str = "") -> dict[str, Any]:
     """Linearize a story graph into a shot-level execution plan.
 
     Each shot from ``camera_directives`` becomes an independent execution
     unit.  If a single shot exceeds *MAX_SHOT_DURATION* it is split into
     continuation parts that require tail-frame handoff.
+
+    When *project_dir* is provided, all ``output_path`` values are written
+    as absolute paths under that directory.  Otherwise bare relative paths
+    are emitted (legacy behaviour).
     """
     g = _GraphIndex(data)
+    _prefix = f"{project_dir.rstrip('/')}/" if project_dir else ""
 
     # Topological sort
     event_ids = set(g.events.keys())
@@ -474,6 +485,20 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
 
             focus_on = cam_shot.get("focus_on", [])
 
+            # Collect reference_image paths for focus_on state IDs
+            reference_images: dict[str, str] = {}
+            for state_id in focus_on:
+                node = g.nodes.get(state_id, {})
+                ref_img = node.get("reference_image") or ""
+                if ref_img:
+                    reference_images[state_id] = ref_img
+                # Also check parent entity's reference_image
+                entity = g.entity_of(node)
+                if entity:
+                    entity_ref = entity.get("reference_image") or ""
+                    if entity_ref and entity["id"] not in reference_images:
+                        reference_images[entity["id"]] = entity_ref
+
             base_entry = {
                 "event_id": event_id,
                 "camera_directive_id": cam["id"],
@@ -483,6 +508,7 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
                 "movement": cam_shot.get("movement", ""),
                 "intent": cam_shot.get("intent", ""),
                 "focus_on": focus_on,
+                "reference_images": reference_images,
                 "composition": cam_shot.get("composition", ""),
                 "lens": cam_shot.get("lens", ""),
                 "focus_depth": cam_shot.get("focus_depth", ""),
@@ -496,7 +522,7 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
                 shots.append({
                     **base_entry,
                     "shot_id": shot_id,
-                    "output_path": f"assets/shots/{shot_id}.mp4",
+                    "output_path": f"{_prefix}assets/shots/{shot_id}.mp4",
                     "duration_seconds": duration,
                     "is_continuation": False,
                     "prev_shot": None,
@@ -509,7 +535,7 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
 
                 for part_idx in range(n_parts):
                     part_id = f"{shot_id}_part_{part_idx + 1}"
-                    part_output = f"assets/shots/{part_id}.mp4"
+                    part_output = f"{_prefix}assets/shots/{part_id}.mp4"
                     is_continuation = part_idx > 0
 
                     shots.append({
@@ -555,10 +581,10 @@ class LinearizeStoryGraph(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
-        sg_path = Path(params.story_graph_path)
+        sg_path = Path(warn_if_relative_path(params.story_graph_path, param_name="story_graph_path", tool_name="LinearizeStoryGraph"))
 
         if not sg_path.exists():
-            return builder.error(f"File not found: {params.story_graph_path}", brief="File not found")
+            return builder.error(f"File not found: {sg_path}", brief="File not found")
 
         try:
             data = json.loads(sg_path.read_text(encoding="utf-8"))
@@ -566,17 +592,17 @@ class LinearizeStoryGraph(CallableTool2[Params]):
             return builder.error(f"Invalid JSON: {e}", brief="JSON parse error")
 
         # Linearize
-        plan = linearize(data)
+        project_dir = str(sg_path.parent)
+        plan = linearize(data, project_dir=project_dir)
 
         # Write output
         sg_dir = sg_path.parent
-        out_path_str = params.output_path or str(sg_dir / "shot-plan.json")
+        out_path_str = warn_if_relative_path(params.output_path, param_name="output_path", tool_name="LinearizeStoryGraph") if params.output_path else str(sg_dir / "shot-plan.json")
         out_path = Path(out_path_str)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
 
         # Emit story graph view display block
-        project_dir = str(sg_path.parent)
         view_block = build_story_graph_view(data, phase="shots", shot_plan=plan, project_dir=project_dir)
         builder.display(view_block)
 

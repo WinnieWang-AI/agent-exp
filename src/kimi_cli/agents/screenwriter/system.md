@@ -60,9 +60,24 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "id": "loc_forest",         // loc_ 前缀
   "name": "森林",
   "fixed_traits": "茂密的欧洲针叶林，高大的松树和橡树",
+  "spatial_layout": {
+    "regions": ["入口小径", "密林深处", "橡树旁空地", "小溪边"],
+    "landmarks": ["古老橡树", "小溪", "苔藓巨石"],
+    "connections": [
+      {"from": "入口小径", "to": "密林深处"},
+      {"from": "密林深处", "to": "橡树旁空地"},
+      {"from": "橡树旁空地", "to": "小溪边"}
+    ],
+    "constraints": ["入口小径无法直接看到橡树旁空地（被密林遮挡）"]
+  },
   "reference_image": null     // 环境参考图路径，由生成流程填充
 }
 ```
+- `spatial_layout`：场所的完整空间结构（全貌），下游所有空间推理的基础
+  - `regions`：功能区域列表，有序排列反映空间拓扑
+  - `landmarks`：可被 blocking 引用的视觉锚点
+  - `connections`：区域间的连通关系（可通行路径）
+  - `constraints`：空间约束（视线遮挡、不可通行等）——image-creator 和 validation 会用到
 
 #### 状态节点（会变）
 
@@ -113,13 +128,20 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 **LocationState（环境状态）**
 
-描述场所的**物理环境状态**（光照、陈设、破坏程度），不用叙事事件命名。
+描述场所在特定取景范围内的**物理环境状态**（光照、陈设、破坏程度），不用叙事事件命名。
+
+> **核心概念：LocationState 是对 Location 全貌的"取景"。** Location 实体的 `spatial_layout` 描述完整空间，LocationState 只截取其中一部分区域作为画面内容——就像摄影师选择取景角度，只拍空间的一个局部。不同事件可能发生在同一地点的不同区域，需要不同的取景（不同的 LocationState）。
 
 ```json
 {
   "id": "lstate_forest_bright", // lstate_ 前缀
   "entity": "loc_forest",
   "phase": "阳光林间小路",      // 用物理状态命名，不用"遇狼处"
+  "framing": {
+    "visible_regions": ["入口小径"],
+    "viewpoint": "小径前方，面朝密林方向",
+    "excluded_elements": ["橡树旁空地", "小溪"]
+  },
   "appearance": {
     "lighting": "丁达尔光束",
     "weather": "晴，微风",
@@ -129,6 +151,11 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "based_on": null
 }
 ```
+
+- `framing`：取景范围，从 Location 的 `spatial_layout` 中截取
+  - `visible_regions`：画面中包含的区域，必须是 `spatial_layout.regions` 的子集，且这些区域在空间上应相邻（通过 `connections` 相连）
+  - `viewpoint`：取景角度/方向的自然语言描述
+  - `excluded_elements`：明确不应出现在画面中的元素（来自其他区域的地标、相邻地点的标志物等）——下游 image-creator 会将这些加入 negative_prompt
 
 **`based_on` 字段**：当状态视觉基于另一个状态微调时（如"劫后归暖"基于"整洁温馨"），指向基准状态。生成系统用基准状态的参考图作为起点做 image-to-image 变换。
 
@@ -143,11 +170,13 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "happens_during": "time_midday",
   "blocking": {
     "char_red": {
-      "start": "林间小路中段，蹦跳前行",
+      "region": "入口小径",
+      "start": "小路中段，蹦跳前行",
       "action": "停下脚步→歪头打量→攥紧篮子→说出外婆家方向",
       "end": "原地站立，面朝大灰狼"
     },
     "char_wolf": {
+      "region": "入口小径",
       "start": "小路右侧橡树后（隐藏）",
       "action": "缓缓走出→弓身压低→搭话→问路",
       "end": "小路右侧，距小红帽约3米，弓身站立"
@@ -158,7 +187,7 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 
 - `name`：简短的事件名称（3-8字），用于前端节点显示（如"林间遇狼"、"奔月飞升"、"月宫初到"）
 - `description`：详细的事件描述，是下游视频生成的核心叙事来源（见 Step 2 的 `description` 写作要求）。角色间的具体互动方式直接写在 description 中。
-- `blocking`：每个出场角色的空间调度。`start` 为该事件开始时角色的物理位置和姿态，`action` 为动作序列（按时间顺序，用 → 连接），`end` 为事件结束时的位置和姿态。上一事件中某角色的 `end` 必须与下一事件中该角色的 `start` 在空间上吻合（允许时间跳跃带来的合理位置变化，但需要 `event_sequence.continuous: false` 标注）。
+- `blocking`：每个出场角色的空间调度。`region` 为角色所在的空间区域，**必须是 `happens_at` 地点的 `spatial_layout.regions` 中的值**，且必须落在该事件对应 LocationState 的 `framing.visible_regions` 内。`start` 为该事件开始时角色在该区域内的具体位置和姿态，`action` 为动作序列（按时间顺序，用 → 连接），`end` 为事件结束时的位置和姿态。上一事件中某角色的 `end` 必须与下一事件中该角色的 `start` 在空间上吻合（允许时间跳跃带来的合理位置变化，但需要 `event_sequence.continuous: false` 标注）。
 
 #### TimeLine（故事时间线）
 
@@ -350,21 +379,53 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 - 确定 event_sequence（THEN/PARALLEL 关系）
 - 设定 timelines：`label` 只描述叙事时间（如"清晨"、"午后"、"三天后"），**禁止写入视频秒数或时间区间**（如"3.5s"、"0-6s"）。视频时长信息存储在顶层 `video_info.duration`，不属于 Timeline。
 
-**Step 2.5: 时空推演**
+**Step 2.5: 三维时空推演**
 
-拆解完事件后、写 description 前，先对所有事件做一次时空推演，确保角色的空间位置在事件间连续、动作量在时间预算内可完成。
+拆解完事件后、写 description 前，对所有事件做一次**角色 × 地点 × 事件**三维推演。实体是全貌，状态是取景——推演的核心任务是：确定每个地点需要哪些取景（LocationState），确定每个角色在每个事件中处于哪个区域（blocking.region），并校验三个维度的一致性。
 
-**推演方法**：构建一个"事件 × 角色"矩阵，填写每个角色在每个事件中的 start（入场位置）、action（动作序列）、end（退场位置）。然后从两个方向校验：
+**推演分三步：**
 
-1. **按事件横切（某一时刻所有角色在哪）**：检查每个事件中所有在场角色的空间分布是否合理——谁在前景、谁在远处、是否在同一画面中
-2. **按角色纵切（某个角色的完整轨迹）**：检查每个角色从头到尾的位置变化是否连续——上一事件的 `end` 必须能自然过渡到下一事件的 `start`。如果位置发生跳跃，对应的 `event_sequence` 必须标注 `continuous: false`
+**第一步：地点取景规划（按地点切）**
 
-**校验要点**：
-- **空间连续**：`continuous: true` 的相邻事件中，角色 `end` → `start` 不能出现无法解释的位移
-- **时间可行**：每个事件的 `action` 序列在分配的时长内物理上可完成（如 8 秒内不可能既奔跑又减速又找到树又躺下又睡着又被乌龟超过）
+对每个地点，列出所有发生在此的事件，规划需要几个"取景"（LocationState）：
+
+- 哪些事件发生在同一地点的同一区域 → 共享一个 LocationState
+- 哪些事件发生在同一地点的不同区域 → 需要不同的 LocationState（不同的 `framing.visible_regions`）
+- 检查：每个 LocationState 的 `visible_regions` 中的区域在空间上是否相邻（通过 `connections` 相连），一个画面应该只包含空间上连续的区域
+- 检查：不同地点之间是否有视觉边界模糊的风险——如果两个地点地理相邻（如"起点"和"赛道"），在各自的 `framing.excluded_elements` 中明确排除对方的标志性元素
+
+**示例（龟兔赛跑）**：
+```
+loc_racecourse (spatial_layout):
+  regions: ["起跑线", "赛道前段", "赛道中段（大树旁）", "赛道后段", "终点线"]
+  connections: 起跑线→前段→中段→后段→终点线
+
+→ lstate_start:   framing.visible_regions = ["起跑线"],         excluded_elements = ["终点线"]
+→ lstate_midroad: framing.visible_regions = ["赛道中段（大树旁）"], excluded_elements = ["起跑线", "终点线"]
+→ lstate_finish:  framing.visible_regions = ["终点线"],         excluded_elements = ["起跑线"]
+```
+
+**第二步：角色空间锚定（按事件切 + 按角色切）**
+
+构建"事件 × 角色"矩阵，为每个角色在每个事件中填写 `region`（所在区域）、`start`、`action`、`end`。然后从两个方向校验：
+
+1. **按事件横切（某一时刻所有角色在哪个区域）**：
+   - 同一事件中所有在场角色的 `region` 必须落在该事件 LocationState 的 `framing.visible_regions` 内——角色不能出现在取景范围之外
+   - 检查角色在区域内的空间分布是否合理——谁在前景、谁在远处
+2. **按角色纵切（某个角色的完整轨迹）**：
+   - 同一地点内：角色从 region A 移动到 region B 时，必须沿 `connections` 可达
+   - 跨地点时：必须有转场事件或 `continuous: false`
+   - `continuous: true` 的相邻事件中，角色 `end` → `start` 不能出现无法解释的位移
+
+**第三步：时间可行性与环境因果**
+
+- **时间可行**：每个事件的 `action` 序列在分配的时长内物理上可完成
+- **环境因果**：如果某事件的动作会改变环境（破坏、火灾、天气变化等），检查是否有对应的 LocationState 转换
 - **发现问题时**：调整事件拆分（拆成更小的事件）或调整动作量（精简动作序列），而不是硬塞
 
-推演完成后，将矩阵中的信息写入每个 event 的 `blocking` 字段。
+推演完成后，将信息分别写入：
+- 每个 event 的 `blocking` 字段（含 `region`）
+- 每个 LocationState 的 `framing` 字段
 
 **`description` 写作要求**：基于 `blocking` 中确定的空间调度，编写叙事描述。`description` 是下游视频生成的核心叙事来源，必须提供足够丰富的画面信息。具体要求：
 
@@ -376,10 +437,10 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 6. **铺垫下文**：描述结尾要停在 `blocking.end` 的位置状态上，为下一事件留下叙事动力——一个未完成的动作、一个新产生的意图、一个悬念或转折的开端。避免每个事件都写成完整闭合的小故事。（末尾事件除外，可以自然收束）
 
 **反例 1**（空间跳跃，缺少过渡）：
-> evt_2 blocking: char_hare start="赛道前方奔跑" → evt_3 blocking: char_hare start="树荫下躺着"
+> evt_2 blocking: char_hare region="赛道前段" start="赛道前方奔跑" → evt_3 blocking: char_hare region="赛道中段（大树旁）" start="树荫下躺着"
 > evt_3 description: "树荫下，兔子在草地旁舒展身体，得意地打个哈欠，躺倒闭目小憩。"
 
-问题：兔子如何从"赛道前方奔跑"到了"树荫下"？blocking 的 start 与上一事件的 end 不吻合，description 也没有交代空间过渡。应先在时空推演中发现这一跳跃，将事件拆分或在 blocking 中补充过渡动作。
+问题：兔子从"赛道前段"跳到了"赛道中段（大树旁）"，region 变了但没有过渡。应先在时空推演中发现这一跳跃——检查 `connections` 确认路径可达，然后将事件拆分（加一个跑到大树旁的事件）或标注 `continuous: false`。
 
 **反例 2**（太简略，且遗漏在场角色）：
 > name: "嫦娥回望"
@@ -389,8 +450,8 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 
 **正例**：
 > evt_2 blocking:
-> - char_houyi: start="昆仑山巅（射日后）" end="远征未归"
-> - char_change: start="庭院石桌旁" end="庭院石桌旁，手攥玉瓶，惊觉异响"
+> - char_houyi: region="昆仑山巅" start="射日后" end="远征未归"
+> - char_change: region="庭院" start="石桌旁" end="石桌旁，手攥玉瓶，惊觉异响"
 > evt_2 description: "射落九日后的第三个夜晚，庭院沉浸在银白月光中。后羿出征未归，嫦娥独自坐在石桌旁，面前摆着他留下的玉瓶——西王母赐下的仙药。她一手轻触瓶身，目光望向院门方向，眉间是等不到人的焦虑与隐隐不安。远处传来一声异响，她猛地站起，将玉瓶攥在手中。"
 
 要点：blocking 明确了嫦娥的空间位置（庭院石桌旁）和退场状态（手攥玉瓶，惊觉异响），description 从该位置展开叙事，结尾停在 blocking.end 状态，为下一事件提供空间入口。
@@ -398,7 +459,7 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 **Step 3: 推导状态**
 - **角色外形（appearances）**：只有服饰更换或肢体明显变化（受伤、断手等）才建新节点。同一外形跨多个事件共享。
 - **道具状态（prop_states）**：仅在道具本身外观变化时创建。使用方式变化不算。
-- **环境状态（location_states）**：环境物理状态变化时创建。用物理描述命名。
+- **环境状态（location_states）**：环境物理状态变化**或取景区域不同**时创建。用物理描述命名。每个 LocationState 必须带 `framing` 字段，明确取景范围。
 - 设定 `based_on` 关系（视觉衍生状态指向基准）
 
 **Step 4: 关联 active_during**
@@ -489,6 +550,8 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 - 情绪跳跃（从开心直接变绝望，缺乏过渡）
 - 物品凭空出现/消失（某事件中角色使用了之前未引入的物品）
 - 镜头引用了不在该事件生效的状态
+- 地点取景范围不合理（一个画面包含了空间上不相邻的区域、不同地点的标志性元素混入同一取景）
+- 角色 blocking.region 超出取景范围（角色出现在 LocationState.framing.visible_regions 之外）
 
 将结构性和语义性问题分别列出，并给出修复建议。
 

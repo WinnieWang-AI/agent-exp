@@ -43,5 +43,5 @@
 - prompt: `"Same woven basket on white background, now covered with a red-white checkered cloth, visibly full and bulging, cloth tucked neatly around edges, perfect condition."`
 - style: `"hand-drawn illustration, warm color palette, children's storybook style"`
 - negative_prompt: `"dark, horror, hands, person, shadow"`
-- reference_image_paths: `["assets/images/prop_basket.png"]`
+- reference_image_paths: `["{project_dir}/assets/images/prop_basket.png"]`
 </example>

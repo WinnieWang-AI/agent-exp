@@ -179,6 +179,32 @@ class ToolResultBuilder:
         )
 
 
+import logging as _logging
+
+_path_logger = _logging.getLogger("kimi_cli.tools.path")
+
+
+def warn_if_relative_path(path: str, *, param_name: str, tool_name: str) -> str:
+    """Check if a path is relative and log a warning.
+
+    Returns the resolved absolute path (unchanged if already absolute).
+    This does NOT block execution — it only warns, so agents that
+    accidentally pass a relative path get a clear signal in the output.
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if not p.is_absolute():
+        resolved = str(p.resolve())
+        _path_logger.warning(
+            "%s: %s is a relative path '%s' — resolved to '%s'. "
+            "Use absolute paths to avoid cwd-dependent failures.",
+            tool_name, param_name, path, resolved,
+        )
+        return resolved
+    return path
+
+
 class ToolRejectedError(ToolError):
     def __init__(self):
         super().__init__(

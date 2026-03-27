@@ -69,14 +69,42 @@ def _summarize_visual(visual: dict[str, Any] | Any) -> str:
     return "，".join(parts)
 
 
-def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState]]:
+def _resolve_path(project_dir: str, raw_path: str, *, check_exists: bool = False) -> str:
+    """Resolve an asset path to absolute.
+
+    Handles both relative (``assets/images/x.png``) and already-absolute
+    paths (``/home/.../assets/images/x.png``).  When *check_exists* is
+    True **and** the path could be resolved to an absolute location,
+    returns ``""`` if the file does not exist on disk.  Without
+    *project_dir* a relative path cannot be verified, so it is returned
+    as-is regardless of *check_exists*.
+    """
+    if not raw_path:
+        return ""
+    p = Path(raw_path)
+    if p.is_absolute():
+        # Only verify existence when we have a project context
+        if check_exists and project_dir and not p.exists():
+            return ""
+        return str(p)
+    # Relative path
+    if project_dir:
+        p = Path(project_dir) / raw_path
+        if check_exists and not p.exists():
+            return ""
+        return str(p)
+    # No project_dir — cannot resolve; return as-is
+    return raw_path
+
+
+def _build_entity_states(data: dict[str, Any], project_dir: str) -> dict[str, list[StoryGraphState]]:
     """Build entity_id -> list of child state nodes."""
     states: dict[str, list[StoryGraphState]] = defaultdict(list)
     for a in data.get("character_appearances", []):
         states[a.get("entity", "")].append(StoryGraphState(
             id=a["id"],
             phase=a.get("phase", ""),
-            reference_image=a.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, a.get("reference_image") or "", check_exists=True),
             description=_summarize_visual(a.get("visual")),
             generation_prompt=a.get("generation_prompt") or "",
         ))
@@ -84,7 +112,7 @@ def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState
         states[ls.get("entity", "")].append(StoryGraphState(
             id=ls["id"],
             phase=ls.get("phase", ""),
-            reference_image=ls.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, ls.get("reference_image") or "", check_exists=True),
             description=_summarize_visual(ls.get("appearance")),
             generation_prompt=ls.get("generation_prompt") or "",
         ))
@@ -92,7 +120,7 @@ def _build_entity_states(data: dict[str, Any]) -> dict[str, list[StoryGraphState
         states[ps.get("entity", "")].append(StoryGraphState(
             id=ps["id"],
             phase=ps.get("phase", ""),
-            reference_image=ps.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, ps.get("reference_image") or "", check_exists=True),
             description=_summarize_visual(ps.get("appearance")),
             generation_prompt=ps.get("generation_prompt") or "",
         ))
@@ -119,7 +147,14 @@ def _build_audio_by_event(
         for aid in state_ids:
             anode = audio_nodes.get(aid, {})
             audio_file = ""
-            if project_dir:
+            # 1. Check audio_file field stored in story-graph.json (set by audio-creator)
+            stored = anode.get("audio_file") or ""
+            if stored:
+                resolved = _resolve_path(project_dir, stored, check_exists=True)
+                if resolved:
+                    audio_file = resolved
+            # 2. Fallback: convention-based lookup {project_dir}/assets/audio/{aid}.mp3
+            if not audio_file and project_dir:
                 candidate = Path(project_dir) / "assets" / "audio" / f"{aid}.mp3"
                 if candidate.exists():
                     audio_file = str(candidate)
@@ -161,14 +196,6 @@ def _build_outputs(project_dir: str) -> list[StoryGraphOutput]:
             label=stage_labels.get(stem, stem),
         ))
     return outputs
-
-
-def _resolve_path(project_dir: str, relative_path: str) -> str:
-    """Resolve a relative asset path to absolute, or return as-is."""
-    if not project_dir or not relative_path:
-        return relative_path
-    absolute = Path(project_dir) / relative_path
-    return str(absolute)
 
 
 def _collect_shot_reference_images(shot: dict[str, Any], nodes: dict[str, Any] | None = None) -> list[str]:
@@ -267,7 +294,7 @@ def build_story_graph_view(
             _nodes[_n["id"]] = _n
 
     # --- Entity states ---
-    entity_states = _build_entity_states(data)
+    entity_states = _build_entity_states(data, project_dir)
 
     # --- Entities (with child states) ---
     entities: list[StoryGraphEntity] = []
@@ -276,7 +303,7 @@ def build_story_graph_view(
             id=c["id"],
             name=c.get("name", c["id"]),
             kind="character",
-            reference_image=c.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, c.get("reference_image") or "", check_exists=True),
             description=c.get("fixed_traits", ""),
             generation_prompt=c.get("generation_prompt") or "",
             states=entity_states.get(c["id"], []),
@@ -286,7 +313,7 @@ def build_story_graph_view(
             id=loc["id"],
             name=loc.get("name", loc["id"]),
             kind="location",
-            reference_image=loc.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, loc.get("reference_image") or "", check_exists=True),
             description=loc.get("fixed_traits", ""),
             generation_prompt=loc.get("generation_prompt") or "",
             states=entity_states.get(loc["id"], []),
@@ -296,7 +323,7 @@ def build_story_graph_view(
             id=p["id"],
             name=p.get("name", p["id"]),
             kind="prop",
-            reference_image=p.get("reference_image") or "",
+            reference_image=_resolve_path(project_dir, p.get("reference_image") or "", check_exists=True),
             description=p.get("fixed_traits", ""),
             generation_prompt=p.get("generation_prompt") or "",
             states=entity_states.get(p["id"], []),
@@ -349,6 +376,7 @@ def build_story_graph_view(
                 if isinstance(bdata, dict):
                     blocking_items.append(StoryGraphBlocking(
                         character_id=cid,
+                        region=bdata.get("region", ""),
                         start=bdata.get("start", ""),
                         action=bdata.get("action", ""),
                         end=bdata.get("end", ""),
@@ -374,44 +402,33 @@ def build_story_graph_view(
 
             if execution:
                 # Agent has executed this shot — show actual materials used
-                ref_images = [_resolve_path(project_dir, p) for p in execution.get("reference_images", []) if p]
-                first_frame = _resolve_path(project_dir, execution.get("first_frame_path", ""))
-                tail_frame = _resolve_path(project_dir, execution.get("tail_frame_path", ""))
+                ref_images = [_resolve_path(project_dir, p, check_exists=True) for p in execution.get("reference_images", []) if p]
+                ref_images = [r for r in ref_images if r]  # drop missing
+                first_frame = _resolve_path(project_dir, execution.get("first_frame_path", ""), check_exists=True)
+                tail_frame = _resolve_path(project_dir, execution.get("tail_frame_path", ""), check_exists=True)
                 mode = execution.get("mode", "")
                 prompt = execution.get("prompt", "")
             else:
                 # Not yet executed — show available materials from inventory
-                ref_images = [_resolve_path(project_dir, p) for p in _collect_shot_reference_images(shot_entry, nodes=_nodes) if p]
-                first_frame = ""
-                tail_frame = ""
-                if project_dir:
-                    ff = Path(project_dir) / f"assets/frames/{shot_id}_first.png"
-                    if ff.exists():
-                        first_frame = str(ff)
-                    tf = Path(project_dir) / f"assets/frames/{shot_id}_tail.png"
-                    if tf.exists():
-                        tail_frame = str(tf)
+                ref_images = [_resolve_path(project_dir, p, check_exists=True) for p in _collect_shot_reference_images(shot_entry, nodes=_nodes) if p]
+                ref_images = [r for r in ref_images if r]
+                # Speculative frame lookup — only possible with project_dir
+                first_frame = _resolve_path(project_dir, f"assets/frames/{shot_id}_first.png", check_exists=True) if project_dir else ""
+                tail_frame = _resolve_path(project_dir, f"assets/frames/{shot_id}_tail.png", check_exists=True) if project_dir else ""
                 mode = ""
                 prompt = ""
 
             # Video file: resolve to absolute path only if file exists
-            video_clip = ""
-            if project_dir and shot_entry.get("output_path"):
-                vc = Path(project_dir) / shot_entry["output_path"]
-                if vc.exists():
-                    video_clip = str(vc)
+            video_clip = _resolve_path(project_dir, shot_entry.get("output_path", ""), check_exists=True) if project_dir else ""
 
             # Sequence continuity (cross-shot tail-frame)
             seq_prev = shot_entry.get("prev_shot_in_sequence")
             seq_prev_shot_id = seq_prev["shot_id"] if seq_prev else ""
             seq_tail_frame = ""
-            if seq_prev and project_dir:
-                # Check if agent wrote the extracted tail frame
-                seq_tf = Path(project_dir) / f"assets/frames/{shot_id}_seq_tail.png"
-                if seq_tf.exists():
-                    seq_tail_frame = str(seq_tf)
             if execution and execution.get("sequence_tail_frame_path"):
-                seq_tail_frame = _resolve_path(project_dir, execution["sequence_tail_frame_path"])
+                seq_tail_frame = _resolve_path(project_dir, execution["sequence_tail_frame_path"], check_exists=True)
+            if not seq_tail_frame and seq_prev and project_dir:
+                seq_tail_frame = _resolve_path(project_dir, f"assets/frames/{shot_id}_seq_tail.png", check_exists=True)
 
             shots.append(StoryGraphShot(
                 shot_id=shot_id,

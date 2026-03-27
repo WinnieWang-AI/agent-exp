@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.audio.providers import create_music_provider
 from kimi_cli.tools.audio.providers.base import MusicJobState
 
@@ -79,7 +79,14 @@ class CheckMusicJob(CallableTool2[Params]):
 
         # Download if requested and completed
         if status.state == MusicJobState.COMPLETED and params.download_dir and status.songs:
-            download_dir = Path(params.download_dir)
+            if not params.download_filename:
+                builder.write(
+                    "\nWARNING: download_filename not specified — defaulting to 'song_{i}.mp3'. "
+                    "This may not match the expected naming convention '{audio_state_id}.mp3'. "
+                    "Always pass download_filename to ensure correct file naming.\n"
+                )
+            resolved_dir = warn_if_relative_path(params.download_dir, param_name="download_dir", tool_name="CheckMusicJob")
+            download_dir = Path(resolved_dir)
             download_dir.mkdir(parents=True, exist_ok=True)
             builder.write(f"\nDownloading {len(status.songs)} song(s)...\n")
             for i, song in enumerate(status.songs):
@@ -101,5 +108,14 @@ class CheckMusicJob(CallableTool2[Params]):
                     builder.write(f"  Download failed for song {i}: {e}\n")
 
         if status.state == MusicJobState.COMPLETED:
+            if not params.download_dir and status.songs:
+                builder.write(
+                    "\nWARNING: Job completed but download_dir was not provided — "
+                    "audio was NOT downloaded. Call again with download_dir and "
+                    "download_filename to save the file.\n"
+                )
+                return builder.ok(
+                    message="Job completed but audio was NOT downloaded (no download_dir).",
+                )
             return builder.ok(message="Job completed.")
         return builder.ok(message=f"Job {status.state.value} ({status.progress_percent:.0f}%)")

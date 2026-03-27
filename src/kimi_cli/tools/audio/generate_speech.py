@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.config import Config
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.audio.providers import get_default_tts_provider
 from kimi_cli.tools.audio.providers.base import TTSRequest
 
@@ -68,8 +68,9 @@ class GenerateSpeech(CallableTool2[Params]):
                 brief="Generation failed",
             )
 
+        output_path = warn_if_relative_path(params.output_path, param_name="output_path", tool_name="GenerateSpeech")
         try:
-            await provider.download_audio(result.audio_url, params.output_path)
+            await provider.download_audio(result.audio_url, output_path)
         except Exception as e:
             return builder.error(
                 message=f"Audio download failed: {e}",
@@ -77,9 +78,9 @@ class GenerateSpeech(CallableTool2[Params]):
             )
 
         builder.write(f"Speech generated successfully.\n")
-        builder.write(f"  output: {params.output_path}\n")
+        builder.write(f"  output: {output_path}\n")
         builder.write(f"  provider: {provider_name}\n")
         builder.write(f"  voice: {params.voice_id}\n")
         builder.write(f"  language: {params.language}\n")
         builder.write(f"  text_length: {len(params.text)} chars\n")
-        return builder.ok(message=f"Audio saved to {params.output_path}")
+        return builder.ok(message=f"Audio saved to {output_path}")

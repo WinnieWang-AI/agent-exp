@@ -135,7 +135,7 @@ prompt:
 参数：
 - negative_prompt: "dark, horror, oversaturated, shadow, gradient background"
 - aspect_ratio: "1:1"
-- reference_image_paths: ["assets/images/char_red.png"]
+- reference_image_paths: ["{project_dir}/assets/images/char_red.png"]
 </example>
 
 <example>
@@ -160,23 +160,25 @@ prompt:
 参数：
 - negative_prompt: "dark, horror, oversaturated, shadow, gradient background"
 - aspect_ratio: "1:1"
-- reference_image_paths: ["assets/images/char_red.png", "assets/images/appear_red_neat.png"]
+- reference_image_paths: ["{project_dir}/assets/images/char_red.png", "{project_dir}/assets/images/appear_red_neat.png"]
 </example>
 
 ### LocationState 状态图
 
-**数据来源**：`appearance.lighting` + `appearance.weather` + `appearance.condition` + `appearance.atmosphere`
+**数据来源**：`framing`（取景范围）+ `appearance.lighting` + `appearance.weather` + `appearance.condition` + `appearance.atmosphere`
 **参考图**：对应 Location 实体图
 **比例**：1:1
 
+**取景约束**：如果 `framing` 存在，prompt 只描述 `framing.visible_regions` 中的区域环境，`framing.excluded_elements` 中的元素加入 negative_prompt。
+
 <example>
 prompt:
-"hand-drawn illustration, warm color palette, children's storybook style. Same forest with god rays through canopy, sunny, gentle breeze, wildflowers along dirt path, butterflies, fairytale atmosphere, no people"
+"hand-drawn illustration, warm color palette, children's storybook style. Forest entrance trail, god rays through canopy, sunny, gentle breeze, wildflowers along dirt path, butterflies, fairytale atmosphere, view looking forward into the forest, no people"
 
 参数：
-- negative_prompt: "dark, horror, oversaturated, people, characters"
+- negative_prompt: "dark, horror, oversaturated, people, characters, oak tree clearing, creek"
 - aspect_ratio: "1:1"
-- reference_image_paths: ["assets/images/loc_forest.png"]
+- reference_image_paths: ["{project_dir}/assets/images/loc_forest.png"]
 </example>
 
 ### PropState 状态图
@@ -192,7 +194,7 @@ prompt:
 参数：
 - negative_prompt: "dark, horror, hands, person, shadow"
 - aspect_ratio: "1:1"
-- reference_image_paths: ["assets/images/prop_basket.png"]
+- reference_image_paths: ["{project_dir}/assets/images/prop_basket.png"]
 </example>
 
 ---

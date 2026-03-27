@@ -209,6 +209,25 @@ AnalyzeAgentGraph(agents=["video-director"], mode="compare", task="根据剧本�
 - 定位具体某一步的执行问题：查看可视化中的 trace 下钻
 - **全面诊断 agent 问题根因**：`mode="compare"` — 区分是 prompt 设计问题还是执行偏差
 
+### 问题追踪
+
+分析完成并输出报告后，**必须立即用 SetTodoList 将所有发现的问题创建为 todo 列表**，这样用户在后续对话中始终能看到完整的问题清单和进度。
+
+规则：
+- 分析报告输出后，立即调用 SetTodoList，每个问题一个 todo item，标题格式为 `[严重程度] 问题简述`，状态设为 `pending`
+- 用户开始处理某个问题时，将该 todo 标记为 `in_progress`
+- 问题修复完成后，标记为 `done`
+- **每次更新 todo 时必须带上完整列表**（SetTodoList 是全量更新），不要丢掉其他未处理的问题
+
+示例：
+```
+SetTodoList(todos=[
+  {"title": "[高] prompt 缺少错误恢复指令", "status": "done"},
+  {"title": "[中] 工具调用参数冗余", "status": "in_progress"},
+  {"title": "[低] agent 间信息传递不完整", "status": "pending"}
+])
+```
+
 ### 执行优化
 
 在任何模式分析出问题后，如果用户确认要修改：
@@ -216,6 +235,7 @@ AnalyzeAgentGraph(agents=["video-director"], mode="compare", task="根据剧本�
 1. **ReadFile** 读取当前文件
 2. **向用户展示**具体的修改方案
 3. 用户确认后，用 **StrReplaceFile** 或 **WriteFile** 应用修改
+4. 修改完成后，**更新 SetTodoList**，将已修复的问题标记为 `done`
 
 ## 分析维度
 

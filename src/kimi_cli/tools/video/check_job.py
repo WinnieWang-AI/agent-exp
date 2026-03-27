@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.error_log import record_error
 from kimi_cli.tools.video.providers import create_provider
 from kimi_cli.tools.video.providers.base import VideoJobState
@@ -92,9 +92,10 @@ class CheckVideoJob(CallableTool2[Params]):
             )
 
         if status.state == VideoJobState.COMPLETED and params.download_path:
+            download_path = warn_if_relative_path(params.download_path, param_name="download_path", tool_name="CheckVideoJob")
             try:
-                await provider.download_result(status.result_url, params.download_path)
-                builder.write(f"Downloaded to: {params.download_path}\n")
+                await provider.download_result(status.result_url, download_path)
+                builder.write(f"Downloaded to: {download_path}\n")
             except Exception as e:
                 record_error(
                     tool="CheckVideoJob",
@@ -117,5 +118,14 @@ class CheckVideoJob(CallableTool2[Params]):
                 )
 
         if status.state == VideoJobState.COMPLETED:
+            if not params.download_path:
+                builder.write(
+                    "WARNING: Job completed but download_path was not provided — "
+                    "video was NOT downloaded. Call again with download_path to save the file.\n"
+                )
+                return builder.ok(
+                    message="Job completed but video was NOT downloaded (no download_path). "
+                    "Provide download_path to save the file.",
+                )
             return builder.ok(message="Job completed.")
         return builder.ok(message=f"Job {status.state.value} ({status.progress_percent:.0f}%)")

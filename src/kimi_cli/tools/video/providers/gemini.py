@@ -59,7 +59,10 @@ class GeminiImageProvider(ImageProvider):
 
         # Add reference images if provided
         for ref_path in request.reference_image_paths:
-            image_bytes = Path(ref_path).read_bytes()
+            resolved = Path(ref_path)
+            if not resolved.is_absolute():
+                resolved = resolved.resolve()
+            image_bytes = resolved.read_bytes()
             mime = _guess_mime(ref_path)
             parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime))
 

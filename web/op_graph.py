@@ -308,11 +308,6 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 if call_id:
                     inner_call_to_node[call_id] = tid
 
-                # Connect goal -> first top-level tool_call
-                if current_goal_id and not goal_connected:
-                    edges.append({"source": current_goal_id, "target": tid, "type": "requires"})
-                    goal_connected = True
-
                 produced, consumed = _extract_file_paths(fn_name, args)
                 for p in consumed:
                     edges.append({"source": ensure_resource(p), "target": tid, "type": "consumed_by"})

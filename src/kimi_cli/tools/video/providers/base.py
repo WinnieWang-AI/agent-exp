@@ -99,12 +99,24 @@ def resolve_image_to_url(path_or_url: str, tos_config: TOSConfig | None = None) 
         return path_or_url
     # Local file — upload to TOS or encode as base64.
     p = Path(path_or_url)
+    if not p.is_absolute():
+        # Relative paths are fragile (depend on cwd). Resolve and warn.
+        p = p.resolve()
+        import logging
+        logging.getLogger(__name__).warning(
+            "resolve_image_to_url received a relative path '%s' — resolved to '%s'. "
+            "Use absolute paths to avoid cwd-dependent failures.",
+            path_or_url, p,
+        )
     if not p.is_file():
-        raise FileNotFoundError(f"Reference image not found: {path_or_url}")
+        raise FileNotFoundError(
+            f"Reference image not found: {path_or_url} (resolved: {p}). "
+            f"Ensure the file exists and the path is absolute."
+        )
     if tos_config is not None and tos_config.is_configured:
         from kimi_cli.tools.video.providers.tos_upload import upload_file
 
-        return upload_file(tos_config, path_or_url)
+        return upload_file(tos_config, str(p))
     # Fallback: base64 data URI so providers can use their base64 input path.
     return _file_to_data_uri(p)
 

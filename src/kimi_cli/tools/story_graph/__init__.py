@@ -6,6 +6,7 @@ from typing import Any, override
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_cli.tools.story_graph.indexes import build_indexes
 from kimi_cli.tools.story_graph.linearize import LinearizeStoryGraph
 from kimi_cli.tools.story_graph.view import build_story_graph_view
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
@@ -453,6 +454,142 @@ def _validate_blocking(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
     return issues
 
 
+def _validate_location_framing(data: dict[str, Any]) -> list[str]:
+    """Validate three-dimensional consistency: location framing, blocking regions, and paths."""
+    issues: list[str] = []
+
+    indexes = build_indexes(data)
+
+    # --- 1. LocationState framing: visible_regions ⊆ spatial_layout.regions ---
+    for loc_id, loc_entry in indexes.location_view.items():
+        layout = loc_entry.spatial_layout
+        if not layout:
+            continue
+        valid_regions = set(layout.get("regions", []))
+
+        for lstate_id, state_info in loc_entry.states_used.items():
+            visible = state_info.get("visible_regions", [])
+            if not visible:
+                continue
+            for region in visible:
+                if region not in valid_regions:
+                    issues.append(
+                        f'location_state {lstate_id}: framing.visible_regions contains '
+                        f'"{region}" which is not in {loc_id}.spatial_layout.regions'
+                    )
+
+            # Check visible_regions are spatially connected
+            if len(visible) > 1:
+                connections = layout.get("connections", [])
+                conn_set: set[tuple[str, str]] = set()
+                for c in connections:
+                    conn_set.add((c.get("from", ""), c.get("to", "")))
+                    conn_set.add((c.get("to", ""), c.get("from", "")))
+                # Simple connectivity check: every region should be reachable
+                # from the first one via other visible regions
+                reachable: set[str] = {visible[0]}
+                changed = True
+                while changed:
+                    changed = False
+                    for r in visible:
+                        if r in reachable:
+                            continue
+                        for reached in list(reachable):
+                            if (reached, r) in conn_set:
+                                reachable.add(r)
+                                changed = True
+                                break
+                unreachable = set(visible) - reachable
+                if unreachable:
+                    issues.append(
+                        f'location_state {lstate_id}: framing.visible_regions contains '
+                        f'non-adjacent regions {sorted(unreachable)} — a single frame '
+                        f'should only include spatially connected areas'
+                    )
+
+    # --- 2. blocking.region must exist in spatial_layout.regions ---
+    locations_by_id = {loc["id"]: loc for loc in data.get("locations", [])}
+    for evt_id, evt_entry in indexes.event_view.items():
+        loc_id = evt_entry.location
+        if not loc_id:
+            continue
+        loc = locations_by_id.get(loc_id, {})
+        layout = loc.get("spatial_layout", {})
+        valid_regions = set(layout.get("regions", []))
+        if not valid_regions:
+            continue
+
+        for char_id, char_info in evt_entry.characters.items():
+            region = char_info.get("region", "")
+            if not region:
+                continue
+            if region not in valid_regions:
+                issues.append(
+                    f'event {evt_id}: blocking.{char_id}.region "{region}" '
+                    f'is not in {loc_id}.spatial_layout.regions'
+                )
+
+    # --- 3. blocking.region must be within LocationState.framing.visible_regions ---
+    for evt_id, evt_entry in indexes.event_view.items():
+        visible = evt_entry.framing.get("visible_regions", [])
+        if not visible:
+            continue
+        visible_set = set(visible)
+        for char_id, char_info in evt_entry.characters.items():
+            region = char_info.get("region", "")
+            if region and region not in visible_set:
+                issues.append(
+                    f'event {evt_id}: {char_id} is in region "{region}" but '
+                    f'the active LocationState ({evt_entry.location_state_id}) '
+                    f'only frames {visible} — character is outside the visible area'
+                )
+
+    # --- 4. Character path reachability within same location ---
+    for char_id, char_entry in indexes.character_view.items():
+        for change in char_entry.location_changes:
+            if not change["same_location"]:
+                continue
+            from_region = change["from_region"]
+            to_region = change["to_region"]
+            if not from_region or not to_region or from_region == to_region:
+                continue
+            loc_id = change["from_location"]
+            loc = locations_by_id.get(loc_id, {})
+            layout = loc.get("spatial_layout", {})
+            connections = layout.get("connections", [])
+            if not connections:
+                continue
+
+            # Check reachability via BFS
+            conn_adj: dict[str, set[str]] = {}
+            for c in connections:
+                f, t = c.get("from", ""), c.get("to", "")
+                conn_adj.setdefault(f, set()).add(t)
+                conn_adj.setdefault(t, set()).add(f)
+
+            visited: set[str] = {from_region}
+            queue = [from_region]
+            found = False
+            while queue:
+                node = queue.pop(0)
+                if node == to_region:
+                    found = True
+                    break
+                for nb in conn_adj.get(node, set()):
+                    if nb not in visited:
+                        visited.add(nb)
+                        queue.append(nb)
+
+            if not found:
+                issues.append(
+                    f'{char_id}: moves from region "{from_region}" to "{to_region}" '
+                    f'within {loc_id} (events {change["from_event"]} → {change["to_event"]}) '
+                    f'but no path exists via spatial_layout.connections'
+                )
+
+    return issues
+
+
 def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[str, list[str]]:
     """Run all validations and return issues grouped by category."""
     ids = _collect_ids(data)
@@ -481,6 +618,10 @@ def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[st
     blocking_issues = _validate_blocking(data, ids)
     if blocking_issues:
         result["blocking"] = blocking_issues
+
+    framing_issues = _validate_location_framing(data)
+    if framing_issues:
+        result["location_framing"] = framing_issues
 
     synopsis = data.get("synopsis")
     if not synopsis or not isinstance(synopsis, str) or len(synopsis.strip()) < 10:

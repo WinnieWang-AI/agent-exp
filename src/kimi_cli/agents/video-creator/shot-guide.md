@@ -103,7 +103,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 1. **风格**：`style_prefix` 放在 prompt 开头
 2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）、焦距（`lens`）、景深（`focus_depth`）
 3. **构图与空间关系**：`composition` — 角色在画面中的位置（如"左侧前景、右侧远处"）
-4. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
+4. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere。如果 `location_state.framing` 存在，只描述 `visible_regions` 中的区域环境，不要描述 `excluded_elements` 中的元素
 5. **角色外形**：从简，抓关键特征（如"red-cloaked girl"），参考图已传入不需重复全部细节
 6. **角色表演**：`minds[].emotion` + `minds[].behavior` — 视频的核心
 8. **角色关系**：融入氛围（"陌生人初次相遇的试探感"），不要直接写关系名称
@@ -147,7 +147,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 ```json
 "execution": {
   "mode": "reference_to_video",
-  "reference_images": ["assets/images/appear_red_neat.png"],
+  "reference_images": ["{project_dir}/assets/images/appear_red_neat.png"],
   "reference_image_path": "",
   "first_frame_path": "",
   "first_frame_prompt": "",
@@ -202,7 +202,7 @@ execution:
 ```json
 {
   "mode": "reference_to_video",
-  "reference_images": ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"],
+  "reference_images": ["{project_dir}/assets/images/appear_red_neat.png", "{project_dir}/assets/images/appear_wolf_natural.png"],
   "reasoning": "狼在视频中途从树后走出，开头不在画面中，首帧无法覆盖狼的身份信息，选择 reference_to_video 让模型全程持有两个角色的参考。"
 }
 ```
@@ -221,7 +221,7 @@ execution:
 ```json
 {
   "mode": "reference_to_video",
-  "reference_images": ["assets/images/appear_red_neat.png", "assets/images/loc_cabin_exterior.png", "assets/frames/evt_forest_walk_shot_2_tail.png"],
+  "reference_images": ["{project_dir}/assets/images/appear_red_neat.png", "{project_dir}/assets/images/loc_cabin_exterior.png", "{project_dir}/assets/frames/evt_forest_walk_shot_2_tail.png"],
   "reasoning": "承接 evt_forest_walk_shot_2（小红帽走出森林），时间连续，角色相同，场景从森林过渡到小屋门口。使用前一幕尾帧作为第 3 张参考图，帮助保持角色外观和场景衔接的连续性。角色在走动中，选择 reference_to_video。"
 }
 ```
@@ -251,9 +251,9 @@ execution:
 ```json
 {
   "mode": "image_to_video",
-  "reference_image_path": "assets/frames/evt_grandma_door_shot_1_first.png",
-  "reference_images": ["assets/images/appear_grandma_home.png"],
-  "first_frame_path": "assets/frames/evt_grandma_door_shot_1_first.png",
+  "reference_image_path": "{project_dir}/assets/frames/evt_grandma_door_shot_1_first.png",
+  "reference_images": ["{project_dir}/assets/images/appear_grandma_home.png"],
+  "first_frame_path": "{project_dir}/assets/frames/evt_grandma_door_shot_1_first.png",
   "reasoning": "单人特写，外婆开头就在画面中正面面对镜头，push_in 运动幅度小，适合生成首帧图定义构图和表情起点，选择 image_to_video。"
 }
 ```

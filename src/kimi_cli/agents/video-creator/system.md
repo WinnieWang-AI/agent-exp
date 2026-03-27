@@ -13,7 +13,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 **如果调用方指示"直接从 Step 2 开始"或"shot plan 已就绪"**：跳过 Step 1，直接进入 Step 2。Shot plan 已在之前的调用中生成。
 
 1. 获取 `story-graph.json` 的内容：**如果用户消息中已包含 `<file>` 标签（由调用方通过 context_files 注入），直接使用其中的内容，无需再 ReadFile**。只有当消息中没有 `<file>` 标签时才用 ReadFile 读取。
-2. 从 `story-graph.json` 读取：
+2. **确定项目目录（project_dir）**：从 `<file path="...">` 标签中的绝对路径或调用方提供的 story-graph.json 路径推导。例如 `/home/user/output/session_id/my_project/story-graph.json` → `project_dir` = `/home/user/output/session_id/my_project`。**后续所有资产文件路径（shots、frames、images）必须使用 `{project_dir}/assets/...` 的绝对路径形式**。
+3. 从 `story-graph.json` 读取：
    - **视频规格**：从顶层 `video_info` 字段读取 `aspect_ratio`（画面比例）和 `language`（视频语言）。
    - **视觉风格**：从 `production_styles` 节点读取 `style_prefix`、`negative_prefix`。
 
@@ -63,23 +64,26 @@ LinearizeStoryGraph(
 - Step 4: 选参考图 & 写 prompt（含参考图关系和时序发展描述）
 
 **2. 执行尾帧提取**（当决策需要前一 shot 的尾帧时）：
+
+**所有路径必须使用绝对路径**：`{project_dir}/assets/frames/...`。`project_dir` 从 story-graph.json 的路径推导（去掉文件名）。shot-plan.json 中的 `output_path` 已是绝对路径，直接使用。
+
 ```
 # 2a: duration-split 接续
 ExtractFrame(
   video_path=prev_shot.output_path,
-  output_path="assets/frames/{shot_id}_tail.png",
+  output_path="{project_dir}/assets/frames/{shot_id}_tail.png",
   position="last"
 )
 # 2b: 跨 shot 序列接续
 ExtractFrame(
   video_path=prev_shot_in_sequence.output_path,
-  output_path="assets/frames/{shot_id}_seq_tail.png",
+  output_path="{project_dir}/assets/frames/{shot_id}_seq_tail.png",
   position="last"
 )
 # 2c: 跨场景衔接（尾帧作为参考图之一）
 ExtractFrame(
   video_path=<前一 shot 的 output_path>,
-  output_path="assets/frames/{shot_id}_prev_tail.png",
+  output_path="{project_dir}/assets/frames/{shot_id}_prev_tail.png",
   position="last"
 )
 ```
@@ -90,7 +94,7 @@ GenerateImage(
   prompt=<用 prompt_materials 组装的首帧描述，参考 shot-guide.md>,
   reference_image_paths=<该角色的参考图>,
   aspect_ratio=<从 prompt_materials.aspect_ratio>,
-  output_path="assets/frames/{shot_id}_first.png"
+  output_path="{project_dir}/assets/frames/{shot_id}_first.png"
 )
 ```
 生成后记录路径到 `execution.first_frame_path`。首帧 prompt 写法参考 `shot-guide.md` 中的首帧图部分。
@@ -118,7 +122,7 @@ GenerateVideoSync(
 ```json
 "execution": {
   "mode": "reference_to_video",
-  "reference_images": ["assets/images/appear_red_neat.png"],
+  "reference_images": ["{project_dir}/assets/images/appear_red_neat.png"],
   "reference_image_path": "",
   "first_frame_path": "",
   "first_frame_prompt": "",
@@ -153,7 +157,7 @@ Then call the tool. Example:
 
 ```
 【目标】Generate video for evt_chase_shot_1 (wide shot of chase scene)
-【验证】GenerateVideoSync returns success, file exists at assets/shots/evt_chase_shot_1.mp4
+【验证】GenerateVideoSync returns success, file exists at {project_dir}/assets/shots/evt_chase_shot_1.mp4
 ```
 
 These declarations are recorded by the system for operation graph construction and context compaction. **Do not skip this step.**

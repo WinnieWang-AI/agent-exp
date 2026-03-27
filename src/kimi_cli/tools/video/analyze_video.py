@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
 _CAPTION_PROMPT = """Describe this video in detail. Include:
@@ -44,17 +44,18 @@ class AnalyzeVideo(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
 
-        video_path = Path(params.video_path)
+        resolved_path = warn_if_relative_path(params.video_path, param_name="video_path", tool_name="AnalyzeVideo")
+        video_path = Path(resolved_path)
         if not video_path.exists():
             return builder.error(
-                message=f"Video file not found: {params.video_path}",
+                message=f"Video file not found: {resolved_path}",
                 brief="File not found",
             )
 
-        meta = await self._probe_metadata(params.video_path)
+        meta = await self._probe_metadata(resolved_path)
 
         try:
-            result = await self._client.analyze(params.video_path, _CAPTION_PROMPT)
+            result = await self._client.analyze(resolved_path, _CAPTION_PROMPT)
         except Exception as e:
             return builder.error(
                 message=f"VLM video captioning failed: {e}",

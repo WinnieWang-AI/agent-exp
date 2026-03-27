@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.analyze_video import AnalyzeVideo
 from kimi_cli.tools.video.vlm_client import GeminiVLMClient
 
@@ -57,9 +57,12 @@ class CompareVideos(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder()
 
+        original_path = warn_if_relative_path(params.original_path, param_name="original_path", tool_name="CompareVideos")
+        generated_path = warn_if_relative_path(params.generated_path, param_name="generated_path", tool_name="CompareVideos")
+
         for label, path in [
-            ("Original", params.original_path),
-            ("Generated", params.generated_path),
+            ("Original", original_path),
+            ("Generated", generated_path),
         ]:
             if not Path(path).exists():
                 return builder.error(
@@ -70,12 +73,12 @@ class CompareVideos(CallableTool2[Params]):
         prompt = params.criteria if params.criteria else _DEFAULT_CRITERIA
 
         # Get objective metadata for both videos.
-        orig_meta = await AnalyzeVideo._probe_metadata(params.original_path)
-        gen_meta = await AnalyzeVideo._probe_metadata(params.generated_path)
+        orig_meta = await AnalyzeVideo._probe_metadata(original_path)
+        gen_meta = await AnalyzeVideo._probe_metadata(generated_path)
 
         try:
             result = await self._client.compare(
-                params.original_path, params.generated_path, prompt
+                original_path, generated_path, prompt
             )
         except Exception as e:
             return builder.error(

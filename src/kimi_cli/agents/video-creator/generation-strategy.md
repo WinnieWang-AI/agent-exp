@@ -142,7 +142,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 {
   "shot_id": "evt_forest_walk_shot_1_part_2",
   "is_continuation": true,
-  "prev_shot": {"output_path": "assets/shots/evt_forest_walk_shot_1_part_1.mp4"}
+  "prev_shot": {"output_path": "{project_dir}/assets/shots/evt_forest_walk_shot_1_part_1.mp4"}
 }
 ```
 

@@ -125,6 +125,7 @@ class StoryGraphOutput(BaseModel):
 class StoryGraphBlocking(BaseModel):
     """Per-character spatial blocking within an event."""
     character_id: str
+    region: str = ""
     start: str = ""
     action: str = ""
     end: str = ""

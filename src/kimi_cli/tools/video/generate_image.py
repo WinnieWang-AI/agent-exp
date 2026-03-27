@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.config import Config
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.providers import get_default_image_provider
 from kimi_cli.tools.video.providers.image_base import ImageGenerationRequest
 from kimi_cli.utils.logging import logger
@@ -106,14 +106,15 @@ class GenerateImage(CallableTool2[Params]):
                 brief="All providers failed",
             )
 
-        Path(params.output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(params.output_path).write_bytes(result.image_bytes)
+        output_path = warn_if_relative_path(params.output_path, param_name="output_path", tool_name="GenerateImage")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(result.image_bytes)
 
-        builder.write(f"Image generated: {params.output_path}\n")
+        builder.write(f"Image generated: {output_path}\n")
         builder.write(f"Provider: {provider_name}\n")
         builder.write(f"Prompt: {params.prompt}\n")
         if params.style:
             builder.write(f"Style: {params.style}\n")
         builder.write(f"Format: {result.mime_type}\n")
         builder.write(f"Size: {len(result.image_bytes)} bytes\n")
-        return builder.ok(message=f"Image saved to {params.output_path}")
+        return builder.ok(message=f"Image saved to {output_path}")

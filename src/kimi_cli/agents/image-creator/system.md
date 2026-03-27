@@ -25,7 +25,8 @@ ${ROLE_ADDITIONAL}
 ## Phase 1: 读取 Story Graph
 
 1. 如果消息中已有 `<file>` 标签（调用方通过 context_files 注入），直接使用；否则用 ReadFile 读取 `story-graph.json`。
-2. 提取全局信息（后续所有图片生成都要用）：
+2. **确定项目目录（project_dir）**：从 `<file path="...">` 标签中的绝对路径提取项目目录。例如，若路径为 `/home/user/output/session_id/my_project/story-graph.json`，则 `project_dir` = `/home/user/output/session_id/my_project`。**后续所有文件路径必须使用 `{project_dir}/assets/images/` 的绝对路径形式**，不得使用相对路径 `assets/images/`。
+3. 提取全局信息（后续所有图片生成都要用）：
    - `video_info` → `aspect_ratio`、`language`
    - `production_styles` → `style_prefix`、`negative_prefix`
 
@@ -57,11 +58,11 @@ ${ROLE_ADDITIONAL}
 
 | 类型 | Prompt 来源 | 要求 | 比例 | 路径 |
 |---|---|---|---|---|
-| Character | `fixed_traits` | 全身正面（从头到脚）、纯白背景、居中 | 1:1 | `assets/images/{character_id}.png` |
-| Location | `fixed_traits` | 无角色、纯环境 | 1:1 | `assets/images/{location_id}.png` |
-| Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `assets/images/{prop_id}.png` |
+| Character | `fixed_traits` | 全身正面（从头到脚）、纯白背景、居中 | 1:1 | `{project_dir}/assets/images/{character_id}.png` |
+| Location | `fixed_traits` | 无角色、纯环境 | 1:1 | `{project_dir}/assets/images/{location_id}.png` |
+| Prop | `fixed_traits` | 白底特写（重要道具才生成） | 1:1 | `{project_dir}/assets/images/{prop_id}.png` |
 
-每个实体只生成一张图。文件路径严格为 `assets/images/{entity_id}.png`。
+每个实体只生成一张图。文件路径严格为 `{project_dir}/assets/images/{entity_id}.png`。
 
 ### 第 2 层：状态参考图（基于实体图派生）
 
@@ -69,9 +70,9 @@ ${ROLE_ADDITIONAL}
 
 | 类型 | Prompt 来源 | 比例 | 路径 |
 |---|---|---|---|
-| CharacterAppearance | `visual.costume` + `visual.hair` + `visual.physical` | 1:1 | `assets/images/{appearance_id}.png` |
-| LocationState | `appearance.lighting/weather/condition/atmosphere` | 1:1 | `assets/images/{location_state_id}.png` |
-| PropState | `appearance.visual` + `appearance.condition` | 1:1 | `assets/images/{prop_state_id}.png` |
+| CharacterAppearance | `visual.costume` + `visual.hair` + `visual.physical` | 1:1 | `{project_dir}/assets/images/{appearance_id}.png` |
+| LocationState | `framing`（取景范围）+ `appearance.lighting/weather/condition/atmosphere` | 1:1 | `{project_dir}/assets/images/{location_state_id}.png` |
+| PropState | `appearance.visual` + `appearance.condition` | 1:1 | `{project_dir}/assets/images/{prop_state_id}.png` |
 
 **生成顺序**：按 `based_on` 拓扑排序。无依赖先生成，有依赖的传入父状态图作为额外参考。
 
@@ -128,7 +129,7 @@ Task(
 // 替换前
 "reference_image": null
 // 替换后
-"reference_image": "assets/images/char_red.png",
+"reference_image": "{project_dir}/assets/images/char_red.png",
 "generation_prompt": "hand-drawn illustration, warm color palette ..."
 ```
 
@@ -155,7 +156,7 @@ Task(
 
 - **参考图不可跳过。** 没有参考图就没有角色一致性。
 - **所有图片必须通过 API 生成。** 禁止本地工具生成占位图。
-- **文件路径固定**：只保存到 `assets/images/{id}.png`，禁止创建额外目录、版本后缀、文件复制。
+- **文件路径固定**：只保存到 `{project_dir}/assets/images/{id}.png`（绝对路径），禁止创建额外目录、版本后缀、文件复制。
 - **作为 subagent 时禁止 AskUserQuestion**，由父 agent 负责用户确认。
 - **诚实汇报，禁止编造。**
 - **GenerateImage 失败处理**：

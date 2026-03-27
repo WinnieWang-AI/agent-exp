@@ -50,7 +50,7 @@ shot plan 数据：
 "Reference image characters from left to right are: @[role 1], @[role 2]. hand-drawn illustration, warm color palette, children's storybook style. Close-up shot at eye level. A little girl @[role 1] in a red velvet cloak and white dress stands on a forest path, head slightly tilted, eyes wide with curiosity and a hint of unease, curly brown hair framing her round face. Behind a moss-covered oak tree, a large gray-brown wolf @[role 2] peers out, ears pointed forward, crouching low to appear smaller. Warm god rays filter through the canopy, wildflowers and butterflies dotting the sunlit path. The girl has just noticed something watching her — a frozen moment of first contact."
 
 参数：
-- reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
+- reference_image_paths: ["{project_dir}/assets/images/appear_red_neat.png", "{project_dir}/assets/images/appear_wolf_natural.png"]
   （从 story-graph.json 中按 `focus_on` 涉及的 appearance state ID 查找 `reference_image`，顺序决定 @[role N] 编号）
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -83,7 +83,7 @@ shot plan 数据：
 "Reference image characters from left to right are: @[role 1]. hand-drawn illustration, warm color palette, children's storybook style. Wide shot from a high angle looking down. A tiny figure @[role 1] in a bright red cloak walks along a narrow winding dirt path through a vast dense forest, towering pine and oak trees stretching in all directions, golden god rays slanting through the canopy, patches of colorful wildflowers along the path edges, butterflies in the warm air. The girl appears small against the grand forest, conveying innocence and vulnerability."
 
 参数：
-- reference_image_paths: ["assets/images/appear_red_neat.png"]
+- reference_image_paths: ["{project_dir}/assets/images/appear_red_neat.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>
@@ -101,7 +101,7 @@ shot plan 数据：
 1. **风格**：`style_prefix` 放在开头
 2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）、镜头焦距（`lens`）、景深（`focus_depth`）
 3. **画面构图与空间关系**：`composition` — 描述人物在画面中的位置和空间关系（如"角色 A 在画面左侧前景，角色 B 在右侧远处"）。这是保证镜头间空间连续性的关键信息，必须体现在 prompt 中
-5. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere
+5. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere。如果 `location_state.framing` 存在，只描述 `framing.visible_regions` 中的区域环境，不要描述 `framing.excluded_elements` 中的元素
 6. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
 7. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
 8. **角色关系**：`relationships[]` — 如果关系影响互动氛围（如"陌生人初次相遇"vs"信任的朋友"）
@@ -149,8 +149,8 @@ shot plan 数据：
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 - mode: "image_to_video"（因为有 Technique B/C 提供的首帧/尾帧）
-- reference_image_path: "assets/frames/cam_wolf_encounter_shot_0_first.png"（来自 Technique B/C）
-- reference_images: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
+- reference_image_path: "{project_dir}/assets/frames/cam_wolf_encounter_shot_0_first.png"（来自 Technique B/C）
+- reference_images: ["{project_dir}/assets/images/appear_red_neat.png", "{project_dir}/assets/images/appear_wolf_natural.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>
@@ -181,7 +181,7 @@ shot plan 数据：
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 - mode: "reference_to_video"
-- reference_images: ["assets/images/appear_red_neat.png"]
+- reference_images: ["{project_dir}/assets/images/appear_red_neat.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>
@@ -215,8 +215,8 @@ shot plan 数据：
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 - mode: "image_to_video"
-- reference_image_path: "assets/frames/cam_grandma_door_shot_0_first.png"
-- reference_images: ["assets/images/appear_grandma_home.png"]
+- reference_image_path: "{project_dir}/assets/frames/cam_grandma_door_shot_0_first.png"
+- reference_images: ["{project_dir}/assets/images/appear_grandma_home.png"]
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - duration_seconds: 5
 </example>

@@ -35,7 +35,7 @@ Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长（shot-plan �
 
 ### Step 4: 逐 shot 合成对白
 
-根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。
+根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`{project_dir}/assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `{project_dir}/assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。`project_dir` 从 story-graph.json 的路径推导（去掉文件名），所有路径必须使用绝对路径。
 
 **回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
 
@@ -52,7 +52,7 @@ Use VideoEdit(operation="concat") 按 Step 2 确定的顺序拼接所有 shots�
 按 `audio_active_during` 确定每段 BGM 的时间范围。
 
 - **单段 BGM**：直接用 VideoEdit(operation="add_audio") 叠加。BGM 过长则先 trim 裁剪，过短则设置 `audio_loop=true` 循环。
-- **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `assets/audio/bgm_mixed.mp3`，再用 add_audio 叠加到视频。
+- **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `{project_dir}/assets/audio/bgm_mixed.mp3`，再用 add_audio 叠加到视频。
 
 ### Step 8: 字幕
 
