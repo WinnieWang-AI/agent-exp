@@ -10,6 +10,8 @@ Follow this workflow. **收到指令后直接执行，不要反问用户技术�
 
 ### Step 1: Read Story Graph & Generate Shot Plan
 
+**如果调用方指示"直接从 Step 2 开始"或"shot plan 已就绪"**：跳过 Step 1，直接进入 Step 2。Shot plan 已在之前的调用中生成。
+
 1. 获取 `story-graph.json` 的内容：**如果用户消息中已包含 `<file>` 标签（由调用方通过 context_files 注入），直接使用其中的内容，无需再 ReadFile**。只有当消息中没有 `<file>` 标签时才用 ReadFile 读取。
 2. 从 `story-graph.json` 读取：
    - **视频规格**：从顶层 `video_info` 字段读取 `aspect_ratio`（画面比例）和 `language`（视频语言）。
@@ -23,6 +25,8 @@ LinearizeStoryGraph(
 )
 ```
 
+**如果调用方指示"仅生成 shot plan"**：完成 LinearizeStoryGraph 后 STOP，报告 shot plan 摘要（镜头数量、时长分配），等待调用方下一步指示。
+
 输出 `shot-plan.json`，包含每个摄影镜头的执行信息：
 - `shot_id`：镜头唯一 ID（格式 `{event_id}_shot_{order}`，超长镜头拆分为 `{shot_id}_part_N`）
 - `event_id`：所属事件
@@ -30,19 +34,21 @@ LinearizeStoryGraph(
 - `composition`：画面构图和人物空间关系描述，用于 prompt 中描述空间布局
 - `lens`、`focus_depth`：镜头焦距和景深信息，用于 prompt 中描述视觉风格
 - `transition_in`、`transition_out`：转场方式，用于剪辑组装阶段
-- `prompt_materials`：所有活跃的 appearances（含 reference_image）、minds、location_state、prop_states、relationships、style
+- `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、relationships、style（**不含 reference_image 路径**）
 - `is_continuation`：是否为同一镜头的 duration-split 后续部分
 - `prev_shot`：仅当 `is_continuation: true` 时有值，包含前一 part 的 shot_id 和 output_path
-- `prev_shot_in_sequence`：Linearizer 预计算的跨 shot 接续（同场景 + 同人物 + 同机位），包含前一 shot 的 shot_id 和 output_path，为 null 则无接续
+- `prev_shot_in_sequence`：Linearizer 预计算的跨 shot 接续（screenwriter 标注的叙事时间连续），包含前一 shot 的 shot_id 和 output_path，为 null 则无接续
 - `duration_seconds`：目标时长
 
 每个 shot 是一次独立的 GenerateVideoSync 调用。Linearizer 只提供素材清单，**不做生成策略决策**。生成方式、参考图选择由你根据 `shot-guide.md` 的决策流程推理决定。
 
-检查 `warnings`，如果有 reference_image 缺失，上报调用方，等待补充后再继续。
+**参考图查找**：shot-plan 中不包含 `reference_image` 路径。你需要从 `story-graph.json` 中按 state ID（`focus_on` 中的 appearance/location/prop state ID）查找对应节点的 `reference_image` 字段。读取 story-graph.json 时建立 ID → reference_image 的映射，供后续每个 shot 使用（无论在 Step 1 还是 Step 2 开头读取）。
 
 ### Step 2: 逐 Shot 决策与执行
 
-**开始前必须执行**：用 ReadFile 读取 `${AGENT_DIR}/shot-guide.md`，按其中的决策流程和 prompt 规范执行。不要跳过。
+**开始前必须执行**：
+1. 用 ReadFile **重新读取** `story-graph.json`，建立 state ID → reference_image 的映射（从 `character_appearances`、`location_states`、`prop_states` 中查找 `reference_image` 字段）。**必须重新读取**——即使 Step 1 已读过，参考图是在 Step 1 之后生成的，Step 1 时 `reference_image` 字段可能还为空。同时获取 `video_info`（aspect_ratio、language）和 `production_styles`（style_prefix、negative_prefix）。
+2. 用 ReadFile 读取 `${AGENT_DIR}/shot-guide.md`，按其中的决策流程和 prompt 规范执行。不要跳过。
 
 **支持分步调用**：调用方可以指定只执行到首帧图生成（Step 2 首帧部分），暂停等待评估后再继续视频生成（Step 2 视频部分）。也可以指定重新生成某些首帧图（传入 shot ID 列表和修改建议）。根据调用方的指令执行对应部分。
 

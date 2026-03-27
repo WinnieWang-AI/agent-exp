@@ -51,7 +51,7 @@ shot plan 数据：
 
 参数：
 - reference_image_paths: ["assets/images/appear_red_neat.png", "assets/images/appear_wolf_natural.png"]
-  （从 `prompt_materials.appearances` 中 `focus_on` 涉及的角色收集 `reference_image`，顺序决定 @[role N] 编号）
+  （从 story-graph.json 中按 `focus_on` 涉及的 appearance state ID 查找 `reference_image`，顺序决定 @[role N] 编号）
 - aspect_ratio: <从 video_info.aspect_ratio 获取>
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
 </example>

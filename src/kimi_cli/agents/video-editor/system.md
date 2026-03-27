@@ -61,7 +61,11 @@ Use VideoEdit(operation="concat") 按 Step 2 确定的顺序拼接所有 shots�
 ### Step 9: 输出与验证
 
 1. 输出最终视频到调用方指定的路径。**不要覆盖已有的输出文件**——如果目标路径已存在，追加序号（如 `output/final_1.mp4`）。
-2. **验证最终成片**：确认总时长、完整性、音视频同步。如有问题修复后重新输出。
+2. **验证最终成片**：VideoEdit 每次操作后会返回输出文件的元数据（duration、resolution、audio）。核对最终输出：
+   - **总时长**：与 shot-plan 中所有 shot 的 `duration_seconds` 之和比较，容差 ±1s。超出则说明拼接/裁剪有误。
+   - **分辨率**：与 `video_info.aspect_ratio` 一致（如 16:9 → 1920x1080 或 1280x720）。
+   - **音轨**：有对白或 BGM 时，必须有音轨（audio=yes）。
+   - 如有问题，定位出错步骤，修复后重新输出。
 3. Use ManageVideoProject(action="update_metadata") 标记项目完成。
 
 ## Step Declaration

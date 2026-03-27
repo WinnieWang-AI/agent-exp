@@ -8,6 +8,7 @@ from typing import Any
 
 from kimi_cli.tools.display import (
     StoryGraphAudioState,
+    StoryGraphBlocking,
     StoryGraphEntity,
     StoryGraphEvent,
     StoryGraphOutput,
@@ -170,13 +171,16 @@ def _resolve_path(project_dir: str, relative_path: str) -> str:
     return str(absolute)
 
 
-def _collect_shot_reference_images(shot: dict[str, Any]) -> list[str]:
-    """Collect all available reference images from a shot's prompt_materials.
+def _collect_shot_reference_images(shot: dict[str, Any], nodes: dict[str, Any] | None = None) -> list[str]:
+    """Collect reference images for a shot by looking up state IDs in the graph.
+
+    Uses ``focus_on`` state IDs + prompt_materials state IDs to find
+    ``reference_image`` from the graph nodes (passed via *nodes*).
+    Falls back to prompt_materials fields for backward compatibility.
 
     Returns deduplicated paths in stable order (appearance states first,
-    then location, then props; state images before entity images).
+    then location, then props).
     """
-    materials = shot.get("prompt_materials", {})
     refs: list[str] = []
     seen: set[str] = set()
 
@@ -185,13 +189,32 @@ def _collect_shot_reference_images(shot: dict[str, Any]) -> list[str]:
             seen.add(path)
             refs.append(path)
 
-    for app in materials.get("appearances", []):
-        _add(app.get("reference_image", ""))
-    loc = materials.get("location_state")
-    if loc:
-        _add(loc.get("reference_image", ""))
-    for ps in materials.get("prop_states", []):
-        _add(ps.get("reference_image", ""))
+    if nodes:
+        # Look up reference images from graph nodes via state IDs
+        materials = shot.get("prompt_materials", {})
+        for app in materials.get("appearances", []):
+            node = nodes.get(app.get("id", ""))
+            if node:
+                _add(node.get("reference_image") or "")
+        loc = materials.get("location_state")
+        if loc:
+            node = nodes.get(loc.get("id", ""))
+            if node:
+                _add(node.get("reference_image") or "")
+        for ps in materials.get("prop_states", []):
+            node = nodes.get(ps.get("id", ""))
+            if node:
+                _add(node.get("reference_image") or "")
+    else:
+        # Backward compat: read from prompt_materials directly
+        materials = shot.get("prompt_materials", {})
+        for app in materials.get("appearances", []):
+            _add(app.get("reference_image", ""))
+        loc = materials.get("location_state")
+        if loc:
+            _add(loc.get("reference_image", ""))
+        for ps in materials.get("prop_states", []):
+            _add(ps.get("reference_image", ""))
     return refs
 
 
@@ -236,6 +259,12 @@ def build_story_graph_view(
             style_prefix=ps.get("style_prefix", ""),
             negative_prefix=ps.get("negative_prefix", ""),
         ))
+
+    # --- Node index (id -> node) for reference_image lookups ---
+    _nodes: dict[str, Any] = {}
+    for _key in ("character_appearances", "location_states", "prop_states"):
+        for _n in data.get(_key, []):
+            _nodes[_n["id"]] = _n
 
     # --- Entity states ---
     entity_states = _build_entity_states(data)
@@ -312,6 +341,19 @@ def build_story_graph_view(
         char_ids = _extract_character_ids_for_event(event, appear_by_event, appear_entity)
         active_appear_ids = appear_by_event.get(eid, [])
 
+        # Blocking (spatial staging)
+        blocking_items: list[StoryGraphBlocking] = []
+        raw_blocking = event.get("blocking", {})
+        if isinstance(raw_blocking, dict):
+            for cid, bdata in raw_blocking.items():
+                if isinstance(bdata, dict):
+                    blocking_items.append(StoryGraphBlocking(
+                        character_id=cid,
+                        start=bdata.get("start", ""),
+                        action=bdata.get("action", ""),
+                        end=bdata.get("end", ""),
+                    ))
+
         # Audio states for this event (resolve speaker id -> name)
         event_audio: list[StoryGraphAudioState] = []
         for a in audio_by_event.get(eid, []):
@@ -339,7 +381,7 @@ def build_story_graph_view(
                 prompt = execution.get("prompt", "")
             else:
                 # Not yet executed — show available materials from inventory
-                ref_images = [_resolve_path(project_dir, p) for p in _collect_shot_reference_images(shot_entry) if p]
+                ref_images = [_resolve_path(project_dir, p) for p in _collect_shot_reference_images(shot_entry, nodes=_nodes) if p]
                 first_frame = ""
                 tail_frame = ""
                 if project_dir:
@@ -397,6 +439,7 @@ def build_story_graph_view(
             happens_at=event.get("happens_at", ""),
             character_ids=char_ids,
             active_appearance_ids=active_appear_ids,
+            blocking=blocking_items,
             minds=[],
             shots=shots,
             audio_states=event_audio,

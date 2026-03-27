@@ -100,6 +100,12 @@ class VideoEdit(CallableTool2[Params]):
         builder.write(f"Output: {params.output_path}\n")
         if stdout:
             builder.write(f"stdout: {stdout.decode(errors='replace')[:500]}\n")
+
+        # Probe output metadata so the agent can verify each step
+        out_meta = await self._probe_output_metadata(params.output_path)
+        if out_meta:
+            builder.write(f"Output metadata: {out_meta}\n")
+
         return builder.ok(message=f"Video edit ({params.operation}) completed.")
 
     def _build_ffmpeg_command(self, params: Params) -> list[str]:
@@ -206,30 +212,23 @@ class VideoEdit(CallableTool2[Params]):
             ]
         else:
             # No existing audio or replace mode: add audio track to video.
-            # Always use -shortest to prevent audio from extending video duration.
+            # Use apad to pad short audio with silence to match video duration,
+            # and -shortest to stop when the video ends (not when audio loops forever).
             delay_ms = int(params.audio_offset * 1000)
             if delay_ms > 0:
                 af = f"[1:a]adelay={delay_ms}|{delay_ms},apad[aout]"
-                return [
-                    "ffmpeg", "-y",
-                    "-i", video_input,
-                    *audio_input_args,
-                    "-filter_complex", af,
-                    "-map", "0:v:0", "-map", "[aout]",
-                    "-c:v", "copy", "-c:a", "aac",
-                    "-shortest",
-                    params.output_path,
-                ]
             else:
-                return [
-                    "ffmpeg", "-y",
-                    "-i", video_input,
-                    *audio_input_args,
-                    "-c:v", "copy", "-c:a", "aac",
-                    "-map", "0:v:0", "-map", "1:a:0",
-                    "-shortest",
-                    params.output_path,
-                ]
+                af = "[1:a]apad[aout]"
+            return [
+                "ffmpeg", "-y",
+                "-i", video_input,
+                *audio_input_args,
+                "-filter_complex", af,
+                "-map", "0:v:0", "-map", "[aout]",
+                "-c:v", "copy", "-c:a", "aac",
+                "-shortest",
+                params.output_path,
+            ]
 
     @staticmethod
     def _probe_has_audio(path: str) -> bool:
@@ -329,6 +328,40 @@ class VideoEdit(CallableTool2[Params]):
             "-c:a", "aac",
             params.output_path,
         ]
+
+    @staticmethod
+    async def _probe_output_metadata(path: str) -> str:
+        """Return a short summary of output file metadata for verification."""
+        import subprocess
+        parts = []
+        try:
+            r = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-show_entries", "format=duration,size",
+                 "-show_entries", "stream=width,height,codec_type",
+                 "-of", "json", path],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                import json as _json
+                info = _json.loads(r.stdout)
+                fmt = info.get("format", {})
+                if "duration" in fmt:
+                    parts.append(f"duration={float(fmt['duration']):.2f}s")
+                if "size" in fmt:
+                    size_mb = int(fmt["size"]) / (1024 * 1024)
+                    parts.append(f"size={size_mb:.1f}MB")
+                has_video = has_audio = False
+                for s in info.get("streams", []):
+                    ct = s.get("codec_type", "")
+                    if ct == "video":
+                        has_video = True
+                        parts.append(f"resolution={s.get('width','?')}x{s.get('height','?')}")
+                    elif ct == "audio":
+                        has_audio = True
+                parts.append(f"audio={'yes' if has_audio else 'no'}")
+        except Exception:
+            pass
+        return ", ".join(parts) if parts else ""
 
     @staticmethod
     def _probe_duration(path: str) -> float:

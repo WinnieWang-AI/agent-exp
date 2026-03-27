@@ -388,6 +388,71 @@ def _validate_timelines(data: dict[str, Any], ids: dict[str, set[str]]) -> list[
     return issues
 
 
+def _validate_blocking(data: dict[str, Any], ids: dict[str, set[str]]) -> list[str]:
+    """Check spatial continuity of blocking fields across events."""
+    issues: list[str] = []
+    events_by_id = {e["id"]: e for e in data.get("events", [])}
+
+    # Build topo-sorted event order
+    event_ids = ids["event"]
+    if not event_ids:
+        return issues
+
+    # Check that events have blocking
+    events_with_blocking = [e for e in data.get("events", []) if e.get("blocking")]
+    events_without_blocking = [e for e in data.get("events", []) if not e.get("blocking")]
+    if events_without_blocking and events_with_blocking:
+        missing = [e["id"] for e in events_without_blocking]
+        issues.append(
+            f'Some events have blocking but others do not: {sorted(missing)}. '
+            f'All events should have blocking for spatial continuity checking.'
+        )
+
+    if not events_with_blocking:
+        return issues
+
+    # Build continuous edges for spatial continuity checking
+    continuous_edges: list[tuple[str, str]] = []
+    for seq in data.get("event_sequence", []):
+        if seq.get("type") == "THEN" and seq.get("continuous", False):
+            f, t = seq.get("from", ""), seq.get("to", "")
+            if f in events_by_id and t in events_by_id:
+                continuous_edges.append((f, t))
+
+    # Check spatial continuity across continuous edges
+    for from_id, to_id in continuous_edges:
+        from_evt = events_by_id[from_id]
+        to_evt = events_by_id[to_id]
+        from_blocking = from_evt.get("blocking", {})
+        to_blocking = to_evt.get("blocking", {})
+
+        if not from_blocking or not to_blocking:
+            continue
+
+        # For each character present in both events, check end -> start continuity
+        shared_chars = set(from_blocking.keys()) & set(to_blocking.keys())
+        for char_id in shared_chars:
+            from_end = from_blocking[char_id].get("end", "")
+            to_start = to_blocking[char_id].get("start", "")
+            if not from_end or not to_start:
+                issues.append(
+                    f'{char_id} in continuous edge {from_id} -> {to_id}: '
+                    f'missing end or start in blocking.'
+                )
+
+    # Check that blocking references valid character IDs
+    char_ids = ids["character"]
+    for evt in data.get("events", []):
+        blocking = evt.get("blocking", {})
+        for char_id in blocking:
+            if char_id not in char_ids:
+                issues.append(
+                    f'event {evt["id"]}: blocking references unknown character {char_id}'
+                )
+
+    return issues
+
+
 def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[str, list[str]]:
     """Run all validations and return issues grouped by category."""
     ids = _collect_ids(data)
@@ -412,6 +477,10 @@ def validate_story_graph(data: dict[str, Any], project_dir: str = "") -> dict[st
     placeholder_issues = _validate_reference_image_placeholders(data, project_dir)
     if placeholder_issues:
         result["reference_image_placeholders"] = placeholder_issues
+
+    blocking_issues = _validate_blocking(data, ids)
+    if blocking_issues:
+        result["blocking"] = blocking_issues
 
     synopsis = data.get("synopsis")
     if not synopsis or not isinstance(synopsis, str) or len(synopsis.strip()) < 10:

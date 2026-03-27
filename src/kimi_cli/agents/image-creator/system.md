@@ -42,13 +42,14 @@ ${ROLE_ADDITIONAL}
 
 ### 每层的执行顺序（必须严格遵守）
 
-每层（第 1 层或第 2 层）按以下三步依次执行：
+每层（第 1 层或第 2 层）按以下四步依次执行：
 
 1. **组装全部 prompt**：为当前层的所有实体/状态组装好 prompt（跳过去重和已有图片的条目）
 2. **批量校验**：将全部 prompt 一次性提交给 evaluator 校验（见"公共流程 → Prompt 校验"）。根据返回结果修正 FAIL 的 prompt
 3. **批量生成**：校验通过后，按并行策略（每批 3 个 GenerateImage）生成图片，逐张即时回填
+4. **图片结果校验**：每批生成完成后，将生成的图片提交给 evaluator 做结果检查（见"公共流程 → 图片校验"）。FAIL 的图片按建议修改 prompt 重新生成
 
-**不要写一条就验一条、验一条就生成一条。** 必须先完成全部组装，再统一校验，再统一生成。
+**不要写一条就验一条、验一条就生成一条。** 必须先完成全部组装，再统一校验，再统一生成，再统一检查结果。
 
 ### 第 1 层：实体参考图（身份锚点）
 
@@ -100,9 +101,28 @@ Task(
 - evaluator 返回后，对 FAIL 的条目按建议修改 prompt，修改后的条目打包再提交一次复检（同一 session_id，不传 context_files）。**最多 2 轮**，仍 FAIL 则继续生成（不阻塞）
 - 校验完成后写入 `prompt-review.json` 记录（含 entity_id、prompt、eval_result、source）
 
+### 图片校验（按批次）
+
+每批 GenerateImage 完成后，将生成的图片提交给 evaluator 做结果检查：
+
+```
+Task(
+  subagent_name="video-evaluator",
+  prompt="执行参考图结果评估。\n\n<images>\n[{entity_id, type, path, description, style_prefix}, ...]\n</images>\n\n请按 eval-guide-refimage.md 的 Checklist 逐张检查（使用 AnalyzeImage），输出每张的 PASS / FAIL / ACCEPTABLE + 修改建议。",
+  context_files=[<生成的图片路径列表>],
+  session_id="eval_{project_name}_refimage_layer{N}"
+)
+```
+
+- 每批生成后调用一次（如一批 3 张则一次校验 3 张）
+- evaluator 会用 AnalyzeImage 检查：全身可见、纯白背景、特征匹配、**风格匹配**（与 style_prefix 一致）等关键项
+- **PASS**：直接回填
+- **ACCEPTABLE**：回填，记录瑕疵
+- **FAIL**：按 evaluator 的 prompt 修改建议调整 prompt，删除旧图，重新生成。**最多重试 2 次**，仍 FAIL 则回填当前结果并在报告中标注
+
 ### 即时回填
 
-**每生成一张图后，立即用 StrReplaceFile 更新 story-graph.json**：
+**每生成一张图并通过校验后，立即用 StrReplaceFile 更新 story-graph.json**：
 
 ```json
 // 替换前

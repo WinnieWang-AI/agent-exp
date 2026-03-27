@@ -18,7 +18,8 @@
 | 场景 | 生成方式 | 关键参数 |
 |---|---|---|
 | 同一镜头拆分延续 | `image_to_video` | `reference_image_path` = 前一 part 尾帧 |
-| 同场景同人物同机位连续 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
+| 叙事连续 + 机位不变 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
+| 叙事连续 + 机位改变 | 走 Step 3 判断 | 前一 shot 尾帧加入 `reference_images` |
 | 所有角色开头可见 + 动作小 | `image_to_video` | `reference_image_path` = 生成的首帧图 |
 | 有角色中途出场 / 大幅运动 | `reference_to_video` | `reference_images` = 角色参考图 |
 | 无参考图 | `text_to_video` | 仅 prompt |
@@ -44,20 +45,18 @@
 
 当前 shot 是同一镜头因时长超限被拆分的后续部分。从 `prev_shot.output_path` 提取尾帧，用 `image_to_video`。→ **跳到 Step 4**。
 
-### 2b. 同场景序列接续（`prev_shot_in_sequence` 存在）
+### 2b. 叙事连续接续（`prev_shot_in_sequence` 存在）
 
-Linearizer 预计算的接续：同场景 + 同人物（子集）+ 同机位。从 `prev_shot_in_sequence.output_path` 提取尾帧，用 `image_to_video`。→ **跳到 Step 4**。
+Screenwriter 标注了这两个事件在叙事时间和空间上连续（`continuous: true`）。从 `prev_shot_in_sequence.output_path` 提取尾帧。然后**根据机位变化选择策略**：
 
-### 2c. 跨场景衔接（时间连续 + 有共同角色或空间连续性）
+- **机位不变**（shot_type 和 angle 都相同）：用尾帧做 `image_to_video` 的 `reference_image_path`。→ **跳到 Step 4**。
+- **机位改变**（shot_type 或 angle 不同）：把尾帧加入 `reference_images`（参考用，不做主图），→ **继续走 Step 3** 判断生成方式。这保证叙事连贯的同时，不会让旧构图锁死新镜头的视角。
 
-未命中 2a/2b 时，查看 shot-plan 中紧邻的前一个 shot。如果满足以下**全部条件**：
+### 2c. 跨场景衔接（无 `prev_shot_in_sequence`，但有空间连续性）
 
-1. 时间上连续发生（不是时间跳跃、回忆、闪回）
-2. 有共同角色，或场景有空间连续性（如森林出口 → 小屋门口）
+未命中 2a/2b 时，查看 shot-plan 中紧邻的前一个 shot。如果场景有空间连续性（如森林出口 → 小屋门口、角色跨场景移动），则将前一 shot 的尾帧加入 `reference_images`（不是 `reference_image_path`，不改变生成模式）。尾帧占一个名额（上限 4 张），优先保角色参考图。
 
-则将前一 shot 的尾帧加入 `reference_images`（不是 `reference_image_path`，不改变生成模式）。尾帧占一个名额（上限 4 张），优先保角色参考图。
-
-**不用的情况**：时间跳跃（白天→夜晚）、无共同角色的跳切、闪回。
+**不用的情况**：无共同角色的跳切、闪回、完全无关的场景切换。
 
 → **继续走 Step 3**。
 
@@ -91,8 +90,9 @@ Linearizer 预计算的接续：同场景 + 同人物（子集）+ 同机位。�
 
 ### 参考图选择
 
-- `focus_on` 中每个角色 → 用其 appearance state 的 `reference_image`
-- 场景参考图 → 场景氛围对画面重要时传入
+参考图路径不在 shot-plan 中，需要从 **story-graph.json** 按 state ID 查找：
+- `focus_on` 中每个 appearance state ID → 在 story-graph 的 `character_appearances` 中找到对应节点的 `reference_image`
+- 场景参考图 → `prompt_materials.location_state.id` → 在 `location_states` 中找 `reference_image`
 - Step 2c 的尾帧参考 → 如果决定使用
 - 上限 4 张，超出时优先保角色
 

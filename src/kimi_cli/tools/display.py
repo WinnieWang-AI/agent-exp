@@ -122,6 +122,14 @@ class StoryGraphOutput(BaseModel):
     label: str = ""
 
 
+class StoryGraphBlocking(BaseModel):
+    """Per-character spatial blocking within an event."""
+    character_id: str
+    start: str = ""
+    action: str = ""
+    end: str = ""
+
+
 class StoryGraphEvent(BaseModel):
     id: str
     name: str = ""
@@ -129,6 +137,7 @@ class StoryGraphEvent(BaseModel):
     happens_at: str = ""
     character_ids: list[str] = []
     active_appearance_ids: list[str] = []
+    blocking: list[StoryGraphBlocking] = []
     minds: list[StoryGraphMind] = []
     shots: list[StoryGraphShot] = []
     audio_states: list[StoryGraphAudioState] = []

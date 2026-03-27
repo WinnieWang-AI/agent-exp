@@ -18,7 +18,8 @@
 | 场景 | 生成方式 | 关键参数 |
 |---|---|---|
 | `is_continuation: true` | `image_to_video` | `reference_image_path` = 前一 part 尾帧 |
-| `prev_shot_in_sequence` 存在 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
+| `prev_shot_in_sequence` 存在 + 机位不变 | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
+| `prev_shot_in_sequence` 存在 + 机位改变 | 走 Step 3 判断 | 前一 shot 尾帧加入 `reference_images` |
 | 所有角色首帧可见 + 需要构图控制 | `image_to_video` | `reference_image_path` = 生成的首帧图，可附加 `reference_images` |
 | 有角色首帧不可见 / 运动为主 | `reference_to_video` | `reference_images` = 角色参考图列表 |
 | 无参考图可用 | `text_to_video` | 仅 prompt |
@@ -47,24 +48,25 @@
 
 当前 shot 是同一镜头因时长超限被拆分的后续部分。从 `prev_shot.output_path` 提取尾帧，用 `image_to_video`。
 
-#### 2b. 跨 Shot 序列接续
+#### 2b. 叙事连续接续
 
 **条件**：`prev_shot_in_sequence` 不为 null
 
-Linearizer 预计算的接续：同场景 + 同人物（子集） + 同机位。从 `prev_shot_in_sequence.output_path` 提取尾帧，用 `image_to_video`。
+Screenwriter 标注了这两个事件在叙事时间和空间上连续（`continuous: true`）。从 `prev_shot_in_sequence.output_path` 提取尾帧，然后根据机位变化选择策略：
 
-#### 2c. 尾帧参考（跨场景角色衔接）
+- **机位不变**（当前 shot 的 shot_type 和 angle 与前一 shot 相同）：用尾帧做 `image_to_video` 的 `reference_image_path`。→ 跳到 Step 4。
+- **机位改变**（shot_type 或 angle 不同）：把尾帧加入 `reference_images`（参考用，不做主图），继续走 Step 3 判断生成方式。
 
-**条件**：未命中 2a/2b，且与 shot-plan 中紧邻的前一个 shot 有共同角色。
+#### 2c. 尾帧参考（跨场景空间衔接）
+
+**条件**：未命中 2a/2b，且场景有空间连续性（如角色跨场景移动：森林出口 → 小屋门口）。
 
 这不是强制接续，而是**可选的参考图补充**。将前一 shot 的尾帧加入 `reference_images`（不是 `reference_image_path`，不改变生成模式），继续走 Step 3-4。
 
-**判断标准：尾帧中的场景上下文对新 shot 是否有害。**
-
 | 用 | 不用 |
 |---|------|
-| 角色跨场景移动（森林→小屋） | 时间跳跃（白天→夜晚） |
-| 同场景换机位（wide→close-up） | 无共同角色的跳切 |
+| 角色跨场景移动（森林→小屋） | 无共同角色的跳切 |
+| 场景有物理连续性（门内→门外） | 闪回、完全无关的场景切换 |
 
 用时：尾帧占 `reference_images` 一个名额（上限 4 张），优先保角色参考图。当前 shot 必须等前一 shot 完成。
 
@@ -85,8 +87,8 @@ Linearizer 预计算的接续：同场景 + 同人物（子集） + 同机位。
 
 ### Step 4: 选择参考图
 
-- `focus_on` 中每个角色 → 用其 appearance state 的 `reference_image`
-- 环境参考图 → 场景氛围重要时传入
+- `focus_on` 中每个 appearance state ID → 从 story-graph.json 的 `character_appearances` 中查找对应节点的 `reference_image`
+- 环境参考图 → 从 story-graph.json 的 `location_states` 中按 ID 查找 `reference_image`
 - 上限 4 张，超出时优先保角色
 
 ---

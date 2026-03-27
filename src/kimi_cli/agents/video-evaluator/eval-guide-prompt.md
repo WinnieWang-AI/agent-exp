@@ -56,6 +56,7 @@
 | **翻译准确** | 中文描述到英文 prompt 的翻译语义正确 | "清秀端静"翻译为 "sexy and bold" |
 | **无语义矛盾** | prompt 各部分之间不矛盾 | 同时写了 "elderly woman" 和 "youthful skin" |
 | **类型匹配** | Character 有全身/白背景/居中，Location 无人物，Prop 白底特写 | Character prompt 缺少 "Full-body standing figure on plain white background" |
+| **风格兼容** | prompt 中的外观描述与 style_prefix 指定的风格能协同工作，生成模型不会因两者冲突而产出风格错乱的画面 | style_prefix 要求 photorealistic 但 prompt 用拟人化词汇描述动物；style_prefix 要求水墨画但 prompt 描述了 3D 渲染质感 |
 
 ### 3. 规范合规
 

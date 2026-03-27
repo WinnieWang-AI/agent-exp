@@ -106,7 +106,7 @@ class _GraphIndex:
             self.active_states[map_name] = dict(rev)
 
         # event_sequence edges
-        self.event_sequence: list[dict[str, str]] = data.get("event_sequence", [])
+        self.event_sequence: list[dict[str, Any]] = data.get("event_sequence", [])
 
     # --- convenience accessors ---
 
@@ -245,15 +245,15 @@ def _extract_prompt_materials(
 ) -> dict[str, Any]:
     """Extract all prompt-relevant information for an event from the graph.
 
-    Each state node includes its own ``reference_image`` so the agent can
-    decide which images to use without additional lookups.
+    Reference images are NOT included — they live in story-graph.json and
+    are looked up at generation time by the video-creator via state IDs.
     """
     event_id = event["id"]
 
     # Read style from ProductionStyle nodes in the graph
     effective_style = g.get_style_for_event(event_id)
 
-    # Active appearances — with reference images
+    # Active appearances
     appearances = []
     for a in g.get_active("appearance_active_during", event_id):
         appearances.append({
@@ -261,10 +261,9 @@ def _extract_prompt_materials(
             "entity": a.get("entity", ""),
             "phase": a.get("phase", ""),
             "visual": a.get("visual", {}),
-            "reference_image": a.get("reference_image") or "",
         })
 
-    # Location state — with reference image
+    # Location state
     location_state = None
     for ls in g.get_active("location_active_during", event_id):
         location_state = {
@@ -272,11 +271,10 @@ def _extract_prompt_materials(
             "entity": ls.get("entity", ""),
             "phase": ls.get("phase", ""),
             "appearance": ls.get("appearance", {}),
-            "reference_image": ls.get("reference_image") or "",
         }
         break  # typically one location state per event
 
-    # Prop states — with reference images
+    # Prop states
     prop_states = []
     for ps in g.get_active("prop_active_during", event_id):
         prop_states.append({
@@ -284,7 +282,6 @@ def _extract_prompt_materials(
             "entity": ps.get("entity", ""),
             "phase": ps.get("phase", ""),
             "appearance": ps.get("appearance", {}),
-            "reference_image": ps.get("reference_image") or "",
         })
 
     # Audio states
@@ -365,33 +362,11 @@ def _get_focus_characters(shot: dict[str, Any]) -> set[str]:
 def _is_sequence_eligible(current: dict[str, Any], prev: dict[str, Any]) -> bool:
     """Check if current shot can use tail-frame continuity from prev shot.
 
-    Three conditions must all be met:
-    1. Same location
-    2. Current shot's focus characters are a subset of prev shot's (no new faces)
-    3. Same shot_type and angle
+    Now simply delegates to the ``continuous`` flag on the event_sequence
+    edge (set by the screenwriter).  Falls back to ``False`` when the flag
+    is absent for backward compatibility.
     """
-    curr_mat = current.get("prompt_materials", {})
-    prev_mat = prev.get("prompt_materials", {})
-
-    # Same location
-    curr_loc = curr_mat.get("happens_at", "")
-    prev_loc = prev_mat.get("happens_at", "")
-    if not curr_loc or curr_loc != prev_loc:
-        return False
-
-    # Characters: current must be subset of prev (no new characters in frame)
-    curr_chars = _get_focus_characters(current)
-    prev_chars = _get_focus_characters(prev)
-    if not curr_chars or not curr_chars.issubset(prev_chars):
-        return False
-
-    # Same shot_type and angle
-    if current.get("shot_type") != prev.get("shot_type"):
-        return False
-    if current.get("angle") != prev.get("angle"):
-        return False
-
-    return True
+    return bool(current.get("_continuous"))
 
 
 def _add_sequence_continuity(shots: list[dict[str, Any]], g: _GraphIndex) -> None:
@@ -401,11 +376,11 @@ def _add_sequence_continuity(shots: list[dict[str, Any]], g: _GraphIndex) -> Non
     THEN-predecessor event is eligible for tail-frame handoff.
     If so, set ``prev_shot_in_sequence``.
     """
-    # Build THEN predecessor map: to_event -> from_event
-    then_pred: dict[str, str] = {}
+    # Build THEN predecessor map: to_event -> (from_event, continuous)
+    then_pred: dict[str, tuple[str, bool]] = {}
     for e in g.event_sequence:
         if e.get("type") == "THEN":
-            then_pred[e["to"]] = e["from"]
+            then_pred[e["to"]] = (e["from"], bool(e.get("continuous", False)))
 
     # Index: first and last shot index per event
     first_shot_of_event: dict[str, int] = {}
@@ -430,15 +405,19 @@ def _add_sequence_continuity(shots: list[dict[str, Any]], g: _GraphIndex) -> Non
             continue
 
         # Find THEN predecessor event
-        pred_eid = then_pred.get(eid)
-        if not pred_eid:
+        pred_entry = then_pred.get(eid)
+        if not pred_entry:
             continue
 
+        pred_eid, continuous = pred_entry
         pred_idx = last_shot_of_event.get(pred_eid)
         if pred_idx is None:
             continue
 
         prev_shot = shots[pred_idx]
+
+        # Propagate the continuous flag so _is_sequence_eligible can read it
+        shot["_continuous"] = continuous
 
         if _is_sequence_eligible(shot, prev_shot):
             shot["prev_shot_in_sequence"] = {
@@ -494,12 +473,6 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
             duration = _parse_duration(cam_shot.get("duration"), default=5.0)
 
             focus_on = cam_shot.get("focus_on", [])
-
-            # Warn about missing reference images
-            for sid in focus_on:
-                node = g.nodes.get(sid)
-                if node and not node.get("reference_image") and not sid.startswith("mind_"):
-                    warnings.append(f"{shot_id}: focus_on '{sid}' has no reference_image")
 
             base_entry = {
                 "event_id": event_id,
@@ -557,6 +530,10 @@ def linearize(data: dict[str, Any]) -> dict[str, Any]:
     # Compute cross-shot sequence continuity
     _add_sequence_continuity(shots, g)
 
+    # Clean up internal fields
+    for shot in shots:
+        shot.pop("_continuous", None)
+
     plan = {
         "shots": shots,
         "parallel_groups": parallel_groups,
@@ -608,21 +585,7 @@ class LinearizeStoryGraph(CallableTool2[Params]):
         n_warnings = len(plan["warnings"])
         n_parallel = len(plan["parallel_groups"])
 
-        # Reference image coverage
-        n_shots_with_refs = 0
-        n_total_refs = 0
-        for s in plan["shots"]:
-            pm = s["prompt_materials"]
-            refs = [a for a in pm.get("appearances", []) if a.get("reference_image")]
-            if pm.get("location_state") and pm["location_state"].get("reference_image"):
-                refs.append(pm["location_state"])
-            refs.extend(p for p in pm.get("prop_states", []) if p.get("reference_image"))
-            if refs:
-                n_shots_with_refs += 1
-            n_total_refs += len(refs)
-
         builder.write(f"Shot plan generated: {n_shots} shots\n\n")
-        builder.write(f"Reference image coverage: {n_shots_with_refs}/{n_shots} shots have reference images ({n_total_refs} total)\n")
         if n_parallel:
             builder.write(f"\nParallel groups: {n_parallel}\n")
             for pg in plan["parallel_groups"]:

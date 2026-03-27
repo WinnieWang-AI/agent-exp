@@ -73,15 +73,39 @@ ManageVideoProject(
 
 向用户展示镜头与音频设计摘要（镜头总数、音频层次），确认后进入 Step 1.8。
 
-### Step 1.8: Generate Reference Images
+### Step 1.8: Generate Shot Plan + Reference Images
 
-调用 image-creator 生成参考图。image-creator 内部会按层批量调用 evaluator 进行 prompt 语义校验（每层一次，生成前），Director 不需要手动编排校验流程。图片质量评估（VLM 看图）不自动执行，由用户查看后主动发起。
+同时启动 shot plan 生成和参考图生成。Shot plan 不依赖参考图，可以并行。image-creator 内部会按层批量调用 evaluator 进行 prompt 语义校验（每层一次，生成前），Director 不需要手动编排校验流程。图片质量评估（VLM 看图）不自动执行，由用户查看后主动发起。
 
-#### Step 1.8a: 第 1 层 — 实体图
+#### Step 1.8a: Shot Plan + 第 1 层实体图（并行）
 
-调用 image-creator（session_id=`create_image_{project_name}`），执行第 1 层（实体参考图）。image-creator 会自动完成：组装全部 prompt → 批量调 evaluator 校验 → 生成图片。
+Shot plan 生成不依赖参考图，**必须与第 1 层实体参考图在同一次 response 中并行发起**：
 
-完成后向用户展示生成结果摘要（各类实体图数量与相对项目路径或缩略名），等用户确认后进入 Step 1.8b。**不展示绝对路径、session ID、工具名等内部细节。** 如果用户对某些图片不满意，按其反馈调用 image-creator 重新生成指定图片。
+```
+# 在同一次 response 中同时发起这两个 Task 调用：
+
+Task(
+  subagent_name="video-creator",
+  session_id="create_{project_name}",
+  prompt="仅生成 shot plan（Step 1），不要生成视频。",
+  context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
+)
+
+Task(
+  subagent_name="image-creator",
+  session_id="create_image_{project_name}",
+  prompt="执行第 1 层实体参考图生成",
+  context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
+)
+```
+
+**部分失败处理**：如果其中一个 Task 失败而另一个成功，只需对失败的 subagent 重试（使用相同 session_id，不传 context_files），不需要重新执行已成功的部分。
+
+两个 Task 完成后，分别向用户展示：
+- **Shot plan 摘要**（镜头数量、时长分配）——仅告知，无需用户确认（这是从 camera_directives 的确定性展开，用户已在 Step 1.6 确认过镜头设计）
+- **实体参考图生成结果摘要**（各类实体图数量与相对项目路径或缩略名）——需要用户确认
+
+等用户确认实体参考图后进入 Step 1.8b。**不展示绝对路径、session ID、工具名等内部细节。** 如果用户对某些图片不满意，按其反馈调用 image-creator 重新生成指定图片（shot plan 不受影响，无需重新生成）。
 
 #### Step 1.8b: 第 2 层 — 状态图
 
@@ -93,7 +117,7 @@ ManageVideoProject(
 
 **前置检查**：根据 Step 1.8 中 image-creator 返回的参考图生成结果确认所有实体和状态的参考图已就绪。如果 image-creator 报告有未生成的参考图，先回到 Step 1.8 补齐。**不要自己读取 story-graph.json 或 shot-plan.json**——这些文件很大，会撑爆上下文。所有需要的信息都应从 subagent 返回的摘要中获取。
 
-**告知用户规模**：根据 Step 1.6 中 screenwriter 返回的镜头数量告知用户（如"共 12 个镜头，开始生成视频……"）。
+**告知用户规模**：根据 Step 1.8a 中 video-creator 返回的镜头数量告知用户（如"共 12 个镜头，开始生成视频……"）。
 
 #### Step 2a + 2b: 视频生成与音频生成（并行）
 
@@ -101,12 +125,12 @@ ManageVideoProject(
 
 ```
 # 在同一次 response 中同时发起这两个 Task 调用：
+# 注意：video-creator 在 Step 1.8a 已有 session 和 shot plan，不再传 context_files
 
 Task(
   subagent_name="video-creator",
   session_id="create_{project_name}",
-  prompt="生成视频",
-  context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
+  prompt="shot plan 已就绪，直接从 Step 2 开始逐 shot 生成视频。"
 )
 
 Task(
@@ -117,7 +141,7 @@ Task(
 )
 ```
 
-- **视频**：调用 video-creator，生成 shot plan + 逐 shot 生成视频。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 video-creator 根据 shot-guide.md 自主决策的，director 不应干预。
+- **视频**：调用 video-creator，逐 shot 生成视频。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 video-creator 根据 shot-guide.md 自主决策的，director 不应干预。Shot plan 已在 Step 1.8a 生成。
 - **音频**：调用 audio-creator，生成 BGM + 对白/旁白。audio-creator 从 story-graph.json 读取 audio_states 和 video_info。
 
 两个 Task 会并行执行。**当两者都完成后**进入 Step 2c。
@@ -167,8 +191,8 @@ ManageVideoProject(
 |---------|--------|------|
 | 角色外形（`fixed_traits`）、新增/删除角色、场景外观 | **Step 1.8a** | 实体参考图失效，需重新生成 |
 | 角色状态的服装/造型/环境氛围（`visual`/`appearance`） | **Step 1.8b** | 状态参考图失效 |
-| 镜头设计、音频设计、事件增删/重排 | **Step 1.6** | 镜头和音频需重新设计，参考图不受影响 |
-| 仅对白文字、关系描述、时间线标签 | **Step 2** | 参考图和镜头不受影响，直接重新生成 |
+| 镜头设计、音频设计、事件增删/重排 | **Step 1.6** | 镜头和音频需重新设计，shot plan 和参考图也需重新生成 |
+| 仅对白文字、关系描述、时间线标签 | **Step 2** | 参考图和 shot plan 不受影响，直接重新生成视频 |
 
 如果修改同时涉及多个类别，回退到**最上游**的步骤。用户满意后再继续后续步骤。
 
