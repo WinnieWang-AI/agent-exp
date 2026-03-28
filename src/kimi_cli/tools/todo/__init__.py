@@ -11,6 +11,7 @@ from kimi_cli.tools.utils import load_desc
 class Todo(BaseModel):
     title: str = Field(description="The title of the todo", min_length=1)
     status: Literal["pending", "in_progress", "done"] = Field(description="The status of the todo")
+    description: str = Field(default="", description="Detailed description: root cause, evidence, suggested fix")
 
 
 class Params(BaseModel):
@@ -24,7 +25,7 @@ class SetTodoList(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        items = [TodoDisplayItem(title=todo.title, status=todo.status) for todo in params.todos]
+        items = [TodoDisplayItem(title=todo.title, status=todo.status, description=todo.description) for todo in params.todos]
         return ToolReturnValue(
             is_error=False,
             output="",

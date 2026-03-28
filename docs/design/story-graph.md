@@ -289,7 +289,7 @@ Story Graph 用图结构替代线性列表，以 **Event（事件）** 为中心
       "angle": "eye_level",
       "movement": "static",
       "focus_on": ["appear_red_neat"],
-      "intent": "小红帽停下脚步，感觉有什么在看她"
+      "content": "小红帽停下脚步，感觉有什么在看她"
     },
     {
       "order": 2,
@@ -297,7 +297,7 @@ Story Graph 用图结构替代线性列表，以 **Event（事件）** 为中心
       "angle": "low_angle",
       "movement": "slow_push_in",
       "focus_on": ["appear_wolf_natural"],
-      "intent": "狼从阴影中走出，仰拍让它看起来更大"
+      "content": "狼从阴影中走出，仰拍让它看起来更大"
     }
   ]
 }
@@ -312,7 +312,7 @@ Story Graph 用图结构替代线性列表，以 **Event（事件）** 为中心
 | `shots[].angle` | string | 角度 |
 | `shots[].movement` | string | 运镜 |
 | `shots[].focus_on` | list<state_id> | 镜头聚焦的实体状态 |
-| `shots[].intent` | string | 这个镜头要传达什么（给 LLM 和人类看） |
+| `shots[].content` | string | 该 shot 的画面内容与空间布局 |
 
 **镜头语言词汇表：**
 
@@ -1100,77 +1100,77 @@ evt_farewell -> evt_forest_walk -> evt_wolf_encounter -+-> evt_red_picks_flowers
   "camera_directives": [
     {"id": "cam_farewell", "for_event": "evt_farewell", "shots": [
       {"order": 1, "shot_type": "wide", "angle": "eye_level", "movement": "static",
-       "focus_on": ["lstate_home_morning"], "intent": "建立画面：晨光中的小木屋"},
+       "focus_on": ["lstate_home_morning"], "content": "建立画面：晨光中的小木屋"},
       {"order": 2, "shot_type": "medium", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_mother_home", "appear_red_neat"], "intent": "母女告别，妈妈递篮子"},
+       "focus_on": ["appear_mother_home", "appear_red_neat"], "content": "母女告别，妈妈递篮子"},
       {"order": 3, "shot_type": "medium", "angle": "low_angle", "movement": "slow_pull_out",
-       "focus_on": ["appear_red_neat"], "intent": "小红帽转身出发，渐渐变成风景中的小红点"}
+       "focus_on": ["appear_red_neat"], "content": "小红帽转身出发，渐渐变成风景中的小红点"}
     ]},
 
     {"id": "cam_forest_walk", "for_event": "evt_forest_walk", "shots": [
       {"order": 1, "shot_type": "extreme_wide", "angle": "high_angle", "movement": "crane_down",
-       "focus_on": ["lstate_forest_bright", "appear_red_neat"], "intent": "俯瞰：森林中的小路，一个红色小点"},
+       "focus_on": ["lstate_forest_bright", "appear_red_neat"], "content": "俯瞰：森林中的小路，一个红色小点"},
       {"order": 2, "shot_type": "medium", "angle": "eye_level", "movement": "tracking",
-       "focus_on": ["appear_red_neat"], "intent": "跟拍小红帽，阳光斑驳，蝴蝶飞过"}
+       "focus_on": ["appear_red_neat"], "content": "跟拍小红帽，阳光斑驳，蝴蝶飞过"}
     ]},
 
     {"id": "cam_wolf_encounter", "for_event": "evt_wolf_encounter", "shots": [
       {"order": 1, "shot_type": "medium", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_red_neat"], "intent": "小红帽停步，感觉有什么在看她"},
+       "focus_on": ["appear_red_neat"], "content": "小红帽停步，感觉有什么在看她"},
       {"order": 2, "shot_type": "close_up", "angle": "low_angle", "movement": "slow_push_in",
-       "focus_on": ["appear_wolf_natural"], "intent": "狼从阴影现身，仰拍显得更大"},
+       "focus_on": ["appear_wolf_natural"], "content": "狼从阴影现身，仰拍显得更大"},
       {"order": 3, "shot_type": "over_shoulder", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_red_neat", "appear_wolf_natural"], "intent": "从小红帽身后看狼"},
+       "focus_on": ["appear_red_neat", "appear_wolf_natural"], "content": "从小红帽身后看狼"},
       {"order": 4, "shot_type": "detail_insert", "angle": "close_up", "movement": "static",
-       "focus_on": ["appear_wolf_natural"], "intent": "特写：狼的爪子微微抓紧"}
+       "focus_on": ["appear_wolf_natural"], "content": "特写：狼的爪子微微抓紧"}
     ]},
 
     {"id": "cam_parallel", "for_event": ["evt_red_picks_flowers", "evt_wolf_runs_ahead"], "shots": [
       {"order": 1, "shot_type": "medium", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_red_neat", "lstate_forest_deep"], "intent": "小红帽蹲下采花"},
+       "focus_on": ["appear_red_neat", "lstate_forest_deep"], "content": "小红帽蹲下采花"},
       {"order": 2, "shot_type": "wide", "angle": "low_angle", "movement": "fast_tracking",
-       "focus_on": ["appear_wolf_natural"], "intent": "[切] 狼飞奔穿过黑暗林间"},
+       "focus_on": ["appear_wolf_natural"], "content": "[切] 狼飞奔穿过黑暗林间"},
       {"order": 3, "shot_type": "close_up", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_red_neat"], "intent": "[切回] 小红帽闻花微笑"},
+       "focus_on": ["appear_red_neat"], "content": "[切回] 小红帽闻花微笑"},
       {"order": 4, "shot_type": "medium", "angle": "eye_level", "movement": "push_in",
-       "focus_on": ["appear_wolf_natural", "loc_grandma_house"], "intent": "[切] 狼到达外婆家门前"}
+       "focus_on": ["appear_wolf_natural", "loc_grandma_house"], "content": "[切] 狼到达外婆家门前"}
     ]},
 
     {"id": "cam_dialogue", "for_event": "evt_dialogue", "shots": [
       {"order": 1, "shot_type": "medium", "angle": "eye_level", "movement": "slow_push_in",
-       "focus_on": ["appear_red_neat", "appear_wolf_disguised"], "intent": "对话全景，每问一句推近一点"},
+       "focus_on": ["appear_red_neat", "appear_wolf_disguised"], "content": "对话全景，每问一句推近一点"},
       {"order": 2, "shot_type": "extreme_close", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_wolf_disguised"], "intent": "极近特写：大眼睛"},
+       "focus_on": ["appear_wolf_disguised"], "content": "极近特写：大眼睛"},
       {"order": 3, "shot_type": "extreme_close", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_wolf_disguised"], "intent": "极近特写：大耳朵"},
+       "focus_on": ["appear_wolf_disguised"], "content": "极近特写：大耳朵"},
       {"order": 4, "shot_type": "extreme_close", "angle": "low_angle", "movement": "slow_push_in",
-       "focus_on": ["appear_wolf_disguised"], "intent": "极近特写：大嘴巴"},
+       "focus_on": ["appear_wolf_disguised"], "content": "极近特写：大嘴巴"},
       {"order": 5, "shot_type": "close_up", "angle": "high_angle", "movement": "static",
-       "focus_on": ["appear_red_neat"], "intent": "小红帽的脸：困惑变为恐惧"}
+       "focus_on": ["appear_red_neat"], "content": "小红帽的脸：困惑变为恐惧"}
     ]},
 
     {"id": "cam_wolf_attack", "for_event": "evt_wolf_eats_red", "shots": [
       {"order": 1, "shot_type": "wide", "angle": "dutch_angle", "movement": "handheld_shake",
-       "focus_on": ["appear_wolf_exposed", "appear_red_neat"], "intent": "狼弹起，倾斜构图"},
+       "focus_on": ["appear_wolf_exposed", "appear_red_neat"], "content": "狼弹起，倾斜构图"},
       {"order": 2, "shot_type": "detail_insert", "angle": "eye_level", "movement": "static",
-       "focus_on": ["pstate_basket_spilled", "pstate_gclothes_torn"], "intent": "篮子掉地、衣物碎片"}
+       "focus_on": ["pstate_basket_spilled", "pstate_gclothes_torn"], "content": "篮子掉地、衣物碎片"}
     ]},
 
     {"id": "cam_rescue", "for_event": ["evt_hunter_arrives", "evt_rescue"], "shots": [
       {"order": 1, "shot_type": "medium", "angle": "low_angle", "movement": "push_in",
-       "focus_on": ["appear_hunter_gear"], "intent": "仰拍猎人踹门"},
+       "focus_on": ["appear_hunter_gear"], "content": "仰拍猎人踹门"},
       {"order": 2, "shot_type": "detail_insert", "angle": "close_up", "movement": "static",
-       "focus_on": ["prop_axe"], "intent": "斧头举起特写"},
+       "focus_on": ["prop_axe"], "content": "斧头举起特写"},
       {"order": 3, "shot_type": "medium", "angle": "eye_level", "movement": "static",
-       "focus_on": ["appear_red_disheveled", "appear_grandma_disheveled"], "intent": "祖孙被救出，相拥"}
+       "focus_on": ["appear_red_disheveled", "appear_grandma_disheveled"], "content": "祖孙被救出，相拥"}
     ]},
 
     {"id": "cam_reunion", "for_event": "evt_reunion", "shots": [
       {"order": 1, "shot_type": "medium", "angle": "eye_level", "movement": "slow_360_orbit",
        "focus_on": ["appear_red_disheveled", "appear_grandma_disheveled", "appear_hunter_gear", "pstate_basket_open", "lstate_ghouse_restored"],
-       "intent": "环绕三人围坐吃东西"},
+       "content": "环绕三人围坐吃东西"},
       {"order": 2, "shot_type": "extreme_wide", "angle": "high_angle", "movement": "slow_pull_out",
-       "focus_on": ["loc_grandma_house"], "intent": "最终镜头：缓缓拉远，炊烟升起"}
+       "focus_on": ["loc_grandma_house"], "content": "最终镜头：缓缓拉远，炊烟升起"}
     ]}
   ]
 }

@@ -6,6 +6,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from kimi_cli.tools.story_graph.resolve import resolve_reference_image
+
 from kimi_cli.tools.display import (
     StoryGraphAudioState,
     StoryGraphBlocking,
@@ -104,7 +106,10 @@ def _build_entity_states(data: dict[str, Any], project_dir: str) -> dict[str, li
         states[a.get("entity", "")].append(StoryGraphState(
             id=a["id"],
             phase=a.get("phase", ""),
-            reference_image=_resolve_path(project_dir, a.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                a["id"], a.get("entity", ""), project_dir,
+                a.get("reference_image") or "",
+            ),
             description=_summarize_visual(a.get("visual")),
             generation_prompt=a.get("generation_prompt") or "",
         ))
@@ -112,7 +117,10 @@ def _build_entity_states(data: dict[str, Any], project_dir: str) -> dict[str, li
         states[ls.get("entity", "")].append(StoryGraphState(
             id=ls["id"],
             phase=ls.get("phase", ""),
-            reference_image=_resolve_path(project_dir, ls.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                ls["id"], ls.get("entity", ""), project_dir,
+                ls.get("reference_image") or "",
+            ),
             description=_summarize_visual(ls.get("appearance")),
             generation_prompt=ls.get("generation_prompt") or "",
         ))
@@ -120,7 +128,10 @@ def _build_entity_states(data: dict[str, Any], project_dir: str) -> dict[str, li
         states[ps.get("entity", "")].append(StoryGraphState(
             id=ps["id"],
             phase=ps.get("phase", ""),
-            reference_image=_resolve_path(project_dir, ps.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                ps["id"], ps.get("entity", ""), project_dir,
+                ps.get("reference_image") or "",
+            ),
             description=_summarize_visual(ps.get("appearance")),
             generation_prompt=ps.get("generation_prompt") or "",
         ))
@@ -198,7 +209,11 @@ def _build_outputs(project_dir: str) -> list[StoryGraphOutput]:
     return outputs
 
 
-def _collect_shot_reference_images(shot: dict[str, Any], nodes: dict[str, Any] | None = None) -> list[str]:
+def _collect_shot_reference_images(
+    shot: dict[str, Any],
+    nodes: dict[str, Any] | None = None,
+    project_dir: str = "",
+) -> list[str]:
     """Collect reference images for a shot by looking up state IDs in the graph.
 
     Uses ``focus_on`` state IDs + prompt_materials state IDs to find
@@ -222,16 +237,25 @@ def _collect_shot_reference_images(shot: dict[str, Any], nodes: dict[str, Any] |
         for app in materials.get("appearances", []):
             node = nodes.get(app.get("id", ""))
             if node:
-                _add(node.get("reference_image") or "")
+                _add(resolve_reference_image(
+                    node["id"], node.get("entity", ""), project_dir,
+                    node.get("reference_image") or "",
+                ))
         loc = materials.get("location_state")
         if loc:
             node = nodes.get(loc.get("id", ""))
             if node:
-                _add(node.get("reference_image") or "")
+                _add(resolve_reference_image(
+                    node["id"], node.get("entity", ""), project_dir,
+                    node.get("reference_image") or "",
+                ))
         for ps in materials.get("prop_states", []):
             node = nodes.get(ps.get("id", ""))
             if node:
-                _add(node.get("reference_image") or "")
+                _add(resolve_reference_image(
+                    node["id"], node.get("entity", ""), project_dir,
+                    node.get("reference_image") or "",
+                ))
     else:
         # Backward compat: read from prompt_materials directly
         materials = shot.get("prompt_materials", {})
@@ -303,7 +327,10 @@ def build_story_graph_view(
             id=c["id"],
             name=c.get("name", c["id"]),
             kind="character",
-            reference_image=_resolve_path(project_dir, c.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                c["id"], "", project_dir,
+                c.get("reference_image") or "",
+            ),
             description=c.get("fixed_traits", ""),
             generation_prompt=c.get("generation_prompt") or "",
             states=entity_states.get(c["id"], []),
@@ -313,7 +340,10 @@ def build_story_graph_view(
             id=loc["id"],
             name=loc.get("name", loc["id"]),
             kind="location",
-            reference_image=_resolve_path(project_dir, loc.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                loc["id"], "", project_dir,
+                loc.get("reference_image") or "",
+            ),
             description=loc.get("fixed_traits", ""),
             generation_prompt=loc.get("generation_prompt") or "",
             states=entity_states.get(loc["id"], []),
@@ -323,7 +353,10 @@ def build_story_graph_view(
             id=p["id"],
             name=p.get("name", p["id"]),
             kind="prop",
-            reference_image=_resolve_path(project_dir, p.get("reference_image") or "", check_exists=True),
+            reference_image=resolve_reference_image(
+                p["id"], "", project_dir,
+                p.get("reference_image") or "",
+            ),
             description=p.get("fixed_traits", ""),
             generation_prompt=p.get("generation_prompt") or "",
             states=entity_states.get(p["id"], []),
@@ -410,7 +443,7 @@ def build_story_graph_view(
                 prompt = execution.get("prompt", "")
             else:
                 # Not yet executed — show available materials from inventory
-                ref_images = [_resolve_path(project_dir, p, check_exists=True) for p in _collect_shot_reference_images(shot_entry, nodes=_nodes) if p]
+                ref_images = [_resolve_path(project_dir, p, check_exists=True) for p in _collect_shot_reference_images(shot_entry, nodes=_nodes, project_dir=project_dir) if p]
                 ref_images = [r for r in ref_images if r]
                 # Speculative frame lookup — only possible with project_dir
                 first_frame = _resolve_path(project_dir, f"assets/frames/{shot_id}_first.png", check_exists=True) if project_dir else ""
@@ -436,7 +469,7 @@ def build_story_graph_view(
                 shot_type=shot_entry.get("shot_type", ""),
                 angle=shot_entry.get("angle", ""),
                 movement=shot_entry.get("movement", ""),
-                intent=shot_entry.get("intent", ""),
+                content=shot_entry.get("content", shot_entry.get("intent", "")),
                 focus_on=shot_entry.get("focus_on", []),
                 is_continuation=shot_entry.get("is_continuation", False),
                 sequence_prev_shot_id=seq_prev_shot_id,

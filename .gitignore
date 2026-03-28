@@ -38,7 +38,7 @@ result-*
 target/
 
 node_modules/
-static/
+/static/
 .memo/
 .entire
 .claude

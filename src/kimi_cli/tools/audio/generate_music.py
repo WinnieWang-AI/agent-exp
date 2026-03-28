@@ -43,11 +43,9 @@ class GenerateMusic(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Music generation rejected by user.", brief="Rejected")
 
-        if len(params.prompt) > PROMPT_MAX_LENGTH:
-            return builder.error(
-                message=f"Prompt too long: {len(params.prompt)} characters (max {PROMPT_MAX_LENGTH}). Please shorten the prompt.",
-                brief="Prompt too long",
-            )
+        prompt = params.prompt
+        if len(prompt) > PROMPT_MAX_LENGTH:
+            prompt = prompt[:PROMPT_MAX_LENGTH]
 
         available = list(self._config.music_providers.keys())
         try:
@@ -61,7 +59,7 @@ class GenerateMusic(CallableTool2[Params]):
             )
 
         request = MusicGenerationRequest(
-            prompt=params.prompt,
+            prompt=prompt,
             lyrics=params.lyrics,
             make_instrumental=params.make_instrumental,
         )

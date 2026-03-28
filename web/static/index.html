@@ -1,0 +1,2808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Agent Studio</title>
+<link rel="stylesheet" href="/static/story-graph.css">
+<link rel="stylesheet" href="/static/operation-graph.css">
+<link rel="stylesheet" href="/static/agent-graph.css">
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
+<script src="/static/story-graph.js?v=20260317" defer></script>
+<script src="/static/operation-graph.js" defer></script>
+<script src="/static/session-op-graph.js" defer></script>
+<script src="/static/agent-graph.js" defer></script>
+<script src="/static/plan-compare-graph.js" defer></script>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242736;
+  --surface3: #2a2d3e;
+  --border: #2e3144;
+  --text: #e1e4ed;
+  --text-dim: #6b7089;
+  --text-mid: #8b8fa3;
+  --accent-blue: #5b8def;
+  --accent-green: #4ecdc4;
+  --accent-orange: #f7a44c;
+  --accent-red: #ef5b5b;
+  --accent-purple: #a78bfa;
+  --director-color: #5b8def;
+  --eval-color: #4ecdc4;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.header h1 { font-size: 15px; font-weight: 700; margin-right: 20px; white-space: nowrap; }
+.tab-bar { display: flex; gap: 2px; }
+.tab {
+  padding: 6px 14px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--text-dim);
+  background: transparent; border: 1px solid transparent; transition: all 0.15s;
+}
+.tab:hover { color: var(--text-mid); background: var(--surface2); }
+.tab.active { color: var(--text); background: var(--surface2); border-color: var(--border); }
+.tab .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.tab .dot.director { background: var(--director-color); }
+.tab .dot.eval { background: var(--eval-color); }
+.tab .dot.auto { background: var(--accent-orange); }
+.tab .dot.room { background: linear-gradient(135deg, var(--director-color), var(--eval-color)); }
+.tab .dot.optimizer { background: var(--accent-purple); }
+
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.status-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text-dim);
+  padding: 3px 10px; border-radius: 12px;
+  background: var(--surface2);
+}
+.status-badge .dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); }
+.status-badge .dot-live.working { background: var(--accent-orange); animation: blink 1s infinite; }
+.status-badge .dot-live.err { background: var(--accent-red); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.session-badge {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  padding: 3px 10px; border-radius: 12px; background: var(--surface2);
+  cursor: pointer; user-select: all; transition: color 0.15s;
+}
+.session-badge:hover { color: var(--accent-blue); }
+
+/* ---- Main ---- */
+.main { flex: 1; display: flex; overflow: hidden; }
+
+/* ---- Panels ---- */
+.panel { flex:1; display:none; flex-direction:column; overflow:hidden; min-width:0; }
+.panel.active { display:flex; }
+.auto-panel { flex:1; display:none; flex-direction:column; overflow:hidden; min-width:0; }
+.auto-panel.active { display:flex; }
+.panel-divider { width: 1px; background: var(--border); flex-shrink: 0; }
+.auto-panel .agent-lane { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.auto-panel .agent-lane:first-child { border-right: 1px solid var(--border); }
+.lane-header {
+  padding: 8px 16px; font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid var(--border); background: var(--surface);
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-mid);
+}
+.lane-header .ldot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ---- Messages ---- */
+.messages {
+  flex: 1; overflow-y: auto; padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.messages::-webkit-scrollbar { width: 5px; }
+.messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* User bubble */
+.msg-user {
+  align-self: flex-end; max-width: 70%;
+  padding: 10px 16px; border-radius: var(--radius) var(--radius) 3px var(--radius);
+  background: var(--accent-blue); color: #fff;
+  font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word;
+}
+
+/* Assistant bubble */
+.msg-assistant {
+  align-self: flex-start; max-width: 80%;
+  font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word;
+  color: var(--text);
+  background: var(--surface2); padding: 10px 14px; border-radius: 3px var(--radius) var(--radius) var(--radius);
+}
+.msg-assistant .agent-tag {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  padding: 2px 7px; border-radius: 4px; margin-bottom: 6px;
+}
+.msg-assistant .agent-tag.director { background: rgba(91,141,239,0.15); color: var(--director-color); }
+.msg-assistant .agent-tag.eval { background: rgba(78,205,196,0.15); color: var(--eval-color); }
+.msg-assistant .agent-tag.screenwriter { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.msg-assistant .msg-text {}
+
+/* Activity row (tool calls, subagent work) */
+.activity-row {
+  align-self: flex-start;
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; color: var(--text-dim); font-size: 12px;
+  max-width: 90%;
+}
+.activity-row .act-icon {
+  width: 16px; height: 16px; border-radius: 4px;
+  background: var(--surface3); display: flex; align-items: center; justify-content: center;
+  font-size: 9px; flex-shrink: 0;
+}
+.activity-row .act-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.activity-row .act-toggle {
+  cursor: pointer; color: var(--text-dim); font-size: 11px;
+  padding: 1px 6px; border-radius: 3px; background: var(--surface2);
+  border: none; transition: all 0.15s;
+}
+.activity-row .act-toggle:hover { color: var(--text-mid); background: var(--surface3); }
+.activity-detail {
+  display: none; margin: 2px 0 6px 22px;
+  background: var(--surface2); border-radius: var(--radius-sm);
+  padding: 8px 12px; font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-dim); white-space: pre-wrap; word-wrap: break-word;
+  max-height: 300px; overflow-y: auto; border: 1px solid var(--border);
+}
+.activity-detail.open { display: block; }
+
+/* Thinking block */
+.msg-thinking {
+  align-self: flex-start; max-width: 80%;
+  padding: 6px 12px; border-radius: var(--radius-sm);
+  background: rgba(167,139,250,0.06); border-left: 2px solid var(--accent-purple);
+  font-size: 12px; line-height: 1.5; color: var(--accent-purple); font-style: italic;
+  white-space: pre-wrap; word-wrap: break-word;
+  max-height: 120px; overflow-y: auto; cursor: pointer;
+}
+.msg-thinking.collapsed { max-height: 24px; overflow: hidden; }
+
+/* Error */
+.msg-error {
+  align-self: center; padding: 6px 14px; border-radius: var(--radius-sm);
+  background: rgba(239,91,91,0.1); color: var(--accent-red);
+  font-size: 12px; max-width: 90%;
+}
+
+/* ---- Question card ---- */
+.question-card {
+  align-self: flex-start; max-width: 80%;
+  background: var(--surface2); border: 1px solid var(--accent-purple);
+  border-radius: var(--radius); padding: 12px 16px;
+}
+.question-card .q-title {
+  font-size: 12px; font-weight: 600; color: var(--accent-purple);
+  margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.question-card .q-text {
+  font-size: 14px; color: var(--text); margin-bottom: 10px; line-height: 1.5;
+}
+.question-card .q-options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.question-card .q-opt {
+  padding: 5px 12px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 13px; border: 1px solid var(--border); background: var(--surface3);
+  color: var(--text); transition: all 0.15s;
+}
+.question-card .q-opt:hover { border-color: var(--accent-purple); color: var(--accent-purple); }
+.question-card .q-opt.selected { border-color: var(--accent-purple); background: rgba(167,139,250,0.15); color: var(--accent-purple); }
+.question-card .q-input {
+  width: 100%; padding: 6px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface3);
+  color: var(--text); font-size: 13px; font-family: var(--font-sans); outline: none;
+}
+.question-card .q-input:focus { border-color: var(--accent-purple); }
+.question-card .q-submit {
+  padding: 6px 16px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+  font-size: 12px; font-weight: 600; background: var(--accent-purple); color: #fff;
+  margin-top: 8px; transition: opacity 0.15s;
+}
+.question-card .q-submit:hover { opacity: 0.85; }
+.question-card.answered { opacity: 0.5; pointer-events: none; }
+
+/* ---- Empty state ---- */
+.empty-state {
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  color: var(--text-dim); gap: 8px;
+}
+.empty-state .e-icon { font-size: 40px; opacity: 0.2; }
+.empty-state p { font-size: 13px; text-align: center; max-width: 360px; line-height: 1.5; }
+
+/* ---- Input ---- */
+.input-area {
+  padding: 10px 20px 12px; border-top: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+.input-row textarea {
+  flex: 1; resize: none;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 14px; color: var(--text);
+  font-family: var(--font-sans); font-size: 14px; line-height: 1.4;
+  min-height: 40px; max-height: 140px; outline: none; transition: border-color 0.15s;
+}
+.input-row textarea:focus { border-color: var(--accent-blue); }
+.input-row textarea::placeholder { color: var(--text-dim); }
+.btn {
+  padding: 9px 18px; border-radius: var(--radius); border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: all 0.15s; white-space: nowrap;
+}
+.btn-send { background: var(--accent-blue); color: #fff; }
+.btn-send:hover { background: #4a7de0; }
+.btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- Media (images & videos) ---- */
+.media-block {
+  align-self: flex-start; max-width: 80%;
+  border-radius: var(--radius); overflow: hidden;
+  border: 1px solid var(--border); background: var(--surface2);
+}
+.media-block img {
+  max-width: 100%; max-height: 400px; display: block;
+  border-radius: var(--radius);
+}
+.media-block video {
+  max-width: 100%; max-height: 400px; display: block;
+  border-radius: var(--radius);
+}
+.media-block .media-caption {
+  padding: 6px 10px; font-size: 11px; color: var(--text-dim);
+  font-family: var(--font-mono); word-break: break-all;
+}
+
+/* ---- Chat Room ---- */
+.room-panel { flex:1; display:none; flex-direction:column; overflow:hidden; min-width:0; }
+.room-panel.active { display:flex; }
+.room-status-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0; font-size: 11px; color: var(--text-dim);
+}
+.room-status-bar .agent-status {
+  display: flex; align-items: center; gap: 4px;
+}
+.room-status-bar .agent-status .sdot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green);
+}
+.room-status-bar .agent-status .sdot.working {
+  background: var(--accent-orange); animation: blink 1s infinite;
+}
+
+/* Agent card in chat room — groups one agent's turn */
+.agent-card {
+  align-self: flex-start; width: 95%;
+  border-left: 3px solid var(--text-dim);
+  background: var(--surface);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 12px 16px; margin: 2px 0;
+}
+.agent-card .agent-card-header {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  display: flex; align-items: center; gap: 6px;
+}
+.agent-card .agent-card-header .ac-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.agent-card .agent-card-body {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.agent-card .msg-assistant { max-width: 100%; }
+.agent-card .msg-assistant .agent-tag { display: none; }
+.agent-card .activity-row { max-width: 100%; }
+.agent-card .msg-thinking { max-width: 100%; }
+
+/* Mention highlight in user messages */
+.mention {
+  display: inline;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+.mention.director { color: var(--director-color); background: rgba(91,141,239,0.15); }
+.mention.eval { color: var(--eval-color); background: rgba(78,205,196,0.15); }
+
+/* Mention autocomplete dropdown */
+.mention-dropdown {
+  position: absolute; bottom: 100%; left: 0; margin-bottom: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden;
+  display: none; z-index: 10; min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.mention-dropdown.open { display: block; }
+.mention-dropdown .mention-item {
+  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  color: var(--text); transition: background 0.1s;
+}
+.mention-dropdown .mention-item:hover,
+.mention-dropdown .mention-item.selected {
+  background: var(--surface3);
+}
+.mention-dropdown .mention-item .mi-dot {
+  width: 8px; height: 8px; border-radius: 50;
+}
+
+/* ---- Story Graph Preview Card ---- */
+.sg-preview-card {
+  align-self: flex-start;
+  max-width: 90%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin: 4px 0;
+}
+.sg-preview-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  background: var(--surface3);
+  border-bottom: 1px solid var(--border);
+}
+.sg-preview-icon { font-size: 16px; }
+.sg-preview-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  flex: 1;
+}
+.sg-preview-toggle {
+  background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 12px; padding: 2px 6px;
+  border-radius: 4px; transition: background 0.15s;
+}
+.sg-preview-toggle:hover { background: var(--surface2); color: var(--text); }
+.sg-preview-body {
+  padding: 12px 14px;
+}
+.sg-preview-info {
+  font-size: 12px; color: var(--text-mid);
+  margin-bottom: 8px;
+}
+.sg-preview-cy {
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.sg-preview-card .sg-btn {
+  background: var(--surface3); border: 1px solid var(--border);
+  color: var(--text-mid); font-size: 12px;
+  padding: 5px 12px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: all 0.15s;
+}
+.sg-preview-card .sg-btn:hover {
+  background: var(--accent-blue); color: #fff; border-color: var(--accent-blue);
+}
+
+/* ---- Story Graph Full-screen Overlay ---- */
+#sg-overlay {
+  display: none; flex-direction: column;
+  flex: 1.2; min-width: 350px;
+  background: var(--bg);
+  border-left: 2px solid var(--border);
+  position: relative;
+}
+.sg-overlay-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px; border-bottom: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+}
+.sg-overlay-header .sg-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text-mid); font-size: 12px; padding: 5px 12px;
+  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+}
+.sg-overlay-header .sg-btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+.sg-overlay-filter {
+  display: flex; align-items: center; gap: 4px; padding: 5px 14px;
+  border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap;
+}
+.sg-overlay-filter .sg-toggle {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 11px; padding: 3px 8px;
+  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+}
+.sg-overlay-filter .sg-toggle.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+#sog-live-btn.active { background: #064e3b; color: #34d399; border-color: #10b981; animation: sog-pulse 1.5s ease-in-out infinite; }
+@keyframes sog-pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+.sg-overlay-body {
+  flex: 1; display: flex; position: relative; overflow: hidden;
+}
+#sg-overlay-cy { flex: 1; }
+.sg-overlay-detail {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 280px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  overflow-y: auto; transform: translateX(100%); transition: transform 0.2s;
+}
+.sg-overlay-detail.open { transform: translateX(0); }
+.sg-overlay-loading {
+  display: flex; align-items: center; justify-content: center;
+  position: absolute; inset: 0; color: var(--text-dim); font-size: 14px;
+  pointer-events: none;
+}
+
+/* ---- Sticky Story Graph Bar ---- */
+.sg-sticky-bar {
+  display: none; align-items: center; gap: 8px;
+  padding: 6px 16px;
+  background: linear-gradient(90deg, rgba(59,130,246,0.1), rgba(16,185,129,0.1), rgba(245,158,11,0.1));
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sg-sticky-bar .sg-sticky-icon { font-size: 14px; }
+.sg-sticky-bar .sg-sticky-label {
+  flex: 1; font-size: 12px; color: var(--text-mid);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sg-sticky-bar .sg-sticky-btn {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); font-size: 11px; padding: 3px 10px;
+  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
+  white-space: nowrap;
+}
+.sg-sticky-bar .sg-sticky-btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+/* ---- Todo sticky panel ---- */
+
+/* Optimizer right sidebar */
+#opt-sidebar { display:none; flex-direction:column; width:40%; flex-shrink:0; background:var(--bg); overflow:hidden; border-left:1px solid var(--border); }
+#opt-sidebar.open { display:flex; }
+#opt-reopen-tab { display:none; writing-mode:vertical-rl; text-orientation:mixed; padding:12px 5px; cursor:pointer; user-select:none; font-size:11px; font-weight:600; letter-spacing:1px; color:var(--text-dim); background:var(--surface); border-left:2px solid var(--border); flex-shrink:0; align-items:center; justify-content:center; }
+#opt-reopen-tab:hover { color:var(--text); background:var(--surface2); }
+#opt-reopen-tab.has-data { display:flex; }
+#opt-resize-handle { display:none; width:5px; flex-shrink:0; cursor:col-resize; background:var(--border); transition:background 0.15s; }
+#opt-resize-handle:hover { background:var(--accent-blue); }
+#opt-resize-handle.visible { display:block; }
+/* Sidebar tab bar */
+.opt-sb-tabs { display:flex; gap:2px; padding:4px 8px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+.opt-sb-tab { padding:4px 12px; border-radius:var(--radius-sm); cursor:pointer; font-size:11px; font-weight:600; color:var(--text-dim); background:transparent; border:1px solid transparent; transition:all 0.15s; }
+.opt-sb-tab:hover { color:var(--text-mid); background:var(--surface2); }
+.opt-sb-tab.active { color:var(--text); background:var(--surface2); border-color:var(--border); }
+.opt-sb-tab .opt-sb-badge { display:inline-block; min-width:14px; height:14px; line-height:14px; text-align:center; border-radius:7px; font-size:9px; font-weight:700; margin-left:4px; padding:0 3px; }
+/* Sidebar content panels */
+.opt-sb-content { flex:1; display:none; flex-direction:column; overflow:hidden; }
+.opt-sb-content.active { display:flex; }
+/* Issues list in sidebar */
+#opt-issues-list { flex:1; overflow-y:auto; padding:8px 12px; }
+#opt-issues-empty { flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-size:13px; text-align:center; }
+.todo-item { display:flex; align-items:flex-start; gap:8px; padding:6px 0; font-size:12px; line-height:1.5; border-bottom:1px solid rgba(255,255,255,0.04); }
+.todo-item:last-child { border-bottom:none; }
+.todo-item .todo-status { flex-shrink:0; width:16px; height:16px; margin-top:1px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; }
+.todo-item .todo-status.pending { border:2px solid var(--text-dim); color:var(--text-dim); }
+.todo-item .todo-status.in_progress { border:2px solid #3b82f6; color:#3b82f6; background:rgba(59,130,246,0.1); }
+.todo-item .todo-status.done { border:2px solid #10b981; color:#10b981; background:rgba(16,185,129,0.1); }
+.todo-item .todo-text { color:var(--text-mid); flex:1; }
+.todo-item.is-done .todo-text { text-decoration:line-through; color:var(--text-dim); }
+.todo-item.has-desc { cursor:pointer; }
+.todo-item.has-desc:hover { background:var(--surface2); border-radius:4px; }
+.todo-item.expanded .todo-text span { display:inline-block; transform:rotate(180deg); }
+/* Plan Compare in sidebar */
+#pc-detail { transform:translateX(100%); transition:transform 0.2s; }
+#pc-detail.open { transform:translateX(0); }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Video Agent Studio</h1>
+  <div class="tab-bar">
+    <div class="tab active" data-tab="director" onclick="switchTab('director', event)">
+      <span class="dot director"></span>Director
+    </div>
+    <div class="tab" data-tab="eval" onclick="switchTab('eval', event)">
+      <span class="dot eval"></span>Evaluator
+    </div>
+    <div class="tab" data-tab="auto" onclick="switchTab('auto', event)">
+      <span class="dot auto"></span>Auto
+    </div>
+    <div class="tab" data-tab="room" onclick="switchTab('room', event)">
+      <span class="dot room"></span>Chat Room
+    </div>
+    <div class="tab" data-tab="optimizer" onclick="switchTab('optimizer', event)">
+      <span class="dot optimizer"></span>Optimizer
+    </div>
+    <div class="tab" data-tab="agentgraph" onclick="switchTab('agentgraph', event)">
+      <span class="dot" style="background:linear-gradient(135deg,#3b82f6,#8b5cf6)"></span>Agent Graph
+    </div>
+    <div class="tab" data-tab="opgraph" onclick="switchTab('opgraph', event)">
+      <span class="dot" style="background:linear-gradient(135deg,#6e6aaf,#c9962a,#c05050)"></span>Op Graph
+    </div>
+  </div>
+  <div class="header-right">
+    <input id="resumeInput" type="text" placeholder="Paste session ID..." onkeydown="if(event.key==='Enter'){event.preventDefault();resumeSession()}" style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;color:var(--text);width:180px;outline:none;" />
+    <button id="resumeBtn" onclick="resumeSession()" style="font-size:11px;padding:4px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface3);color:var(--text);cursor:pointer;white-space:nowrap;">Resume</button>
+    <span id="sessionBadge" class="session-badge" style="display:none" title="Click to copy"></span>
+    <span id="sessionIdText" style="font-family:var(--font-mono);font-size:11px;color:var(--accent-blue);margin-right:8px;display:none;"></span>
+    <div class="status-badge">
+      <div class="dot-live" id="statusDot"></div>
+      <span id="statusText">Ready</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel" id="panel-director">
+    <div class="sg-sticky-bar" id="sg-sticky-director">
+      <span class="sg-sticky-icon">&#128205;</span>
+      <span class="sg-sticky-label" id="sg-sticky-label-director">Story Graph</span>
+      <button class="sg-sticky-btn" onclick="toggleStoryGraphPanel()">Show Graph</button>
+    </div>
+    <div class="messages" id="messages-director">
+      <div class="empty-state">
+        <div class="e-icon">&#127916;</div>
+        <p>Chat with <strong>Video Director</strong> — orchestrates video creation and evaluation.</p>
+      </div>
+    </div>
+    <div class="input-area"><div class="input-row">
+      <textarea id="input-director" placeholder="Message Director..." rows="1" onkeydown="onKey(event,'director')"></textarea>
+      <button class="btn btn-send" id="btn-director" onclick="send('director')">Send</button>
+    </div></div>
+  </div>
+
+  <div class="panel" id="panel-eval">
+    <div class="messages" id="messages-eval">
+      <div class="empty-state">
+        <div class="e-icon">&#128269;</div>
+        <p>Chat with <strong>Auto Evaluator</strong> — analyzes and compares videos with VLM.</p>
+      </div>
+    </div>
+    <div class="input-area"><div class="input-row">
+      <textarea id="input-eval" placeholder="Message Evaluator..." rows="1" onkeydown="onKey(event,'eval')"></textarea>
+      <button class="btn btn-send" id="btn-eval" onclick="send('eval')">Send</button>
+    </div></div>
+  </div>
+
+  <div class="auto-panel" id="panel-auto">
+    <div class="sg-sticky-bar" id="sg-sticky-auto">
+      <span class="sg-sticky-icon">&#128205;</span>
+      <span class="sg-sticky-label" id="sg-sticky-label-auto">Story Graph</span>
+      <button class="sg-sticky-btn" onclick="toggleStoryGraphPanel()">Show Graph</button>
+    </div>
+    <div style="flex:1;display:flex;overflow:hidden;">
+      <div class="agent-lane">
+        <div class="lane-header">
+          <div class="ldot" style="background:var(--eval-color)"></div>Evaluator
+          <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+            <div class="sdot" id="auto-dot-eval" style="width:6px;height:6px;border-radius:50%;background:var(--accent-green)"></div>
+            <span id="auto-status-eval" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">Ready</span>
+          </span>
+        </div>
+        <div class="messages" id="messages-auto-eval"></div>
+      </div>
+      <div class="agent-lane">
+        <div class="lane-header">
+          <div class="ldot" style="background:var(--director-color)"></div>Director
+          <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+            <div class="sdot" id="auto-dot-director" style="width:6px;height:6px;border-radius:50%;background:var(--accent-green)"></div>
+            <span id="auto-status-director" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">Ready</span>
+          </span>
+        </div>
+        <div class="messages" id="messages-auto-director"></div>
+      </div>
+    </div>
+    <div class="input-area" id="input-area-auto"><div class="input-row">
+      <textarea id="input-auto" placeholder="Task for auto evaluation (e.g. 'Analyze /path/to/video.mp4 and reproduce it')..." rows="1" onkeydown="onKey(event,'auto')"></textarea>
+      <button class="btn btn-send" id="btn-auto" onclick="send('auto')">Start</button>
+    </div></div>
+  </div>
+
+  <div class="panel" id="panel-optimizer" style="flex-direction:row;">
+    <!-- Left: chat area -->
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;">
+      <div class="messages" id="messages-optimizer">
+        <div class="empty-state">
+          <div class="e-icon">&#128736;</div>
+          <p>Chat with <strong>Agent Optimizer</strong> — analyzes agent logs, prompts, and behavior to suggest improvements.</p>
+        </div>
+      </div>
+      <div class="input-area"><div class="input-row">
+        <textarea id="input-optimizer" placeholder="e.g. 分析一下 video-director 最近的表现..." rows="1" onkeydown="onKey(event,'optimizer')"></textarea>
+        <button class="btn btn-send" id="btn-optimizer" onclick="send('optimizer')">Send</button>
+      </div></div>
+    </div>
+    <!-- Reopen tab (visible when sidebar closed but has data) -->
+    <div id="opt-reopen-tab" onclick="optSidebarToggle()">Issues</div>
+    <!-- Resize handle -->
+    <div id="opt-resize-handle"></div>
+    <!-- Right sidebar: tabbed (Issues + Plan Compare) -->
+    <div id="opt-sidebar">
+      <!-- Sidebar header: tabs + close -->
+      <div style="display:flex;align-items:center;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+        <div class="opt-sb-tabs">
+          <div class="opt-sb-tab active" data-sb="issues" onclick="optSbSwitchTab('issues',this)">
+            Issues <span class="opt-sb-badge" id="opt-issues-badge" style="background:var(--accent-blue);color:#fff;display:none;">0</span>
+          </div>
+          <div class="opt-sb-tab" data-sb="plancompare" onclick="optSbSwitchTab('plancompare',this)">
+            Plan Compare
+          </div>
+        </div>
+        <div style="margin-left:auto;padding-right:8px;display:flex;gap:4px;">
+          <button class="sg-btn" id="pc-fit-btn" onclick="pcFitAll()" style="font-size:10px;padding:3px 8px;display:none;">Fit</button>
+          <button class="sg-btn" onclick="optSidebarToggle()" style="font-size:10px;padding:3px 8px;">&times;</button>
+        </div>
+      </div>
+      <!-- Tab content: Issues -->
+      <div class="opt-sb-content active" id="opt-sb-issues">
+        <div id="opt-issues-empty" style="padding:20px;">
+          <div style="font-size:28px;margin-bottom:8px;">&#128203;</div>
+          <p>Issues will appear here when the optimizer analyzes an agent.<br>Use <strong>SetTodoList</strong> to track problems.</p>
+        </div>
+        <div id="opt-issues-list" style="display:none;"></div>
+      </div>
+      <!-- Tab content: Plan Compare -->
+      <div class="opt-sb-content" id="opt-sb-plancompare">
+        <span id="pc-task" style="font-size:11px;color:var(--text-dim);padding:6px 12px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-bottom:1px solid var(--border);flex-shrink:0;"></span>
+        <!-- Empty state -->
+        <div id="pc-empty" style="flex:1;display:flex;align-items:center;justify-content:center;">
+          <div style="text-align:center;color:var(--text-dim);font-size:13px;">
+            <div style="font-size:28px;margin-bottom:8px;">&#128202;</div>
+            <p>Three-layer plan comparison.<br>Use <strong>AnalyzeAgentGraph(mode="compare")</strong> to generate.</p>
+          </div>
+        </div>
+        <!-- Three lanes (vertical stack in sidebar) -->
+        <div id="pc-lanes" style="flex:1;display:none;flex-direction:column;overflow:hidden;">
+          <div style="flex:1;display:flex;flex-direction:column;border-bottom:1px solid var(--border);">
+            <div style="padding:4px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:10px;font-weight:600;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px;"></span>
+              Layer 1: Ideal Plan
+            </div>
+            <div id="pc-lane-ideal" style="flex:1;position:relative;overflow:hidden;background:var(--bg);"></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;border-bottom:1px solid var(--border);">
+            <div style="padding:4px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:10px;font-weight:600;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:6px;"></span>
+              Layer 2: Prompt Prediction
+            </div>
+            <div id="pc-lane-predicted" style="flex:1;position:relative;overflow:hidden;background:var(--bg);"></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;">
+            <div style="padding:4px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:10px;font-weight:600;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:6px;"></span>
+              Layer 3: Actual Behavior
+            </div>
+            <div id="pc-lane-actual" style="flex:1;position:relative;overflow:hidden;background:var(--bg);"></div>
+          </div>
+        </div>
+        <!-- Bottom: Detail + Gaps -->
+        <div id="pc-bottom" style="display:none;max-height:200px;flex-shrink:0;border-top:1px solid var(--border);overflow:hidden;">
+          <div id="pc-detail" style="width:280px;overflow-y:auto;padding:10px;background:var(--surface);border-right:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span id="pc-detail-title" style="font-size:12px;font-weight:600;color:var(--text);"></span>
+              <span style="cursor:pointer;color:var(--text-dim);" onclick="pcHideDetail()">&times;</span>
+            </div>
+            <div id="pc-detail-body" style="font-size:11px;color:var(--text-mid);"></div>
+          </div>
+          <div id="pc-gaps" style="flex:1;overflow-y:auto;padding:10px;background:var(--bg);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="room-panel" id="panel-room">
+    <div class="room-status-bar" id="room-status-bar"></div>
+    <div class="messages" id="messages-room">
+      <div class="empty-state">
+        <div class="e-icon">&#128483;</div>
+        <p>Multi-agent chat room. Use <strong>@AgentName</strong> to talk to a specific agent, or send without @ to broadcast to all.</p>
+      </div>
+    </div>
+    <div class="input-area"><div class="input-row" style="position:relative;">
+      <div class="mention-dropdown" id="mention-dropdown"></div>
+      <textarea id="input-room" placeholder="Message... (use @ to mention an agent)" rows="1" onkeydown="onRoomKey(event)" oninput="onRoomInput(event)"></textarea>
+      <button class="btn btn-send" id="btn-room" onclick="send('room')">Send</button>
+    </div></div>
+  </div>
+
+  <!-- Agent Graph: topology / workflow / deviation visualization -->
+  <div class="panel agent-graph-panel" id="panel-agentgraph">
+    <div id="ag-empty" class="ag-empty">
+      <div class="ag-empty-icon">&#128736;</div>
+      <p>Agent topology &amp; workflow visualization.<br>Use <strong>AnalyzeAgentGraph</strong> tool in the Optimizer tab to generate a graph.</p>
+    </div>
+    <div id="ag-toolbar" class="ag-toolbar" style="display:none">
+      <div class="ag-toolbar-group">
+        <span class="ag-toolbar-label">View</span>
+        <button class="ag-view-toggle active" onclick="agSetView('topology',this)">Topology</button>
+        <button class="ag-view-toggle" onclick="agSetView('workflow',this)">Workflow</button>
+        <button class="ag-view-toggle" onclick="agSetView('merged',this)">Merged</button>
+      </div>
+      <div class="ag-separator"></div>
+      <div class="ag-toolbar-group">
+        <span class="ag-toolbar-label">Filter</span>
+        <button class="ag-toggle active" data-type="agent" onclick="agToggleType('agent',this)">Agent</button>
+        <button class="ag-toggle active" data-type="tool" onclick="agToggleType('tool',this)">Tool</button>
+        <button class="ag-toggle active" data-type="task" onclick="agToggleType('task',this)">Task</button>
+        <button class="ag-toggle active" data-type="decision" onclick="agToggleType('decision',this)">Decision</button>
+        <button class="ag-toggle active" data-type="user_confirm" onclick="agToggleType('user_confirm',this)">Confirm</button>
+        <button class="ag-toggle active" data-type="begin" onclick="agToggleType('begin',this)">Begin</button>
+        <button class="ag-toggle active" data-type="end" onclick="agToggleType('end',this)">End</button>
+      </div>
+      <div class="ag-separator"></div>
+      <button class="ag-btn" onclick="agToggleDeviations(this)">Deviations</button>
+      <button class="ag-btn" onclick="agFitView()">Fit</button>
+      <button class="ag-btn" onclick="agRelayout()">Re-layout</button>
+    </div>
+    <div id="ag-body" class="ag-body" style="display:none">
+      <div class="ag-canvas"><div id="ag-cy"></div></div>
+      <div id="ag-detail" class="ag-detail">
+        <div class="ag-detail-header">
+          <h3 id="ag-detail-title"></h3>
+          <button class="ag-detail-close" onclick="agHideDetail()">&times;</button>
+        </div>
+        <div class="ag-detail-body" id="ag-detail-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Op Graph: standalone tab panel -->
+  <div class="panel" id="panel-opgraph" style="position:relative;">
+    <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+      <span style="font-size:12px;font-weight:600;color:var(--text);margin-right:8px;">Op Graph</span>
+      <input id="opgraph-session-input" type="text" placeholder="Paste session ID..."
+        style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;color:var(--text);width:260px;outline:none;"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();opgraphLoad()}" />
+      <button class="sg-btn" onclick="opgraphLoad()" style="font-size:10px;padding:3px 10px;">Load</button>
+      <div class="sg-toolbar-group" id="opgraph-toolbar" style="display:none;margin-left:8px;">
+        <button class="sg-toggle sog-view-btn-tab active" onclick="opgraphSwitchView('overview',this)" style="font-size:10px;padding:2px 8px;">Overview</button>
+        <button class="sg-toggle sog-view-btn-tab" onclick="opgraphSwitchView('grouped',this)" style="font-size:10px;padding:2px 8px;">Grouped</button>
+      </div>
+      <button class="sg-btn" onclick="if(opgraphCy)opgraphCy.fit(undefined,40)" style="font-size:10px;padding:2px 8px;margin-left:auto;">Fit</button>
+    </div>
+    <div style="flex:1;position:relative;overflow:hidden;">
+      <div id="opgraph-cy" style="position:absolute;inset:0;"></div>
+      <div id="opgraph-detail" style="position:absolute;right:0;top:0;bottom:0;width:260px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;transform:translateX(100%);transition:transform 0.2s;padding:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span id="opgraph-detail-title" style="font-size:12px;font-weight:600;color:var(--text)"></span>
+          <span style="cursor:pointer;color:var(--text-dim);font-size:14px;" onclick="document.getElementById('opgraph-detail').style.transform='translateX(100%)';">&times;</span>
+        </div>
+        <div id="opgraph-detail-body"></div>
+      </div>
+      <div id="opgraph-empty" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center;color:var(--text-dim);font-size:13px;">
+          <div style="font-size:28px;margin-bottom:8px;">&#128200;</div>
+          <p>输入 Session ID 查看 Agent 操作图</p>
+        </div>
+      </div>
+    </div>
+    <div id="opgraph-summary" style="padding:8px 12px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;min-height:32px;"></div>
+  </div>
+
+  <!-- Op Graph: reopen tab (visible when sidebar hidden) -->
+  <div id="sog-reopen-tab" onclick="sogTogglePanel()" title="Show Op Graph"
+    style="display:none; writing-mode:vertical-rl; text-orientation:mixed; padding:12px 5px; cursor:pointer; user-select:none; font-size:11px; font-weight:600; letter-spacing:1px; color:#9ca3af; background:var(--surface); border-left:2px solid var(--border); flex-shrink:0; align-items:center; justify-content:center;"
+    onmouseenter="this.style.color='#e1e4ed';this.style.background='var(--surface2)'" onmouseleave="this.style.color='#9ca3af';this.style.background='var(--surface)'">Op Graph</div>
+
+  <!-- Op Graph: resize handle -->
+  <div id="sog-resize-handle" style="display:none; width:5px; flex-shrink:0; cursor:col-resize; background:var(--border); transition:background 0.15s;"
+    onmouseenter="this.style.background='var(--accent-blue)'" onmouseleave="this.style.background='var(--border)'"></div>
+
+  <!-- Op Graph: sidebar -->
+  <div id="sog-sidebar" style="display:none; flex-direction:column; width:420px; flex-shrink:0; background:var(--bg); overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;">
+      <span style="font-size:12px;font-weight:600;color:var(--text);margin-right:auto;">Op Graph</span>
+      <div class="sg-toolbar-group" id="og-toolbar" style="display:none">
+        <button class="sg-toggle sog-view-btn active" id="sog-view-overview" onclick="sogSwitchView('overview',this)" style="font-size:10px;padding:2px 8px;">Overview</button>
+        <button class="sg-toggle sog-view-btn" id="sog-view-grouped" onclick="sogSwitchView('grouped',this)" style="font-size:10px;padding:2px 8px;">Grouped</button>
+      </div>
+      <button class="sg-btn" id="sog-live-btn" onclick="sogToggleLive()" style="border-color:#10b981;color:#10b981;font-size:10px;padding:2px 8px;">&#9675; Live</button>
+      <button class="sg-btn" onclick="if(sogCy)sogCy.fit(undefined,40)" style="font-size:10px;padding:2px 8px;">Fit</button>
+      <button class="sg-btn" onclick="sogTogglePanel()" style="font-size:10px;padding:2px 8px;">&times;</button>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+      <div id="og-body" style="display:none;flex:1;position:relative;overflow:hidden;">
+        <div id="og-cy" style="position:absolute;inset:0;"></div>
+        <div id="og-detail" style="position:absolute;right:0;top:0;bottom:0;width:260px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;transform:translateX(100%);transition:transform 0.2s;padding:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h3 id="og-detail-title" style="font-size:13px;margin:0;">Node</h3>
+            <button onclick="document.getElementById('og-detail').style.transform='translateX(100%)'" style="background:none;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;">&times;</button>
+          </div>
+          <div id="og-detail-body"></div>
+        </div>
+      </div>
+      <div id="og-empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:var(--text-dim);text-align:center;">
+        <p style="font-size:12px;margin-bottom:12px;">Paste session ID to view execution trace</p>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="sog-session-input" type="text" placeholder="Session ID..."
+            style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 8px;color:var(--text);width:220px;outline:none;"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();sogLoadFromSession(this.value.trim())}" />
+          <button class="sg-load-btn" onclick="sogLoadFromSession(document.getElementById('sog-session-input').value.trim())" style="font-size:11px;padding:4px 10px;">Load</button>
+        </div>
+      </div>
+      <div id="og-summary" style="flex-shrink:0;max-height:200px;overflow-y:auto;border-top:1px solid var(--border);padding:8px 10px;font-size:11px;"></div>
+    </div>
+  </div>
+</div><!-- .main -->
+
+<script>
+const S = {
+  tab: 'director',
+  ws: {},
+  status: {},
+  hasMsg: { director: false, eval: false, auto: false, room: false, optimizer: false },
+  // Per-agent status tracking for chat room mode
+  roomAgentStatus: { 'video-director': 'ready', 'video-auto-eval': 'ready' },
+};
+const AGENTS = { director: 'video-director', eval: 'video-auto-eval', optimizer: 'agent-optimizer' };
+const curAst = {};   // current assistant element per container
+const curTool = {};   // current pending tool activity element per container
+let currentStoryGraphPath = null;  // latest known story graph path
+let currentOpGraphPath = null;     // (legacy, kept for compatibility)
+// Views merged — unified graph (narrative + assets)
+
+// ==== Tabs (multi-select) ====
+const activeTabs = new Set(['director']);
+
+function switchTab(t, e) {
+  if (e && (e.ctrlKey || e.metaKey)) {
+    // Ctrl/Cmd+click: toggle split view
+    if (activeTabs.has(t)) {
+      if (activeTabs.size > 1) activeTabs.delete(t);
+    } else {
+      activeTabs.add(t);
+    }
+  } else {
+    // Normal click: switch exclusively
+    activeTabs.clear();
+    activeTabs.add(t);
+  }
+  applyTabs();
+  ensureWs(t);
+}
+
+function applyTabs() {
+  // Update tab buttons
+  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', activeTabs.has(e.dataset.tab)));
+  // Hide all panels
+  document.querySelectorAll('.panel').forEach(e => e.classList.remove('active'));
+  document.querySelector('.auto-panel').classList.remove('active');
+  document.querySelector('.room-panel').classList.remove('active');
+  document.querySelectorAll('.story-graph-panel').forEach(e => e.classList.remove('active'));
+  // Remove old dividers
+  document.querySelectorAll('.panel-divider').forEach(e => e.remove());
+
+  // Show active panels and insert dividers between them
+  const main = document.querySelector('.main');
+  const allPanels = ['director', 'eval', 'auto', 'room', 'optimizer', 'agentgraph', 'opgraph'];
+  let visibleCount = 0;
+  for (const tab of allPanels) {
+    if (!activeTabs.has(tab)) continue;
+    if (visibleCount > 0) {
+      const divider = document.createElement('div');
+      divider.className = 'panel-divider';
+      const panelEl = tab === 'auto' ? document.querySelector('.auto-panel')
+                    : tab === 'room' ? document.querySelector('.room-panel')
+                    : document.getElementById(`panel-${tab}`);
+      main.insertBefore(divider, panelEl);
+    }
+    if (tab === 'auto') {
+      document.querySelector('.auto-panel').classList.add('active');
+    } else if (tab === 'room') {
+      document.querySelector('.room-panel').classList.add('active');
+    } else {
+      document.getElementById(`panel-${tab}`).classList.add('active');
+    }
+    visibleCount++;
+  }
+  // Update status bar to show the last clicked tab
+  S.tab = [...activeTabs].pop();
+  updStatus(S.tab);
+
+  // Notify cytoscape panels to resize when they become visible
+  if (activeTabs.has('agentgraph') && typeof agFitView === 'function') {
+    setTimeout(() => agFitView(), 50);
+  }
+
+}
+
+// ==== Optimizer Sidebar ====
+function optSidebarShow() {
+  const sidebar = document.getElementById('opt-sidebar');
+  const handle = document.getElementById('opt-resize-handle');
+  const tab = document.getElementById('opt-reopen-tab');
+  if (sidebar) sidebar.classList.add('open');
+  if (handle) handle.classList.add('visible');
+  if (tab) tab.classList.remove('has-data');
+  // Resize cytoscape if plan compare is active
+  setTimeout(() => { if (typeof pcOnPanelVisible === 'function') pcOnPanelVisible(); }, 50);
+}
+
+function optSidebarHide() {
+  const sidebar = document.getElementById('opt-sidebar');
+  const handle = document.getElementById('opt-resize-handle');
+  const tab = document.getElementById('opt-reopen-tab');
+  if (sidebar) sidebar.classList.remove('open');
+  if (handle) handle.classList.remove('visible');
+  // Show reopen tab if we have data
+  const hasTodo = document.getElementById('opt-issues-list')?.style.display !== 'none';
+  const hasPc = !!pcData;
+  if (tab && (hasTodo || hasPc)) tab.classList.add('has-data');
+}
+
+function optSidebarToggle() {
+  const sidebar = document.getElementById('opt-sidebar');
+  if (sidebar && sidebar.classList.contains('open')) optSidebarHide();
+  else optSidebarShow();
+}
+
+function optSbSwitchTab(name, el) {
+  document.querySelectorAll('.opt-sb-tab').forEach(t => t.classList.toggle('active', t.dataset.sb === name));
+  document.querySelectorAll('.opt-sb-content').forEach(c => c.classList.toggle('active', c.id === `opt-sb-${name}`));
+  // Show/hide Fit button based on tab
+  const fitBtn = document.getElementById('pc-fit-btn');
+  if (fitBtn) fitBtn.style.display = name === 'plancompare' ? '' : 'none';
+  if (name === 'plancompare') setTimeout(() => { if (typeof pcOnPanelVisible === 'function') pcOnPanelVisible(); }, 50);
+}
+
+// ==== Todo/Issues (rendered into sidebar) ====
+function todoRender(items) {
+  const list = document.getElementById('opt-issues-list');
+  const empty = document.getElementById('opt-issues-empty');
+  const badge = document.getElementById('opt-issues-badge');
+  if (!list) return;
+
+  const done = items.filter(i => i.status === 'done').length;
+  const inProg = items.filter(i => i.status === 'in_progress').length;
+  const pending = items.length - done - inProg;
+
+  // Update badge
+  const remaining = items.length - done;
+  if (badge) {
+    if (remaining > 0) {
+      badge.textContent = remaining;
+      badge.style.display = '';
+      badge.style.background = inProg ? '#3b82f6' : 'var(--accent-orange)';
+    } else if (items.length > 0) {
+      badge.textContent = '\u2713';
+      badge.style.display = '';
+      badge.style.background = '#10b981';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  const statusIcon = { pending: '', in_progress: '\u25B6', done: '\u2713' };
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let h = `<div style="font-size:10px;color:var(--text-dim);padding:0 0 6px;border-bottom:1px solid var(--border);margin-bottom:4px;">${done}/${items.length} done${inProg ? ' \u00b7 ' + inProg + ' in progress' : ''}${pending ? ' \u00b7 ' + pending + ' pending' : ''}</div>`;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const isDone = item.status === 'done';
+    const hasDesc = !!(item.description && item.description.trim());
+    h += `<div class="todo-item${isDone ? ' is-done' : ''}${hasDesc ? ' has-desc' : ''}" ${hasDesc ? `onclick="todoToggleDetail(${i})"` : ''}>`;
+    h += `<div class="todo-status ${item.status}">${statusIcon[item.status] || ''}</div>`;
+    h += `<div style="flex:1;min-width:0;">`;
+    h += `<div class="todo-text">${esc(item.title)}${hasDesc ? ' <span style="color:var(--text-dim);font-size:10px;">&#9662;</span>' : ''}</div>`;
+    if (hasDesc) {
+      h += `<div class="todo-detail" id="todo-detail-${i}" style="display:none;margin-top:4px;padding:6px 8px;background:var(--surface2);border-radius:4px;font-size:11px;color:var(--text-mid);line-height:1.6;white-space:pre-wrap;">${esc(item.description)}</div>`;
+    }
+    h += `</div></div>`;
+  }
+  list.innerHTML = h;
+  list.style.display = '';
+  if (empty) empty.style.display = 'none';
+
+  // Auto-open sidebar to Issues tab
+  optSbSwitchTab('issues', null);
+  optSidebarShow();
+}
+
+function todoToggleDetail(idx) {
+  const el = document.getElementById('todo-detail-' + idx);
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  // Toggle chevron
+  const item = el.closest('.todo-item');
+  if (item) item.classList.toggle('expanded', !isOpen);
+}
+
+// ==== WebSocket ====
+// Pending session_id to send on first message (for resume)
+let pendingResumeSessionId = null;
+
+function ensureWs(t) {
+  if (S.ws[t] && S.ws[t].readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let url;
+  if (t === 'auto') url = `${proto}//${location.host}/ws/auto`;
+  else if (t === 'room') url = `${proto}//${location.host}/ws/room`;
+  else url = `${proto}//${location.host}/ws/chat/${AGENTS[t]}`;
+  setStatus(t, 'connecting', 'Connecting...');
+  const ws = new WebSocket(url);
+  ws.onopen = () => {
+    setStatus(t, 'ready', 'Connected');
+    ws._reconnectAttempts = 0;
+    // On reconnect or manual resume, send session_id so server resumes the existing session
+    const resumeId = pendingResumeSessionId || S.sessionId;
+    if (resumeId) {
+      ws.send(JSON.stringify({ type: 'message', content: '', session_id: resumeId }));
+      pendingResumeSessionId = null;
+    }
+  };
+  ws.onclose = (ev) => {
+    // Don't reconnect if closed intentionally (code 1000) or by resumeSession()
+    if (ev.code === 1000) { setStatus(t, 'error', 'Disconnected'); return; }
+    const attempts = (ws._reconnectAttempts || 0) + 1;
+    if (attempts <= 5) {
+      const delay = Math.min(1000 * Math.pow(2, attempts - 1), 15000);
+      setStatus(t, 'connecting', `Reconnecting (${attempts}/5)...`);
+      setTimeout(() => { S.ws[t] = null; ensureWs(t); if (S.ws[t]) S.ws[t]._reconnectAttempts = attempts; }, delay);
+    } else {
+      setStatus(t, 'error', 'Disconnected (retry failed)');
+    }
+  };
+  ws.onerror = () => {};  // onclose will handle reconnect
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'ping') { ws.send(JSON.stringify({ type: 'pong' })); return; }
+    onWsMsg(t, m);
+  };
+  S.ws[t] = ws;
+}
+
+function resumeSession() {
+  const input = document.getElementById('resumeInput');
+  const sid = input.value.trim();
+  if (!sid) return;
+  input.value = '';
+  const t = S.tab;
+  // Close existing connection
+  if (S.ws[t] && S.ws[t].readyState <= 1) {
+    S.ws[t].close();
+    S.ws[t] = null;
+  }
+  // Clear current messages
+  const cid = t === 'auto' ? 'messages-auto-eval' : (t === 'room' ? 'messages-room' : `messages-${t}`);
+  const container = document.getElementById(cid);
+  if (container) container.innerHTML = '';
+  S.hasMsg[t] = false;
+  // Set pending session ID and reconnect
+  pendingResumeSessionId = sid;
+  ensureWs(t);
+}
+
+// ==== Send ====
+function send(t) {
+  const btn = document.getElementById(`btn-${t}`);
+  if (btn && btn.disabled) return;
+  // If agent is working, send cancel instead
+  const st = S.status[t];
+  if (st && st.k === 'working') {
+    cancelAgent(t);
+    return;
+  }
+  const inp = document.getElementById(`input-${t}`);
+  const txt = inp.value.trim();
+  if (!txt) return;
+  const ws = S.ws[t];
+  if (!ws || ws.readyState !== 1) { ensureWs(t); return; }
+  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+  const cid = t === 'auto' ? 'messages-auto-eval' : (t === 'room' ? 'messages-room' : `messages-${t}`);
+  if (t === 'room') addUserRoom(cid, txt);
+  else addUser(cid, txt);
+  ws.send(JSON.stringify({ type: 'message', content: txt }));
+  inp.value = ''; autoH(inp);
+  // Close mention dropdown
+  if (t === 'room') closeMentionDropdown();
+}
+function cancelAgent(t) {
+  const ws = S.ws[t];
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'cancel' }));
+}
+function onKey(e, t) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(t); }
+  setTimeout(() => autoH(e.target), 0);
+}
+function autoH(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }
+
+// ==== Status ====
+function setStatus(t, k, txt) {
+  S.status[t] = { k, txt };
+  const btn = document.getElementById(`btn-${t}`);
+  if (btn) {
+    if (k === 'connecting') {
+      btn.disabled = true;
+      btn.textContent = t === 'auto' ? 'Start' : 'Send';
+    } else if (k === 'working' && t !== 'room') {
+      btn.disabled = false;
+      btn.textContent = 'Stop';
+    } else {
+      btn.disabled = false;
+      btn.textContent = t === 'auto' ? 'Start' : 'Send';
+    }
+  }
+  if (t === S.tab) updStatus(t);
+}
+function updStatus(t) {
+  const s = S.status[t] || { k: 'ready', txt: 'Ready' };
+  const dot = document.getElementById('statusDot');
+  const stxt = document.getElementById('statusText');
+  dot.className = 'dot-live';
+  if (s.k === 'working' || s.k === 'initializing' || s.k === 'connecting') dot.classList.add('working');
+  else if (s.k === 'error') dot.classList.add('err');
+  stxt.textContent = s.txt;
+}
+
+// ==== Wire message dispatch ====
+function onWsMsg(t, m) {
+  if (m.type === 'session') {
+    console.log('[WS] session received:', m.session_id);
+    S.sessionId = m.session_id;
+    const short = m.session_id.slice(0, 8);
+    // Update badge
+    const badge = document.getElementById('sessionBadge');
+    badge.textContent = 'Session: ' + short;
+    badge.title = m.session_id + ' (click to copy full ID)\nOutput: output/' + m.session_id + '/';
+    badge.style.display = 'inline-block';
+    badge.onclick = () => { navigator.clipboard.writeText(m.session_id); badge.textContent = 'Copied!'; setTimeout(() => { badge.textContent = 'Session: ' + short; }, 1500); };
+    // Also show session_id as plain text next to status
+    const idText = document.getElementById('sessionIdText');
+    idText.textContent = short;
+    idText.title = m.session_id;
+    idText.style.display = 'inline';
+    idText.style.cursor = 'pointer';
+    idText.onclick = () => { navigator.clipboard.writeText(m.session_id); idText.textContent = 'Copied!'; setTimeout(() => { idText.textContent = short; }, 1500); };
+    // Auto-open Op Graph split view and start live
+    // Auto-open Op Graph sidebar and start live
+    const sogInput = document.getElementById('sog-session-input');
+    if (sogInput) sogInput.value = m.session_id;
+    if (typeof sogLoadFromSession === 'function') {
+      sogLoadFromSession(m.session_id);
+      setTimeout(() => { if (typeof sogStartLive === 'function') sogStartLive(); }, 500);
+    }
+  } else if (m.type === 'resumed') {
+    showResumedSummary(t, m.summary);
+  } else if (m.type === 'agents' && t === 'room') {
+    initRoomAgents(m.agents);
+  } else if (m.type === 'status') {
+    if (t === 'room' && m.agent) {
+      updateRoomAgentStatus(m.agent, m.status);
+    } else {
+      const map = { initializing:'Initializing...', ready:'Ready', thinking:'Working...', done:'Done', error:'Error' };
+      const k = m.status === 'thinking' ? 'working' : m.status;
+      setStatus(t, k, map[m.status] || m.status);
+    }
+  } else if (m.type === 'question') {
+    showQuestion(t, m);
+  } else if (m.type === 'wire') {
+    routeWire(t, m.data, m.agent || null, 0);
+  } else if (m.type === 'error') {
+    addError(ctr(t, m.agent), m.message);
+  }
+}
+
+function ctr(t, agent) {
+  if (t === 'auto') return agent === 'video-director' ? 'messages-auto-director' : 'messages-auto-eval';
+  if (t === 'room') return 'messages-room';
+  return `messages-${t}`;
+}
+
+function routeWire(tab, wd, agent, depth) {
+  let c = ctr(tab, agent);
+  const wt = wd.type, p = wd.payload;
+
+  // Auto mode: track per-agent status from wire events
+  if (tab === 'auto' && agent) {
+    if (wt === 'TurnBegin' || wt === 'ToolCall') setAutoAgentStatus(agent, 'working');
+    else if (wt === 'TurnEnd') setAutoAgentStatus(agent, 'ready');
+  }
+
+  // Room mode: route content into per-agent cards
+  if (tab === 'room' && agent) {
+    if (wt === 'TurnBegin') return; // card created on first content
+    if (wt === 'TurnEnd') { closeRoomCard(agent); return; }
+    if (['ContentPart','TextPart','ThinkPart','ToolCall','ToolResult'].includes(wt)) {
+      c = ensureRoomCard(agent);
+    }
+  }
+
+  switch (wt) {
+    case 'ContentPart':
+      if (p.type === 'text' && p.text) appendAst(c, p.text, agent);
+      else if (p.type === 'think' && p.text) addThinking(c, p.text);
+      else if (p.type === 'image_url' && p.image_url) addMedia(c, p.image_url.url, 'image');
+      else if (p.type === 'video_url' && p.video_url) addMedia(c, p.video_url.url, 'video');
+      break;
+    case 'TextPart':
+      if (p.text) appendAst(c, p.text, agent);
+      break;
+    case 'ThinkPart':
+      if (p.text) addThinking(c, p.text);
+      break;
+    case 'ToolCall': {
+      const name = p.function?.name || '';
+      finishTool(c);  // close any previous pending tool
+      curAst[c] = null; // break text accumulation
+      addToolActivity(c, name, p.function?.arguments, 'running');
+      // Track story-graph.json writes from ToolCall directly (more reliable than curTool for subagent events)
+      if ((name === 'WriteFile' || name === 'StrReplaceFile') && p.function?.arguments) {
+        try {
+          const args = typeof p.function.arguments === 'string' ? JSON.parse(p.function.arguments) : p.function.arguments;
+          const fp = args.path || args.file_path || '';
+          if (fp.endsWith('story-graph.json')) {
+            console.log('[SG-detect] ToolCall WriteFile detected:', fp);
+            currentStoryGraphPath = fp;
+            showStickyBar(c, fp);
+            // Schedule a delayed refresh so the graph panel picks up new reference_image paths
+            // (especially from subagent StrReplaceFile updates that may not trigger via ToolResult)
+            clearTimeout(window._sgRefreshTimer);
+            window._sgRefreshTimer = setTimeout(() => {
+              refreshStoryGraphPanel();
+            }, 1500);
+          }
+          // operation-graph.json detection removed — assets view now uses story-graph + shot-plan
+        } catch {}
+      }
+      if (name === 'ValidateStoryGraph') {
+        // Mark that next ToolResult should trigger preview
+        window._sgPendingValidation = currentStoryGraphPath;
+      }
+      // Track GenerateImage calls to show generating status on graph nodes
+      if (name === 'GenerateImage' && p.function?.arguments) {
+        try {
+          const args = typeof p.function.arguments === 'string' ? JSON.parse(p.function.arguments) : p.function.arguments;
+          const outputPath = args.output_path || '';
+          const nodeId = extractNodeIdFromImagePath(outputPath);
+          console.log('[SG-img] GenerateImage ToolCall detected, outputPath:', outputPath, 'nodeId:', nodeId);
+          if (nodeId) {
+            window._sgGeneratingImages = window._sgGeneratingImages || {};
+            window._sgGeneratingImages[nodeId] = { outputPath };
+            markNodeGenerating(nodeId);
+          }
+        } catch (e) { console.warn('[SG-img] Failed to parse GenerateImage args:', e); }
+      }
+      break;
+    }
+    case 'ToolCallPart':
+      // streaming tool call - ignore (already shown from ToolCall)
+      break;
+    case 'ToolResult': {
+      const rv = p.return_value || {};
+      // Capture tool info before finishTool clears it
+      const toolInfo = curTool[c];
+      // output can be a string or a list of ContentPart objects
+      let output = '';
+      if (typeof rv.output === 'string') output = rv.output;
+      else if (Array.isArray(rv.output)) {
+        output = rv.output.map(part => part.text || '').join('');
+      }
+      // Fall back to brief display blocks
+      if (!output && Array.isArray(rv.display)) {
+        output = rv.display.filter(d => d.type === 'brief').map(d => d.text || '').join('');
+      }
+      finishTool(c, rv.is_error ? 'error' : 'done', output);
+      // Check display blocks for media and story_graph_view
+      const display = rv.display || [];
+      for (const db of display) {
+        if (db.type === 'image' && db.url) addMedia(c, db.url, 'image');
+        else if (db.type === 'video' && db.url) addMedia(c, db.url, 'video');
+        else if (db.type === 'plan_compare_view' && !rv.is_error) {
+          console.log('[PC] plan_compare_view display block found');
+          if (typeof pcLoadFromDisplayBlock === 'function') {
+            pcLoadFromDisplayBlock(db);
+            // Open Plan Compare sidebar within optimizer panel
+            if (typeof pcShowPanel === 'function') pcShowPanel();
+            // Switch to optimizer tab if not already there
+            if (!activeTabs.has('optimizer')) {
+              activeTabs.clear();
+              activeTabs.add('optimizer');
+              applyTabs();
+            }
+          }
+        }
+        else if (db.type === 'agent_graph_view' && !rv.is_error) {
+          console.log('[AG] agent_graph_view display block found');
+          if (typeof agLoadData === 'function') {
+            agLoadData(db);
+            // Auto-switch to Agent Graph tab
+            if (!activeTabs.has('agentgraph')) {
+              activeTabs.clear();
+              activeTabs.add('agentgraph');
+              applyTabs();
+            }
+          }
+        }
+        else if (db.type === 'todo' && !rv.is_error) {
+          todoRender(db.items || []);
+          // Switch to optimizer tab if not already there
+          if (!activeTabs.has('optimizer')) {
+            activeTabs.clear();
+            activeTabs.add('optimizer');
+            applyTabs();
+          }
+        }
+        else if (db.type === 'story_graph_view' && !rv.is_error) {
+          // Detect story graph path from the ValidateStoryGraph tool args or currentStoryGraphPath
+          const sgToolInfo = curTool[c] || toolInfo;
+          const sgArgs = sgToolInfo?.args || {};
+          const sgFilePath = sgArgs.file_path || sgArgs.path || currentStoryGraphPath;
+          if (sgFilePath && sgFilePath.endsWith('story-graph.json')) {
+            console.log('[SG-detect] story_graph_view display block found, path:', sgFilePath);
+            currentStoryGraphPath = sgFilePath;
+            showStickyBar(c, sgFilePath);
+            addStoryGraphPreview(c, sgFilePath);
+            // Clear _sgPendingValidation to avoid duplicate preview from the check below
+            window._sgPendingValidation = null;
+            fetchAndLoadStoryGraph(sgFilePath);
+          }
+        }
+      }
+      // Auto-load story graph detection
+      {
+        // Check if this ToolResult is from a ValidateStoryGraph that we tracked in ToolCall
+        if (!rv.is_error && window._sgPendingValidation) {
+          const sgPath = window._sgPendingValidation;
+          window._sgPendingValidation = null;
+          console.log('[SG-detect] ValidateStoryGraph succeeded, rendering preview:', sgPath);
+          currentStoryGraphPath = sgPath;
+          showStickyBar(c, sgPath);
+          addStoryGraphPreview(c, sgPath);
+          fetchAndLoadStoryGraph(sgPath);
+        }
+
+        // Also check toolInfo (works for direct tool calls, may not work for subagent)
+        if (toolInfo && !rv.is_error) {
+          const toolName = toolInfo.name || '';
+          const filePath = toolInfo.args?.path || toolInfo.args?.file_path || '';
+          if ((toolName === 'WriteFile' || toolName === 'StrReplaceFile') && filePath.endsWith('story-graph.json')) {
+            currentStoryGraphPath = filePath;
+            showStickyBar(c, filePath);
+            // Auto-refresh graph when story-graph.json is updated (e.g. reference_image paths added)
+            refreshStoryGraphPanel();
+          }
+          if (toolName === 'ValidateStoryGraph' && currentStoryGraphPath) {
+            showStickyBar(c, currentStoryGraphPath);
+            addStoryGraphPreview(c, currentStoryGraphPath);
+          }
+        }
+
+        // Fallback: detect story-graph.json path in ToolResult output text
+        if (!rv.is_error && output) {
+          const sgMatch = output.match(/(\/[^\s"']+story-graph\.json)/);
+          if (sgMatch) {
+            console.log('[SG-detect] Found path in output:', sgMatch[1]);
+            currentStoryGraphPath = sgMatch[1];
+            showStickyBar(c, sgMatch[1]);
+          }
+        }
+
+        // Track GenerateImage completion to update graph node status
+        {
+          const genToolName = toolInfo?.name || '';
+          const isGenImage = genToolName === 'GenerateImage' || (!genToolName && output && output.includes('Image generated'));
+          if (isGenImage && output) {
+            // Extract node ID from output path mentioned in the result
+            const pathMatch = output.match(/Image saved to (.+)/);
+            const outPath = pathMatch ? pathMatch[1].trim() : '';
+            const nodeId = outPath ? extractNodeIdFromImagePath(outPath) : null;
+            if (nodeId) {
+              if (!rv.is_error) {
+                markNodeGenerated(nodeId, outPath);
+              } else {
+                markNodeGenerated(nodeId, outPath); // remove generating state on failure
+              }
+              if (window._sgGeneratingImages) delete window._sgGeneratingImages[nodeId];
+            }
+          }
+
+          // Track GenerateVideoSync / CheckVideoJob completion to update shot node status
+          const isGenVideo = ['GenerateVideoSync', 'CheckVideoJob'].includes(genToolName)
+            || (!genToolName && output && output.includes('Downloaded to:'));
+          if (isGenVideo && output && !rv.is_error) {
+            const vidMatch = output.match(/Downloaded to:\s*(.+)/);
+            const vidPath = vidMatch ? vidMatch[1].trim() : '';
+            // Extract shot node ID from output path like "assets/shots/evt_chase_shot_1.mp4"
+            // Node IDs in the graph now use evt_ prefix directly, matching shot-plan
+            if (vidPath) {
+              const filename = vidPath.split('/').pop().replace(/\.[^.]+$/, ''); // e.g. "evt_chase_shot_1"
+              const shotNodeId = filename;
+              markNodeGenerated(shotNodeId);
+              // Also set clipUrl on the cytoscape node so it gets green border
+              if (typeof cy !== 'undefined' && cy) {
+                const n = cy.getElementById(shotNodeId);
+                if (n.length && !n.data('clipUrl')) {
+                  const clipUrl = resolveRefImageUrl(vidPath);
+                  if (clipUrl) n.data('clipUrl', clipUrl);
+                }
+              }
+            }
+          }
+        }
+      }
+      break;
+    }
+    case 'TurnBegin':
+      curAst[c] = null;
+      break;
+    case 'TurnEnd':
+      // Detect media paths in the assistant's text and render them
+      if (curAst[c]) {
+        const astText = curAst[c].textContent || '';
+        const mediaPaths = extractMediaPaths(astText);
+        for (const { path, type } of mediaPaths) {
+          addMedia(c, path, type);
+        }
+        // Detect story-graph.json path in assistant text (fallback for subagent results)
+        const sgTextMatch = astText.match(/(\/[^\s"']+story-graph\.json)/);
+        if (sgTextMatch && !currentStoryGraphPath) {
+          currentStoryGraphPath = sgTextMatch[1];
+          showStickyBar(c, sgTextMatch[1]);
+        }
+      }
+      // If we have a known story graph path, ensure sticky bar is visible
+      if (currentStoryGraphPath) {
+        showStickyBar(c, currentStoryGraphPath);
+      }
+      curAst[c] = null;
+      finishTool(c);
+      // Post-process: highlight @mentions in the last assistant message
+      if (tab === 'room') highlightMentionsInLastMessage(c);
+      break;
+    case 'SubagentEvent': {
+      const inner = p.event;
+      if (!inner) break;
+      // In single-agent chat, subagent events show in same container but labeled
+      // In auto mode, route to director lane
+      const subAgent = (tab === 'auto') ? 'video-director' : agent;
+      routeWire(tab, inner, subAgent, depth + 1);
+      break;
+    }
+    // Silently ignore these:
+    case 'StepBegin':
+    case 'StepInterrupted':
+    case 'StatusUpdate':
+    case 'CompactionBegin':
+    case 'CompactionEnd':
+    case 'ApprovalRequest':
+    case 'ApprovalResponse':
+    case 'QuestionRequest':
+    case 'QuestionResponse':
+      break;
+    default:
+      console.log('wire:', wt, p);
+  }
+}
+
+// ==== Assistant text (streaming accumulation) ====
+// ==== Auto mode: per-agent status ====
+function setAutoAgentStatus(agent, status) {
+  const key = agent === 'video-director' ? 'director' : 'eval';
+  const dot = $('auto-dot-' + key);
+  const txt = $('auto-status-' + key);
+  if (!dot || !txt) return;
+  if (status === 'working') {
+    dot.style.background = 'var(--accent-orange)';
+    dot.style.animation = 'blink 1s infinite';
+    txt.textContent = 'Working...';
+  } else {
+    dot.style.background = 'var(--accent-green)';
+    dot.style.animation = '';
+    txt.textContent = 'Ready';
+  }
+}
+
+function tabForContainer(c) {
+  if (c === 'messages-auto-eval' || c === 'messages-auto-director') return 'auto';
+  if (c === 'messages-room' || c.startsWith('room-card-body-')) return 'room';
+  if (c === 'messages-director') return 'director';
+  if (c === 'messages-eval') return 'eval';
+  if (c === 'messages-optimizer') return 'optimizer';
+  return S.tab;
+}
+
+// ==== Chat Room: agent cards (group each turn into a card) ====
+const roomCards = {}; // agentName -> { el, bodyId }
+let roomCardSeq = 0;
+
+function ensureRoomCard(agent) {
+  if (roomCards[agent]) return roomCards[agent].bodyId;
+  if (!S.hasMsg['room']) { clearEmpty('room'); S.hasMsg['room'] = true; }
+
+  roomCardSeq++;
+  const bodyId = 'room-card-body-' + roomCardSeq;
+  const ra = roomAgents.find(a => a.name === agent);
+  const color = ra ? ra.color : 'var(--text-mid)';
+  const alias = ra ? ra.alias : agent;
+
+  const card = document.createElement('div');
+  card.className = 'agent-card';
+  card.style.borderLeftColor = color;
+  card.innerHTML =
+    '<div class="agent-card-header">' +
+      '<div class="ac-dot" style="background:' + color + '"></div>' +
+      '<span style="color:' + color + '">' + esc(alias) + '</span>' +
+    '</div>' +
+    '<div class="agent-card-body" id="' + bodyId + '"></div>';
+
+  $('messages-room').appendChild(card);
+  scrollBot('messages-room');
+  roomCards[agent] = { el: card, bodyId: bodyId };
+  return bodyId;
+}
+
+function closeRoomCard(agent) {
+  const info = roomCards[agent];
+  if (!info) return;
+  curAst[info.bodyId] = null;
+  finishTool(info.bodyId);
+  // Highlight @mentions in the card
+  const textSpans = info.el.querySelectorAll('.msg-text');
+  const aliases = roomAgents.map(a => a.alias);
+  const allNames = ['User', ...aliases];
+  const re = new RegExp('@(' + allNames.join('|') + ')\\b', 'gi');
+  textSpans.forEach(span => {
+    const raw = span.textContent;
+    if (!re.test(raw)) return;
+    re.lastIndex = 0;
+    span.innerHTML = esc(raw).replace(re, (match, name) => {
+      const lower = name.toLowerCase();
+      if (lower === 'user') {
+        return '<span class="mention" style="color:var(--accent-blue);background:rgba(91,141,239,0.15)">@' + esc(name) + '</span>';
+      }
+      const a = roomAgents.find(x => x.alias.toLowerCase() === lower);
+      const cl = a ? a.color : 'var(--text-mid)';
+      return '<span class="mention" style="color:' + cl + ';background:' + cl + '20">@' + esc(name) + '</span>';
+    });
+  });
+  delete roomCards[agent];
+}
+
+function appendAst(c, text, agent) {
+  const t = tabForContainer(c);
+  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+  if (curAst[c]) {
+    curAst[c].textContent += text;
+  } else {
+    const el = document.createElement('div');
+    el.className = 'msg-assistant';
+    let tag = '';
+    if (agent) {
+      const ra = roomAgents.find(a => a.name === agent);
+      if (ra) {
+        tag = `<span class="agent-tag" style="background:${ra.color}20;color:${ra.color}">${esc(ra.alias)}</span><br>`;
+      } else if (agent === 'video-director') {
+        tag = '<span class="agent-tag director">Director</span><br>';
+      } else if (agent === 'video-auto-eval') {
+        tag = '<span class="agent-tag eval">Evaluator</span><br>';
+      }
+    }
+    el.innerHTML = tag + '<span class="msg-text"></span>';
+    const span = el.querySelector('.msg-text');
+    span.textContent = text;
+    $(c).appendChild(el);
+    curAst[c] = span;
+  }
+  scrollBot(c);
+}
+
+// ==== Tool activity (compact one-liner) ====
+function addToolActivity(c, name, argsStr, status) {
+  // Friendly tool name
+  const friendly = {
+    'Task': 'Delegating to sub-agent',
+    'ChatWithAgent': 'Talking to agent',
+    'WriteFile': 'Writing file',
+    'ReadFile': 'Reading file',
+    'StrReplaceFile': 'Editing file',
+    'Glob': 'Searching files',
+    'Grep': 'Searching content',
+    'Shell': 'Running command',
+    'ManageVideoProject': 'Managing project',
+    'GenerateVideo': 'Generating video',
+    'GenerateVideoSync': 'Generating video',
+    'CheckVideoJob': 'Checking video job',
+    'VideoEdit': 'Editing video',
+    'GenerateImage': 'Generating image',
+    'AnalyzeVideo': 'Analyzing video',
+    'CompareVideos': 'Comparing videos',
+    'AskUserQuestion': 'Asking question',
+    'SetTodoList': 'Updating tasks',
+    'ReadMediaFile': 'Reading media',
+    'ValidateStoryGraph': 'Validating story graph',
+    'LinearizeStoryGraph': 'Linearizing story graph',
+    'ExtractFrame': 'Extracting frame',
+    'GenerateMusic': 'Generating music',
+    'CheckMusicJob': 'Checking music job',
+    'GenerateSpeech': 'Generating speech',
+    'Think': 'Thinking',
+  };
+  const label = friendly[name] || name;
+
+  // Try to extract a short hint from args
+  let hint = '';
+  try {
+    if (argsStr) {
+      const a = JSON.parse(argsStr);
+      hint = a.path || a.file_path || a.video_path || a.agent_name || a.subagent_name || a.description || '';
+      if (hint.length > 50) hint = '...' + hint.slice(-47);
+      // Show prompt for generative tools
+      if (a.prompt && ['GenerateVideo', 'GenerateVideoSync', 'GenerateImage'].includes(name)) {
+        const p = a.prompt.length > 80 ? a.prompt.slice(0, 80) + '…' : a.prompt;
+        hint = hint ? hint + ' | ' + p : p;
+      }
+    }
+  } catch {}
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'align-self:flex-start; max-width:90%;';
+
+  const row = document.createElement('div');
+  row.className = 'activity-row';
+  row.innerHTML = `
+    <div class="act-icon">${status === 'running' ? '<div class="dot-live working" style="width:6px;height:6px"></div>' : '&#10003;'}</div>
+    <span class="act-label">${esc(label)}${hint ? ' <span style="color:var(--text-dim)">' + esc(hint) + '</span>' : ''}</span>
+  `;
+
+  // Detail panel (hidden by default)
+  const detail = document.createElement('div');
+  detail.className = 'activity-detail';
+  try {
+    detail.textContent = argsStr ? JSON.stringify(JSON.parse(argsStr), null, 2) : '';
+  } catch {
+    detail.textContent = argsStr || '';
+  }
+
+  // Toggle button
+  if (argsStr) {
+    const btn = document.createElement('button');
+    btn.className = 'act-toggle';
+    btn.textContent = '...';
+    btn.onclick = () => detail.classList.toggle('open');
+    row.appendChild(btn);
+  }
+
+  wrapper.appendChild(row);
+  wrapper.appendChild(detail);
+  $(c).appendChild(wrapper);
+  scrollBot(c);
+
+  // Store args for later inspection (e.g., detecting story-graph.json writes)
+  let parsedArgs = null;
+  try {
+    if (argsStr && typeof argsStr === 'string') parsedArgs = JSON.parse(argsStr);
+    else if (argsStr && typeof argsStr === 'object') parsedArgs = argsStr;
+  } catch {}
+  curTool[c] = { wrapper, row, detail, name, args: parsedArgs };
+}
+
+function finishTool(c, status, output) {
+  const t = curTool[c];
+  if (!t) return;
+
+  // Update icon to done/error
+  const icon = t.row.querySelector('.act-icon');
+  if (icon) {
+    if (status === 'error') icon.innerHTML = '<span style="color:var(--accent-red)">&#10007;</span>';
+    else icon.innerHTML = '<span style="color:var(--accent-green)">&#10003;</span>';
+  }
+
+  // If there's output, append to detail
+  if (output && t.detail) {
+    if (t.detail.textContent) t.detail.textContent += '\n\n--- Result ---\n' + output;
+    else t.detail.textContent = output;
+  }
+
+  // Detect media file paths in output and display them
+  if (output) {
+    const paths = extractMediaPaths(output);
+    for (const { path, type } of paths) {
+      addMedia(c, path, type);
+    }
+  }
+
+  curTool[c] = null;
+}
+
+// ==== Thinking (collapsed) ====
+function addThinking(c, text) {
+  const el = document.createElement('div');
+  el.className = 'msg-thinking collapsed';
+  el.textContent = text;
+  el.title = 'Click to expand';
+  el.onclick = () => el.classList.toggle('collapsed');
+  $(c).appendChild(el);
+  scrollBot(c);
+}
+
+// ==== Question UI ====
+function showQuestion(tab, m) {
+  const c = ctr(tab, null);
+  const t = tabForContainer(c);
+  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+
+  const card = document.createElement('div');
+  card.className = 'question-card';
+  card.innerHTML = '<div class="q-title">Agent asks</div>';
+
+  const answers = {}; // question -> selected answer
+
+  for (const q of m.questions) {
+    const qDiv = document.createElement('div');
+    qDiv.style.marginBottom = '8px';
+
+    const qText = document.createElement('div');
+    qText.className = 'q-text';
+    qText.textContent = q.question;
+    qDiv.appendChild(qText);
+
+    if (q.options && q.options.length > 0) {
+      const optDiv = document.createElement('div');
+      optDiv.className = 'q-options';
+      for (const opt of q.options) {
+        const btn = document.createElement('div');
+        btn.className = 'q-opt';
+        btn.textContent = opt.label;
+        btn.onclick = () => {
+          optDiv.querySelectorAll('.q-opt').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          answers[q.question] = opt.label;
+        };
+        optDiv.appendChild(btn);
+      }
+      qDiv.appendChild(optDiv);
+    } else {
+      const inp = document.createElement('input');
+      inp.className = 'q-input';
+      inp.placeholder = 'Type your answer...';
+      inp.oninput = () => { answers[q.question] = inp.value; };
+      inp.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.isComposing) {
+          e.preventDefault();
+          submitBtn.click();
+        }
+      };
+      qDiv.appendChild(inp);
+    }
+    card.appendChild(qDiv);
+  }
+
+  const submitBtn = document.createElement('button');
+  submitBtn.className = 'q-submit';
+  submitBtn.textContent = 'Submit';
+  submitBtn.onclick = () => {
+    // Fill defaults for unanswered questions
+    for (const q of m.questions) {
+      if (!answers[q.question]) {
+        if (q.options && q.options.length > 0) answers[q.question] = q.options[0].label;
+        else answers[q.question] = '';
+      }
+    }
+    const ws = S.ws[tab];
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: 'answer', id: m.id, answers: answers }));
+    }
+    card.classList.add('answered');
+  };
+  card.appendChild(submitBtn);
+
+  $(c).appendChild(card);
+  scrollBot(c);
+}
+
+// ==== Session Resume Summary ====
+function showResumedSummary(t, summary) {
+  const cid = t === 'auto' ? 'messages-auto-eval' : (t === 'room' ? 'messages-room' : `messages-${t}`);
+  const container = document.getElementById(cid);
+  if (!container) return;
+
+  clearEmpty(t);
+  S.hasMsg[t] = true;
+
+  const card = document.createElement('div');
+  card.className = 'msg-system';
+  card.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin:8px 0;';
+
+  let html = '<div style="font-weight:600;margin-bottom:8px;color:var(--accent-blue);">Session Resumed</div>';
+
+  if (summary.last_user_message) {
+    html += `<div style="margin-bottom:6px;font-size:12px;color:var(--text-dim);">Last request:</div>`;
+    html += `<div style="margin-bottom:10px;font-size:13px;padding:6px 10px;background:var(--surface3);border-radius:var(--radius-sm);">${escHtml(summary.last_user_message)}</div>`;
+  }
+
+  const items = [];
+  if (summary.story_graph) {
+    const sg = summary.story_graph;
+    const nRefs = (sg.entity_reference_images || 0) + (sg.state_reference_images || 0);
+    items.push(`Story Graph: ${sg.characters} characters, ${sg.locations} locations, ${sg.events} events, ${nRefs} ref images`);
+  }
+  if (summary.shot_plan) {
+    items.push(`Shot Plan: ${summary.shot_plan.total_shots} shots`);
+  }
+  if (summary.clips) {
+    items.push(`Video Clips: ${summary.clips.total} total, ${summary.clips.valid} valid (>1MB)`);
+  }
+  if (summary.images) {
+    items.push(`Images: ${summary.images}`);
+  }
+
+  if (items.length > 0) {
+    html += '<div style="font-size:12px;color:var(--text-mid);">';
+    for (const item of items) {
+      html += `<div style="margin:3px 0;">• ${escHtml(item)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Context restored. You can continue the conversation.</div>';
+
+  card.innerHTML = html;
+  container.appendChild(card);
+  scrollBot(cid);
+
+  // If story graph exists, show inline preview and load into graph panel
+  if (summary.story_graph && summary.story_graph.path) {
+    const sgPath = summary.story_graph.path;
+    currentStoryGraphPath = sgPath;
+    showStickyBar(cid, sgPath);
+    addStoryGraphPreview(cid, sgPath);
+    fetchAndLoadStoryGraph(sgPath);
+  }
+
+  // Pre-load shot-plan.json for assets view (if story graph exists)
+  if (summary.story_graph && summary.story_graph.path) {
+    const spPath = summary.story_graph.path.replace('story-graph.json', 'shot-plan.json');
+    fetch(storyGraphUrl(spPath) + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).then(sp => {
+      if (sp) window._shotPlanData = sp;
+    }).catch(() => {});
+  }
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ==== Primitives ====
+function addUser(c, text) {
+  const el = document.createElement('div');
+  el.className = 'msg-user';
+  el.textContent = text;
+  $(c).appendChild(el);
+  scrollBot(c);
+}
+function addError(c, text) {
+  const el = document.createElement('div');
+  el.className = 'msg-error';
+  el.textContent = 'Error: ' + text;
+  $(c).appendChild(el);
+  scrollBot(c);
+}
+function clearEmpty(t) {
+  if (t === 'auto') {
+    $('messages-auto-eval').innerHTML = '';
+    $('messages-auto-director').innerHTML = '';
+  } else if (t === 'room') {
+    const em = $('messages-room').querySelector('.empty-state');
+    if (em) em.remove();
+  } else {
+    const em = $(`messages-${t}`).querySelector('.empty-state');
+    if (em) em.remove();
+  }
+}
+function scrollBot(id) {
+  const el = $(id);
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  // If inside a card, also scroll the parent .messages container
+  const parent = el.closest('.messages');
+  if (parent && parent.id !== id) parent.scrollTop = parent.scrollHeight;
+}
+function $(id) { return document.getElementById(id); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ==== Media display ====
+const IMG_EXTS = ['.png','.jpg','.jpeg','.gif','.webp','.bmp','.svg'];
+const VID_EXTS = ['.mp4','.webm','.mov','.avi','.mkv'];
+
+function extractMediaPaths(text) {
+  // Find file paths that look like media (absolute or relative)
+  const results = [];
+  const seen = new Set();
+  const re = /((?:\/|\.\/|\.\.\/|)[\w.\-\/]+\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|mov|avi|mkv))\b/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    let p = m[1];
+    // Convert relative paths to absolute
+    if (!p.startsWith('/')) {
+      if (p.startsWith('./')) p = p.substring(2);
+      p = '/' + p;
+    }
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const ext = p.substring(p.lastIndexOf('.')).toLowerCase();
+    if (IMG_EXTS.includes(ext)) results.push({ path: p, type: 'image' });
+    else if (VID_EXTS.includes(ext)) results.push({ path: p, type: 'video' });
+  }
+  return results;
+}
+
+function toMediaUrl(src) {
+  // If already http(s), use directly; otherwise proxy through /files/
+  if (src.startsWith('http://') || src.startsWith('https://')) return src;
+  // Local path: strip leading / for the /files/ endpoint
+  const cleaned = src.startsWith('/') ? src.substring(1) : src;
+  return `/files/${cleaned}`;
+}
+
+function showStickyBar(container, filePath) {
+  // Find which tab this container belongs to and show its sticky bar
+  const tab = tabForContainer(container);
+  const bar = document.getElementById(`sg-sticky-${tab}`);
+  if (!bar) return; // no sticky bar for this tab
+  // Extract project name from path: .../project_name/story-graph.json
+  const parts = filePath.replace(/\\/g, '/').split('/');
+  const projIdx = parts.length >= 2 ? parts.length - 2 : 0;
+  const projName = parts[projIdx] || 'story graph';
+  const label = bar.querySelector('.sg-sticky-label');
+  if (label) label.textContent = `Story Graph: ${projName}`;
+  bar.style.display = 'flex';
+}
+
+function storyGraphUrl(filePath) {
+  return '/read-json/' + encodeURI(filePath.replace(/^\.\//, '').replace(/^\/+/, ''));
+}
+
+function addStoryGraphPreview(c, filePath) {
+  const t = tabForContainer(c);
+  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+  curAst[c] = null;
+
+  // Remove any existing preview card in this container to avoid duplicates
+  const container = $(c);
+  if (container) {
+    container.querySelectorAll('.sg-preview-card').forEach(el => el.remove());
+  }
+
+  const card = document.createElement('div');
+  card.className = 'sg-preview-card';
+  card.innerHTML = `
+    <div class="sg-preview-header">
+      <span class="sg-preview-icon">&#128205;</span>
+      <span class="sg-preview-title">Story Graph Generated</span>
+      <button class="sg-btn" style="margin-left:auto;font-size:11px;padding:3px 10px;" onclick="toggleStoryGraphPanel()">Show Graph</button>
+    </div>
+    <div class="sg-preview-body">
+      <div class="sg-preview-info">Loading...</div>
+      <div class="sg-preview-cy" style="height:300px;"></div>
+    </div>
+  `;
+  $(c).appendChild(card);
+  scrollBot(c);
+
+  // Fetch and render mini graph
+  // Ensure storyGraphDir is set so reference_image paths resolve correctly
+  if (typeof extractStoryGraphDir === 'function') {
+    storyGraphDir = extractStoryGraphDir(filePath);
+  }
+  const url = storyGraphUrl(filePath);
+  // Also load shot-plan.json for prompt display in shot node details
+  const spUrl = storyGraphUrl(filePath.replace(/story-graph\.json$/, 'shot-plan.json'));
+  fetch(spUrl).then(r => r.ok ? r.json() : null).then(sp => { if (sp) window._shotPlanData = sp; }).catch(() => {});
+
+  console.log('[SG-preview] fetching:', url, 'from filePath:', filePath);
+  fetch(url).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);
+    return r.json();
+  }).then(data => {
+    const info = card.querySelector('.sg-preview-info');
+    const chars = (data.characters || []).length;
+    const evts = (data.events || []).length;
+    const appears = (data.character_appearances || []).length;
+    info.textContent = chars + ' characters · ' + evts + ' events · ' + appears + ' appearances';
+
+    // Render mini cytoscape in the preview
+    const cyEl = card.querySelector('.sg-preview-cy');
+    if (typeof cytoscape !== 'undefined' && typeof convertToElements === 'function') {
+      const elements = convertToElements(data);
+      const miniCy = cytoscape({
+        container: cyEl,
+        elements: elements,
+        style: typeof buildStylesheet === 'function' ? buildStylesheet() : [],
+        layout: { name: 'preset' },
+        userZoomingEnabled: true,
+        userPanningEnabled: true,
+        boxSelectionEnabled: false,
+        autoungrabify: true,
+      });
+      if (typeof computePositions === 'function') {
+        const pos = computePositions(data);
+        miniCy.nodes().forEach(n => { if (pos[n.id()]) n.position(pos[n.id()]); });
+        miniCy.fit(undefined, 20);
+      }
+      applyImageStatusClasses(miniCy);
+    } else {
+      cyEl.style.display = 'none';
+    }
+  }).catch(err => {
+    console.error('[SG-preview] failed:', err);
+    card.querySelector('.sg-preview-info').textContent = 'Failed to load preview: ' + err.message;
+  });
+
+  // If the graph side panel is already open, refresh it with updated data
+  refreshStoryGraphPanel();
+}
+
+function refreshStoryGraphPanel() {
+  const overlay = document.getElementById('sg-overlay');
+  if (!overlay || overlay.style.display === 'none' || !currentStoryGraphPath) return;
+  console.log('[SG-panel] Refreshing graph panel with:', currentStoryGraphPath);
+  // Ensure storyGraphDir is set for reference_image resolution
+  if (typeof extractStoryGraphDir === 'function') {
+    storyGraphDir = extractStoryGraphDir(currentStoryGraphPath);
+  }
+  const url = storyGraphUrl(currentStoryGraphPath);
+  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(data => {
+    sgOverlayData = data;
+    const cyEl = document.getElementById('sg-overlay-cy');
+    const elements = convertToElements(data);
+    if (sgOverlayCy) sgOverlayCy.destroy();
+    sgOverlayCy = cytoscape({
+      container: cyEl, elements: elements,
+      style: buildStylesheet(), layout: { name: 'preset' },
+      minZoom: 0.1, maxZoom: 4, wheelSensitivity: 0.3,
+    });
+    const positions = computePositions(data);
+    sgOverlayCy.nodes().forEach(n => { const p = positions[n.id()]; if (p) n.position(p); });
+    if (window.sgOverlayVisibleTypes) {
+      applyOverlayFilters();
+    }
+    sgOverlayCy.fit(undefined, 50);
+    applyImageStatusClasses(sgOverlayCy);
+    checkRefImageStatus(sgOverlayCy);
+    checkShotClipStatus(sgOverlayCy);
+
+    checkExecutionClipStatus(sgOverlayCy);
+    buildEventOrder(data);
+    sgOverlayCy.on('tap', 'node', function(evt) {
+      const node = evt.target;
+      console.log('[SG-overlay-refresh tap] node:', node.id(), 'type:', node.data('nodeType'));
+      // Show detail panel
+      const panel = document.getElementById('sg-overlay-detail');
+      const title = document.getElementById('sg-overlay-detail-title');
+      const body = document.getElementById('sg-overlay-detail-body');
+      title.textContent = node.data('fullLabel') || node.id();
+      body.innerHTML = `<div class="sg-detail-section">
+        <span class="sg-detail-badge sg-type-${node.data('nodeType')}">${node.data('nodeType')}</span>
+        <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">${node.id()}</span>
+      </div>` + renderRawFields(node.data('raw') || {}, node.data('nodeType'));
+      panel.classList.add('open');
+      // Highlight neighbors (temporarily swap cy to overlay instance)
+      const _cy = cy; cy = sgOverlayCy;
+      highlightNeighbors(node);
+      if (node.data('nodeType') === 'event') showRelationships(node.id());
+      else clearRelationships();
+      cy = _cy;
+    });
+    sgOverlayCy.on('tap', function(evt) {
+      if (evt.target === sgOverlayCy) {
+        document.getElementById('sg-overlay-detail').classList.remove('open');
+        sgOverlayCy.batch(() => {
+          sgOverlayCy.nodes().removeClass('highlighted dimmed');
+          sgOverlayCy.edges().removeClass('highlighted dimmed');
+        });
+        const _cy = cy; cy = sgOverlayCy; clearRelationships(); cy = _cy;
+      }
+    });
+  }).catch(err => console.warn('[SG-panel] Refresh failed:', err.message));
+}
+
+// ---- Story Graph side panel ----
+let sgOverlayData = null;
+let sgOverlayCy = null;
+let _sgOverlayRefreshTimer = null;
+let _sgOverlayLastModified = null;  // tracks story-graph.json last-modified to detect rewrites
+let _sgOverlayRefreshing = false;   // guard against overlapping refresh cycles
+
+function openStoryGraphOverlay() {
+  if (!currentStoryGraphPath) return;
+  let overlay = document.getElementById('sg-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'sg-overlay';
+    overlay.innerHTML = `
+      <div class="sg-overlay-header">
+        <div class="og-view-switcher">
+          <button class="og-view-btn active" data-view="story">Story Graph</button>
+        </div>
+        <div class="sg-img-legend" id="sg-overlay-legend">
+          <span class="sg-img-legend-item"><span class="sg-img-legend-dot pending"></span> 待生成</span>
+          <span class="sg-img-legend-item"><span class="sg-img-legend-dot generating"></span> 生成中</span>
+          <span class="sg-img-legend-item"><span class="sg-img-legend-dot generated"></span> 已生成</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="sg-btn" onclick="fitOverlayGraph()">Fit</button>
+          <button class="sg-btn" onclick="closeStoryGraphOverlay()">&times; Close</button>
+        </div>
+      </div>
+      <div class="sg-overlay-filter" id="sg-overlay-filter"></div>
+      <div class="sg-overlay-body">
+        <div id="sg-overlay-cy" style="flex:1;"></div>
+        <div class="sg-detail sg-overlay-detail" id="sg-overlay-detail">
+          <div class="sg-detail-header">
+            <h3 id="sg-overlay-detail-title">Node</h3>
+            <button class="sg-detail-close" onclick="document.getElementById('sg-overlay-detail').classList.remove('open')">&times;</button>
+          </div>
+          <div class="sg-detail-body" id="sg-overlay-detail-body"></div>
+        </div>
+      </div>
+      <div class="sg-overlay-loading" id="sg-overlay-loading">Loading...</div>
+    `;
+    // Insert before Op Graph reopen tab so layout is: chat | story graph | [reopen tab] | op graph
+    const _main = document.querySelector('.main');
+    const _sogTab = document.getElementById('sog-reopen-tab');
+    if (_sogTab) _main.insertBefore(overlay, _sogTab);
+    else _main.appendChild(overlay);
+    // Close on Escape
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('sg-overlay')?.style.display !== 'none') closeStoryGraphOverlay(); });
+  }
+  overlay.style.display = 'flex';
+  // Scroll active chat to bottom so latest messages remain visible
+  const activeMessages = document.querySelector('.panel.active .messages, .auto-panel.active .messages');
+  if (activeMessages) setTimeout(() => { activeMessages.scrollTop = activeMessages.scrollHeight; }, 50);
+  document.getElementById('sg-overlay-loading').style.display = 'flex';
+  document.getElementById('sg-overlay-cy').style.display = 'none';
+
+  // Build filter toggles
+  const filterEl = document.getElementById('sg-overlay-filter');
+  const overlayVisibleTypes = new Set([
+    'story_detail',
+    'event', 'character', 'character_appearance',
+    'prop', 'prop_state', 'location', 'location_state', 'timeline',
+    'shot', 'production_style', 'production_ratio', 'production_duration', 'production_language',
+    'asset_first_frame', 'asset_tail_frame', 'asset_output',
+    'audio_bgm', 'audio_dialogue',
+  ]);
+  const allTypes = [
+    ['story_detail','Synopsis'],
+    ['event','Event'], ['character','Character'], ['character_appearance','Appearance'],
+    ['prop','Prop'], ['prop_state','Prop State'],
+    ['location','Location'], ['location_state','Loc State'], ['timeline','TimeLine'],
+    ['shot','Shot'], ['audio_bgm','BGM'], ['audio_dialogue','Dialogue'],
+    ['asset_first_frame','StartFrame'], ['asset_tail_frame','TailFrame'], ['asset_output','Output'],
+  ];
+  filterEl.innerHTML = '<span class="sg-toolbar-label">Filter</span>' +
+    `<button class="sg-toggle active" onclick="sgOverlayToggleProduction(this)">VideoInfo</button>` +
+    allTypes.map(([k,v]) =>
+    `<button class="sg-toggle ${overlayVisibleTypes.has(k)?'active':''}" onclick="this.classList.toggle('active');sgOverlayToggle('${k}',this)">${v}</button>`
+  ).join('');
+
+  // Toggle all three production node types together
+  window.sgOverlayToggleProduction = function(btn) {
+    const types = ['production_style', 'production_ratio', 'production_duration', 'production_language'];
+    const allVisible = types.every(t => overlayVisibleTypes.has(t));
+    for (const t of types) {
+      if (allVisible) overlayVisibleTypes.delete(t);
+      else overlayVisibleTypes.add(t);
+    }
+    if (allVisible) btn.classList.remove('active');
+    else btn.classList.add('active');
+    applyOverlayFilters();
+  };
+
+  // Expose toggle function
+  window.sgOverlayVisibleTypes = overlayVisibleTypes;
+  window.sgOverlayToggle = function(type, btn) {
+    if (overlayVisibleTypes.has(type)) overlayVisibleTypes.delete(type);
+    else overlayVisibleTypes.add(type);
+    applyOverlayFilters();
+  };
+
+  // Fetch story graph data
+  if (!currentStoryGraphPath) {
+    document.getElementById('sg-overlay-loading').style.display = 'none';
+    return;
+  }
+  // Set storyGraphDir before convertToElements so reference_image paths resolve correctly
+  if (typeof extractStoryGraphDir === 'function') {
+    storyGraphDir = extractStoryGraphDir(currentStoryGraphPath);
+  }
+  // Also pre-load shot-plan.json for the assets view
+  const spOverlayUrl = storyGraphUrl(currentStoryGraphPath.replace(/story-graph\.json$/, 'shot-plan.json'));
+  fetch(spOverlayUrl).then(r => r.ok ? r.json() : null).then(sp => {
+    if (sp) {
+      window._shotPlanData = sp;
+    }
+  }).catch(() => {});
+
+  const url = storyGraphUrl(currentStoryGraphPath);
+  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  .then(data => {
+    sgOverlayData = data;
+    document.getElementById('sg-overlay-loading').style.display = 'none';
+    const cyEl = document.getElementById('sg-overlay-cy');
+    cyEl.style.display = 'block';
+    // Build unified elements: narrative + assets (if shot-plan available)
+    const elements = window._shotPlanData
+      ? buildAssetsViewElements(data, window._shotPlanData, window._outputFiles || [])
+      : convertToElements(data);
+    if (sgOverlayCy) sgOverlayCy.destroy();
+    sgOverlayCy = cytoscape({
+      container: cyEl,
+      elements: elements,
+      style: buildStylesheet(),
+      layout: { name: 'preset' },
+      minZoom: 0.1, maxZoom: 4, wheelSensitivity: 0.3,
+    });
+    // Layout — use merged layout when shot-plan available
+    const outFiles = window._outputFiles || [];
+    const positions = window._shotPlanData
+      ? computeAssetsViewPositions(data, window._shotPlanData, outFiles)
+      : computePositions(data);
+    sgOverlayCy.nodes().forEach(n => { const p = positions[n.id()]; if (p) n.position(p); });
+    applyOverlayFilters();
+    sgOverlayCy.fit(undefined, 50);
+    applyImageStatusClasses(sgOverlayCy);
+    checkRefImageStatus(sgOverlayCy);
+    checkShotClipStatus(sgOverlayCy);
+
+    checkExecutionClipStatus(sgOverlayCy);
+    // Node click
+    buildEventOrder(data);
+    sgOverlayCy.on('tap', 'node', function(evt) {
+      const node = evt.target;
+      console.log('[SG-overlay-open tap] node:', node.id(), 'type:', node.data('nodeType'));
+      // Show detail panel
+      const panel = document.getElementById('sg-overlay-detail');
+      const title = document.getElementById('sg-overlay-detail-title');
+      const body = document.getElementById('sg-overlay-detail-body');
+      title.textContent = node.data('fullLabel') || node.id();
+      body.innerHTML = `<div class="sg-detail-section">
+        <span class="sg-detail-badge sg-type-${node.data('nodeType')}">${node.data('nodeType')}</span>
+        <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">${node.id()}</span>
+      </div>` + renderRawFields(node.data('raw') || {}, node.data('nodeType'));
+      panel.classList.add('open');
+      // Highlight neighbors (temporarily swap cy to overlay instance)
+      const _cy = cy; cy = sgOverlayCy;
+      highlightNeighbors(node);
+      if (node.data('nodeType') === 'event') showRelationships(node.id());
+      else clearRelationships();
+      cy = _cy;
+    });
+    sgOverlayCy.on('tap', function(evt) {
+      if (evt.target === sgOverlayCy) {
+        document.getElementById('sg-overlay-detail').classList.remove('open');
+        sgOverlayCy.batch(() => {
+          sgOverlayCy.nodes().removeClass('highlighted dimmed');
+          sgOverlayCy.edges().removeClass('highlighted dimmed');
+        });
+        const _cy = cy; cy = sgOverlayCy; clearRelationships(); cy = _cy;
+      }
+    });
+    // Start periodic refresh while overlay is open (picks up new reference_image paths)
+    if (_sgOverlayRefreshTimer) clearInterval(_sgOverlayRefreshTimer);
+    _sgOverlayRefreshTimer = setInterval(() => {
+      if (!sgOverlayCy || !currentStoryGraphPath) return;
+      if (_sgOverlayRefreshing) return;  // skip if previous refresh still in flight
+      _sgOverlayRefreshing = true;
+      const refreshUrl = storyGraphUrl(currentStoryGraphPath) + '?t=' + Date.now();
+      fetch(refreshUrl).then(r => {
+        const lastMod = r.headers.get('last-modified') || r.headers.get('etag') || '';
+        return r.ok ? r.json().then(data => ({ data, lastMod })) : null;
+      }).then(result => {
+        if (!result || !result.data || !sgOverlayCy) return;
+        const { data, lastMod } = result;
+        let changed = false;
+        // Detect if story-graph.json was rewritten (even if reference_image paths unchanged)
+        const fileChanged = lastMod && _sgOverlayLastModified !== null && _sgOverlayLastModified !== lastMod;
+        _sgOverlayLastModified = lastMod || _sgOverlayLastModified;
+        const bustTs = '?t=' + Date.now();
+        // Update reference_image on entity/state nodes
+        const allEntities = [
+          ...(data.characters || []), ...(data.props || []), ...(data.locations || []),
+          ...(data.character_appearances || []), ...(data.prop_states || []), ...(data.location_states || []),
+        ];
+        const refCheckTasks = [];
+        for (const ent of allEntities) {
+          const n = sgOverlayCy.getElementById(ent.id);
+          if (!n.length) continue;
+          if (ent.reference_image) {
+            const newUrl = resolveRefImageUrl(ent.reference_image);
+            const oldUrl = (n.data('imageUrl') || '').replace(/[?]t=\d+$/, '');
+            if (!n.data('imageUrl') || oldUrl !== newUrl || fileChanged) {
+              // Path changed, first set, or file was rewritten — update with cache-buster
+              n.data('imageUrl', newUrl + bustTs);
+              changed = true;
+            }
+          } else if (!n.data('imageUrl')) {
+            // reference_image is null in JSON — probe disk via convention path
+            const conventionUrl = resolveRefImageUrl('assets/images/' + ent.id + '.png');
+            if (conventionUrl) {
+              refCheckTasks.push(() => fetch(conventionUrl, { method: 'HEAD' }).then(r => {
+                if (r.ok && !n.data('imageUrl')) {
+                  n.data('imageUrl', conventionUrl + bustTs);
+                  n.removeClass('img-pending img-generating img-generating-dim');
+                  if (!n.data('_origLabel')) n.data('_origLabel', n.data('label'));
+                  n.data('label', '✓ ' + n.data('_origLabel'));
+                }
+              }).catch(() => {}));
+            }
+          }
+        }
+        if (refCheckTasks.length) _runWithConcurrency(refCheckTasks, 3);
+        // Update clip status on shot nodes by checking file existence (concurrency-limited)
+        if (data.camera_directives) {
+          const clipTasks = [];
+          for (const cam of data.camera_directives) {
+            const evts = Array.isArray(cam.for_event) ? cam.for_event : [cam.for_event];
+            const eventId = evts[0] || cam.id;
+            for (const shot of (cam.shots || [])) {
+              const order = shot.order || 0;
+              const shotNodeId = eventId ? `${eventId}_shot_${order}` : `${cam.id}_shot_${order}`;
+              const n = sgOverlayCy.getElementById(shotNodeId);
+              if (n.length && !n.data('clipUrl')) {
+                const clipPath = n.data('clipPath');
+                if (clipPath) {
+                  const clipUrl = resolveRefImageUrl(clipPath);
+                  if (clipUrl) {
+                    clipTasks.push(() => fetch(clipUrl, { method: 'HEAD' }).then(r => {
+                      if (r.ok && !n.data('clipUrl')) {
+                        n.data('clipUrl', clipUrl);
+                        changed = true;
+                        applyImageStatusClasses(sgOverlayCy);
+                      }
+                    }).catch(() => {}));
+                  }
+                }
+              }
+            }
+          }
+          _runWithConcurrency(clipTasks, 3);
+        }
+        if (changed) applyImageStatusClasses(sgOverlayCy);
+      }).catch(() => {}).finally(() => { _sgOverlayRefreshing = false; });
+    }, 3000);
+  }).catch(err => {
+    document.getElementById('sg-overlay-loading').textContent = 'Failed to load: ' + err.message;
+  });
+}
+
+function applyOverlayFilters() {
+  if (!sgOverlayCy) return;
+  const vis = window.sgOverlayVisibleTypes;
+  sgOverlayCy.batch(() => {
+    sgOverlayCy.nodes().forEach(n => {
+      if (vis.has(n.data('nodeType'))) n.removeClass('hidden'); else n.addClass('hidden');
+    });
+    sgOverlayCy.edges().forEach(e => {
+      if (e.source().hasClass('hidden') || e.target().hasClass('hidden')) e.addClass('hidden'); else e.removeClass('hidden');
+    });
+  });
+}
+
+function closeStoryGraphOverlay() {
+  const overlay = document.getElementById('sg-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (sgOverlayCy) { sgOverlayCy.destroy(); sgOverlayCy = null; }
+  if (_sgOverlayRefreshTimer) { clearInterval(_sgOverlayRefreshTimer); _sgOverlayRefreshTimer = null; }
+  _sgOverlayLastModified = null;
+  _sgOverlayRefreshing = false;
+  // Update sticky bar button text
+  document.querySelectorAll('.sg-sticky-btn').forEach(btn => btn.textContent = 'Show Graph');
+}
+
+// switchOverlayView and renderOverlayAssetsView removed — views merged into unified graph
+
+function fitOverlayGraph() {
+  if (sgOverlayCy) sgOverlayCy.fit(undefined, 40);
+}
+
+
+function toggleStoryGraphPanel() {
+  const overlay = document.getElementById('sg-overlay');
+  if (overlay && overlay.style.display !== 'none') {
+    closeStoryGraphOverlay();
+  } else {
+    openStoryGraphOverlay();
+    // Update sticky bar button text
+    document.querySelectorAll('.sg-sticky-btn').forEach(btn => btn.textContent = 'Hide Graph');
+  }
+}
+
+function addMedia(c, src, type) {
+  const t = tabForContainer(c);
+  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+  curAst[c] = null; // break text accumulation
+
+  const url = toMediaUrl(src);
+  const block = document.createElement('div');
+  block.className = 'media-block';
+
+  if (type === 'image') {
+    block.innerHTML = `<img src="${esc(url)}" alt="image" loading="lazy" onclick="window.open(this.src,'_blank')">`;
+  } else {
+    block.innerHTML = `<video src="${esc(url)}" controls preload="metadata"></video>`;
+  }
+
+  // Caption with file path
+  const basename = src.split('/').pop() || src;
+  const cap = document.createElement('div');
+  cap.className = 'media-caption';
+  cap.textContent = basename;
+  block.appendChild(cap);
+
+  $(c).appendChild(block);
+  scrollBot(c);
+}
+
+// ==== Chat Room: dynamic agent list ====
+// roomAgents: [{alias: "Director", name: "video-director", color: "..."}, ...]
+const roomAgents = [];
+// Color palette for agents (cycles if more agents than colors)
+const AGENT_COLORS = [
+  'var(--director-color)', 'var(--eval-color)', 'var(--accent-orange)',
+  'var(--accent-purple)', 'var(--accent-red)', '#e0a458',
+];
+
+function initRoomAgents(agents) {
+  roomAgents.length = 0;
+  S.roomAgentStatus = {};
+  agents.forEach((a, i) => {
+    const color = AGENT_COLORS[i % AGENT_COLORS.length];
+    roomAgents.push({ alias: a.alias, name: a.name, color });
+    S.roomAgentStatus[a.name] = 'ready';
+  });
+  buildRoomStatusBar();
+  buildMentionDropdown();
+}
+
+function buildRoomStatusBar() {
+  const bar = $('room-status-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  for (const a of roomAgents) {
+    const div = document.createElement('div');
+    div.className = 'agent-status';
+    div.innerHTML = `
+      <div class="sdot" id="room-dot-${a.name}" style="background:${a.color}"></div>
+      <span style="color:${a.color}">${esc(a.alias)}</span>
+      <span id="room-status-${a.name}">Ready</span>
+    `;
+    bar.appendChild(div);
+  }
+}
+
+function buildMentionDropdown() {
+  const dd = $('mention-dropdown');
+  if (!dd) return;
+  dd.innerHTML = '';
+  // @All option
+  const allItem = document.createElement('div');
+  allItem.className = 'mention-item';
+  allItem.dataset.mention = 'All';
+  allItem.onclick = () => pickMention('All');
+  allItem.innerHTML = '<div style="width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,var(--director-color),var(--eval-color))"></div> All';
+  dd.appendChild(allItem);
+  for (const a of roomAgents) {
+    const item = document.createElement('div');
+    item.className = 'mention-item';
+    item.dataset.mention = a.alias;
+    item.onclick = () => pickMention(a.alias);
+    item.innerHTML = `
+      <div style="width:8px;height:8px;border-radius:50%;background:${a.color}"></div>
+      ${esc(a.alias)}
+    `;
+    dd.appendChild(item);
+  }
+}
+
+function getAgentColor(agentName) {
+  const a = roomAgents.find(x => x.name === agentName);
+  return a ? a.color : 'var(--text-mid)';
+}
+
+function getAgentAlias(agentName) {
+  const a = roomAgents.find(x => x.name === agentName);
+  return a ? a.alias : agentName;
+}
+
+// ==== Chat Room: per-agent status ====
+function updateRoomAgentStatus(agent, status) {
+  S.roomAgentStatus[agent] = status;
+  const dot = $(`room-dot-${agent}`);
+  const txt = $(`room-status-${agent}`);
+  if (!dot || !txt) return;
+  dot.className = 'sdot';
+  if (status === 'thinking') dot.classList.add('working');
+  const map = { ready: 'Ready', thinking: 'Working...', initializing: 'Init...' };
+  txt.textContent = map[status] || status;
+
+  const allReady = Object.values(S.roomAgentStatus).every(s => s === 'ready');
+  const anyWorking = Object.values(S.roomAgentStatus).some(s => s === 'thinking');
+  if (anyWorking) setStatus('room', 'working', 'Working...');
+  else if (allReady) setStatus('room', 'ready', 'Ready');
+}
+
+// ==== Chat Room: user message with @mention highlights ====
+function addUserRoom(c, text) {
+  const el = document.createElement('div');
+  el.className = 'msg-user';
+  // Build regex from known aliases (including @All)
+  const aliases = ['All', ...roomAgents.map(a => a.alias)].join('|');
+  const mentionRe = aliases ? new RegExp(`@(${aliases})`, 'gi') : null;
+  if (mentionRe) {
+    el.innerHTML = esc(text).replace(mentionRe, (match, name) => {
+      if (name.toLowerCase() === 'all') {
+        return '<span class="mention" style="color:var(--accent-orange);background:rgba(247,164,76,0.15)">@All</span>';
+      }
+      const agent = roomAgents.find(a => a.alias.toLowerCase() === name.toLowerCase());
+      const color = agent ? agent.color : 'var(--text-mid)';
+      return `<span class="mention" style="color:${color};background:${color}20">@${esc(name)}</span>`;
+    });
+  } else {
+    el.textContent = text;
+  }
+  $(c).appendChild(el);
+  scrollBot(c);
+}
+
+// ==== Chat Room: highlight @mentions in agent responses ====
+function highlightMentionsInLastMessage(c) {
+  const container = $(c);
+  if (!container) return;
+  // Find the last .msg-assistant element
+  const msgs = container.querySelectorAll('.msg-assistant');
+  if (msgs.length === 0) return;
+  const lastMsg = msgs[msgs.length - 1];
+  const textSpan = lastMsg.querySelector('.msg-text');
+  if (!textSpan || !textSpan.textContent) return;
+
+  // Build mention regex: @User + all agent aliases
+  const aliases = roomAgents.map(a => a.alias);
+  const allNames = ['User', ...aliases];
+  const re = new RegExp(`@(${allNames.join('|')})\\b`, 'gi');
+
+  const raw = textSpan.textContent;
+  if (!re.test(raw)) return;
+
+  // Replace textContent with innerHTML containing highlighted mentions
+  textSpan.innerHTML = esc(raw).replace(
+    new RegExp(`@(${allNames.join('|')})\\b`, 'gi'),
+    (match, name) => {
+      const lower = name.toLowerCase();
+      if (lower === 'user') {
+        return `<span class="mention" style="color:var(--accent-blue);background:rgba(91,141,239,0.15)">@${esc(name)}</span>`;
+      }
+      const agent = roomAgents.find(a => a.alias.toLowerCase() === lower);
+      const color = agent ? agent.color : 'var(--text-mid)';
+      return `<span class="mention" style="color:${color};background:${color}20">@${esc(name)}</span>`;
+    }
+  );
+}
+
+// ==== Chat Room: @mention autocomplete ====
+let mentionDropdownIdx = -1;
+
+function onRoomInput(e) {
+  const inp = $('input-room');
+  const val = inp.value;
+  const pos = inp.selectionStart;
+  // Check if cursor is right after a '@' (with optional partial text)
+  const before = val.substring(0, pos);
+  const atMatch = before.match(/@(\w*)$/);
+  if (atMatch) {
+    openMentionDropdown(atMatch[1]);
+  } else {
+    closeMentionDropdown();
+  }
+  autoH(inp);
+}
+
+function openMentionDropdown(filter) {
+  const dd = $('mention-dropdown');
+  const items = dd.querySelectorAll('.mention-item');
+  const f = filter.toLowerCase();
+  let visibleCount = 0;
+  items.forEach(item => {
+    const name = item.dataset.mention.toLowerCase();
+    const show = name.startsWith(f);
+    item.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+  if (visibleCount > 0) {
+    dd.classList.add('open');
+    mentionDropdownIdx = -1;
+  } else {
+    dd.classList.remove('open');
+  }
+}
+
+function closeMentionDropdown() {
+  $('mention-dropdown').classList.remove('open');
+  mentionDropdownIdx = -1;
+}
+
+function pickMention(name) {
+  const inp = $('input-room');
+  const val = inp.value;
+  const pos = inp.selectionStart;
+  const before = val.substring(0, pos);
+  const after = val.substring(pos);
+  const atIdx = before.lastIndexOf('@');
+  if (atIdx >= 0) {
+    inp.value = before.substring(0, atIdx) + '@' + name + ' ' + after;
+    const newPos = atIdx + name.length + 2;
+    inp.setSelectionRange(newPos, newPos);
+  }
+  closeMentionDropdown();
+  inp.focus();
+}
+
+function onRoomKey(e) {
+  const dd = $('mention-dropdown');
+  if (dd.classList.contains('open')) {
+    const items = [...dd.querySelectorAll('.mention-item')].filter(i => i.style.display !== 'none');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionDropdownIdx += e.key === 'ArrowDown' ? 1 : -1;
+      if (mentionDropdownIdx < 0) mentionDropdownIdx = items.length - 1;
+      if (mentionDropdownIdx >= items.length) mentionDropdownIdx = 0;
+      items.forEach((it, i) => it.classList.toggle('selected', i === mentionDropdownIdx));
+      return;
+    }
+    if ((e.key === 'Tab' || e.key === 'Enter') && items.length > 0) {
+      e.preventDefault();
+      const idx = mentionDropdownIdx >= 0 ? mentionDropdownIdx : 0;
+      pickMention(items[idx].dataset.mention);
+      return;
+    }
+    if (e.key === 'Escape') {
+      closeMentionDropdown();
+      return;
+    }
+  }
+  // Normal enter = send (skip if IME composing)
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send('room'); }
+  setTimeout(() => autoH(e.target), 0);
+}
+
+// ==== Init: apply tabs & pre-connect all ====
+applyTabs();
+['director', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
+</script>
+
+<script>
+// Override highlightNeighbors AFTER deferred story-graph.js loads
+// defer scripts run after parsing, so we use window.addEventListener('load', ...) to run after them
+window.addEventListener('load', function() {
+  highlightNeighbors = function(node) {
+    cy.batch(() => {
+      cy.elements().addClass('dimmed').removeClass('highlighted');
+      let neighborhood = node.neighborhood().add(node);
+
+      const neighborIds = new Set();
+      neighborhood.nodes().forEach(n => neighborIds.add(n.id()));
+
+      const extra = cy.collection();
+      neighborhood.nodes().forEach(n => {
+        const type = n.data('nodeType');
+        if (type === 'character_appearance' ||
+            type === 'prop_state' || type === 'location_state' || type === 'audio_bgm' || type === 'audio_dialogue') {
+          n.connectedEdges().forEach(e => {
+            const et = e.data('edgeType');
+            if (et === 'HAS_STATE' && e.target().id() === n.id()) {
+              extra.merge(e.source());
+              extra.merge(e);
+            }
+          });
+        }
+        // Only highlight minds that are also neighbors of the clicked node
+        if (type === 'character_appearance') {
+          n.connectedEdges('[edgeType="HAS_MIND"]').forEach(e => {
+            const mindNode = e.target();
+            if (neighborIds.has(mindNode.id())) {
+              extra.merge(mindNode);
+              extra.merge(e);
+            }
+          });
+        }
+      });
+
+      neighborhood = neighborhood.add(extra);
+      neighborhood.removeClass('dimmed').addClass('highlighted');
+    });
+  };
+});
+
+// ==== Operation Graph ====
+let opCy = null;
+let opGraphData = null;
+
+function loadOpGraphFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      // Detect format: session-based (has nodes/edges) vs legacy (has tasks/operations)
+      if (data.nodes && data.edges) {
+        // Session-based op graph format
+        document.getElementById('og-empty').style.display = 'none';
+        document.getElementById('og-toolbar').style.display = '';
+        document.getElementById('og-body').style.display = '';
+        sogRender(data, sogViewMode);
+        document.getElementById('og-summary').innerHTML = sogBuildSummary(data);
+      } else {
+        renderOpGraph(data);
+      }
+    } catch (err) {
+      console.error('Failed to parse operation graph JSON:', err);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderOpGraph(data) {
+  opGraphData = data;
+  document.getElementById('og-empty').style.display = 'none';
+  document.getElementById('og-toolbar').style.display = '';
+  document.getElementById('og-body').style.display = '';
+
+  const summaryEl = document.getElementById('og-summary');
+  const summary = computeOpGraphSummary(data);
+  const nTasks = (data.tasks || []).length;
+  const nResources = (data.resources || []).length;
+  let html = `<h3 style="margin:0 0 12px;font-size:14px;color:var(--text);">Summary</h3>`;
+  html += `<div style="font-size:12px;color:var(--text-mid);line-height:1.8;">`;
+  html += `<div>Tasks: <strong>${nTasks}</strong></div>`;
+  html += `<div>Operations: <strong>${summary.total}</strong> (${summary.done} done, ${summary.failed} failed)</div>`;
+  html += `<div>Resources: <strong>${nResources}</strong></div>`;
+  html += `</div>`;
+  summaryEl.innerHTML = html;
+
+  // Render with legacy operation-graph.js functions
+  const container = document.getElementById('og-cy');
+  if (opCy) { opCy.destroy(); opCy = null; }
+  const elements = convertOpGraphToElements(data);
+  const positions = computeOpGraphPositions(data);
+  opCy = cytoscape({
+    container, elements,
+    style: buildOpGraphStylesheet(),
+    layout: { name: 'preset', positions: (node) => positions[node.id()] || { x: 0, y: 0 } },
+    minZoom: 0.2, maxZoom: 3, wheelSensitivity: 0.3,
+  });
+  opCy.on('tap', 'node', function(evt) {
+    const d = evt.target.data();
+    document.getElementById('og-detail-title').textContent = d.fullLabel || d.label || d.id;
+    document.getElementById('og-detail-body').innerHTML = buildOpDetailHtml(d);
+    document.getElementById('og-detail').classList.add('open');
+  });
+  setTimeout(() => opCy.fit(undefined, 40), 50);
+}
+
+function hideOpDetail() {
+  document.getElementById('og-detail').classList.remove('open');
+  if (sogCy) sogCy.elements().removeClass('sog-highlight sog-dimmed');
+}
+
+function fetchAndLoadOpGraph(path) {
+  fetch(`/read-json/${encodeURIComponent(path)}`)
+    .then(r => r.json())
+    .then(data => renderOpGraph(data))
+    .catch(err => console.warn('Failed to load operation graph:', err.message));
+}
+</script>
+</body>
+</html>

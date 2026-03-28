@@ -6,7 +6,7 @@
 
 ## 评估流程
 
-1. 调用方会提供：视频路径、shot/成片的描述信息（intent、角色、场景等）、**要求的 aspect_ratio**、**出镜角色的参考图路径**。如果是对比评估，还会提供原始视频路径。
+1. 调用方会提供：视频路径、shot/成片的描述信息（content、角色、场景等）、**要求的 aspect_ratio**、**出镜角色的参考图路径**。如果是对比评估，还会提供原始视频路径。
 2. **画面比例检查（确定性）**：用 **AnalyzeVideo** 获取视频元数据（resolution），从返回的 `resolution` 字段（如 `960x960`、`720x1280`）计算实际宽高比，与调用方提供的要求 aspect_ratio 对比。这是确定性检查，不依赖 VLM 判断。
 3. **视觉评估**：优先使用 AnalyzeVideo（VLM 整片分析）。如果 VLM 限流（429）或失败，**切换到截图评估方案**（见下文）。
 4. 输出结构化报告。
@@ -27,7 +27,7 @@ ExtractFrame(video_path=shot.mp4, output_path=frames/{shot_id}_end.png, position
 | 维度 | 截图可评估 | 评估方法 |
 |------|-----------|---------|
 | Character Consistency 人物一致性 | ✓ | 对比首尾帧中角色外观与参考图 |
-| Content Fidelity 内容匹配 | ✓ | 首帧构图是否符合 intent 描述 |
+| Content Fidelity 内容匹配 | ✓ | 首帧构图是否符合 content 描述 |
 | Composition 构图 | ✓ | 从首帧判断画面布局 |
 | Color & Lighting 色彩光影 | ✓ | 从截图判断色调、光照 |
 | Shot Continuity 镜头衔接 | ✓ | 对比前一 shot 尾帧与后一 shot 首帧，检查跳切 |
@@ -60,7 +60,7 @@ ExtractFrame(video_path=shot.mp4, output_path=frames/{shot_id}_end.png, position
 | 维度 | 评估要点 |
 |------|---------|
 | **Character Consistency 人物一致性** | 视频中的角色与调用方提供的参考图是否一致（面部特征、体型、服装、发型）。用 AnalyzeImage 同时传入视频截帧和参考图进行对比 |
-| **Content Fidelity 内容匹配** | 内容是否与描述/intent 一致、场景是否正确、动作/事件是否符合剧情 |
+| **Content Fidelity 内容匹配** | 内容是否与描述/content 一致、场景是否正确、动作/事件是否符合剧情 |
 | **Motion & Dynamics 运动** | 运动速度、方向、流畅度、角色动作是否自然 |
 | **Composition 构图** | 镜头角度、画面构成、空间布局、人物站位 |
 | **Color & Lighting 色彩光影** | 色调、对比度、光照方向、氛围是否与描述一致 |

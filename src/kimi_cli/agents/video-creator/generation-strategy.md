@@ -107,7 +107,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 
 ```json
 {
-  "shot_type": "medium", "intent": "两人对峙",
+  "shot_type": "medium", "content": "两人对峙",
   "focus_on": ["appear_red_neat", "appear_wolf_natural"],
   "is_continuation": false,
   "prompt_materials": {

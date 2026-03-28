@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import re
 from pathlib import Path
 from typing import override
@@ -6,7 +7,7 @@ from typing import override
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
-from kimi_cli.soul import MaxStepsReached, get_wire_or_none, run_soul
+from kimi_cli.soul import MaxStepsReached, RunCancelled, get_cancel_event_or_none, get_wire_or_none, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
@@ -231,8 +232,55 @@ class Task(CallableTool2[Params]):
             await context.restore()
         soul = KimiSoul(agent, context=context)
 
+        parent_cancel = get_cancel_event_or_none()
+        cancel_event = asyncio.Event()
+
+        async def _propagate_cancel():
+            await parent_cancel.wait()
+            cancel_event.set()
+
+        propagate_task = asyncio.create_task(_propagate_cancel()) if parent_cancel else None
         try:
-            await run_soul(soul, prompt, _ui_loop_fn, asyncio.Event())
+            await run_soul(soul, prompt, _ui_loop_fn, cancel_event)
+
+            _error_msg = (
+                "The subagent seemed not to run properly. Maybe you have to do the task yourself."
+            )
+
+            # Check if the subagent context is valid
+            if len(context.history) == 0 or context.history[-1].role != "assistant":
+                return ToolError(message=_error_msg, brief="Failed to run subagent")
+
+            final_response = context.history[-1].extract_text(sep="\n")
+
+            # Strip leading step declarations (【目标】...【验证】...) that are internal
+            # to the subagent and not useful for the parent agent's context.
+            final_response = _strip_step_declarations(final_response)
+
+            # Check if response is too brief, if so, run again with continuation prompt
+            n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
+            if len(final_response) < 200 and n_attempts_remaining > 0:
+                await run_soul(soul, CONTINUE_PROMPT, _ui_loop_fn, cancel_event)
+
+                if len(context.history) == 0 or context.history[-1].role != "assistant":
+                    return ToolError(message=_error_msg, brief="Failed to run subagent")
+                final_response = context.history[-1].extract_text(sep="\n")
+
+            # If the response is very long, save to file and return a summary + pointer
+            # to avoid bloating the parent agent's context
+            max_inline_chars = 2000
+            if len(final_response) > max_inline_chars:
+                report_file = subagent_context_file.with_suffix(".report.md")
+                report_file.write_text(final_response, encoding="utf-8")
+                # Keep the first portion as inline summary, point to file for full content
+                summary = final_response[:max_inline_chars]
+                return ToolOk(
+                    output=f"{summary}\n\n[Full report ({len(final_response)} chars) saved to: {report_file}]"
+                )
+
+            return ToolOk(output=final_response)
+        except RunCancelled:
+            raise  # propagate to parent
         except MaxStepsReached as e:
             return ToolError(
                 message=(
@@ -241,40 +289,8 @@ class Task(CallableTool2[Params]):
                 ),
                 brief="Max steps reached",
             )
-
-        _error_msg = (
-            "The subagent seemed not to run properly. Maybe you have to do the task yourself."
-        )
-
-        # Check if the subagent context is valid
-        if len(context.history) == 0 or context.history[-1].role != "assistant":
-            return ToolError(message=_error_msg, brief="Failed to run subagent")
-
-        final_response = context.history[-1].extract_text(sep="\n")
-
-        # Strip leading step declarations (【目标】...【验证】...) that are internal
-        # to the subagent and not useful for the parent agent's context.
-        final_response = _strip_step_declarations(final_response)
-
-        # Check if response is too brief, if so, run again with continuation prompt
-        n_attempts_remaining = MAX_CONTINUE_ATTEMPTS
-        if len(final_response) < 200 and n_attempts_remaining > 0:
-            await run_soul(soul, CONTINUE_PROMPT, _ui_loop_fn, asyncio.Event())
-
-            if len(context.history) == 0 or context.history[-1].role != "assistant":
-                return ToolError(message=_error_msg, brief="Failed to run subagent")
-            final_response = context.history[-1].extract_text(sep="\n")
-
-        # If the response is very long, save to file and return a summary + pointer
-        # to avoid bloating the parent agent's context
-        max_inline_chars = 2000
-        if len(final_response) > max_inline_chars:
-            report_file = subagent_context_file.with_suffix(".report.md")
-            report_file.write_text(final_response, encoding="utf-8")
-            # Keep the first portion as inline summary, point to file for full content
-            summary = final_response[:max_inline_chars]
-            return ToolOk(
-                output=f"{summary}\n\n[Full report ({len(final_response)} chars) saved to: {report_file}]"
-            )
-
-        return ToolOk(output=final_response)
+        finally:
+            if propagate_task:
+                propagate_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await propagate_task

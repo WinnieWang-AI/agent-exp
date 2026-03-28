@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import math
 from collections import defaultdict
+
+from kimi_cli.tools.story_graph.resolve import resolve_reference_image
 from pathlib import Path
 from typing import Any, override
 
@@ -293,12 +295,19 @@ def _extract_prompt_materials(
     # Audio states
     audio_states = []
     for aus in g.get_active("audio_active_during", event_id):
-        audio_states.append({
+        entry: dict[str, Any] = {
             "id": aus["id"],
             "layer": aus.get("layer", ""),
             "phase": aus.get("phase", ""),
             "style": aus.get("style", ""),
-        })
+        }
+        # Carry dialogue details into prompt_materials so video-creator
+        # can embed spoken lines in the video prompt for lip-sync.
+        if aus.get("layer") == "audio_dialogue":
+            for key in ("text", "speaker", "tone"):
+                if aus.get(key):
+                    entry[key] = aus[key]
+        audio_states.append(entry)
 
     # Current relationships between co-appearing characters
     relationships = []
@@ -489,14 +498,21 @@ def linearize(data: dict[str, Any], project_dir: str = "") -> dict[str, Any]:
             reference_images: dict[str, str] = {}
             for state_id in focus_on:
                 node = g.nodes.get(state_id, {})
-                ref_img = node.get("reference_image") or ""
+                entity = g.entity_of(node)
+                entity_id = entity["id"] if entity else ""
+                ref_img = resolve_reference_image(
+                    state_id, entity_id, project_dir,
+                    node.get("reference_image") or "",
+                )
                 if ref_img:
                     reference_images[state_id] = ref_img
                 # Also check parent entity's reference_image
-                entity = g.entity_of(node)
-                if entity:
-                    entity_ref = entity.get("reference_image") or ""
-                    if entity_ref and entity["id"] not in reference_images:
+                if entity and entity["id"] not in reference_images:
+                    entity_ref = resolve_reference_image(
+                        entity["id"], "", project_dir,
+                        entity.get("reference_image") or "",
+                    )
+                    if entity_ref:
                         reference_images[entity["id"]] = entity_ref
 
             base_entry = {
@@ -506,14 +522,14 @@ def linearize(data: dict[str, Any], project_dir: str = "") -> dict[str, Any]:
                 "shot_type": cam_shot.get("shot_type", ""),
                 "angle": cam_shot.get("angle", ""),
                 "movement": cam_shot.get("movement", ""),
-                "intent": cam_shot.get("intent", ""),
+                "content": cam_shot.get("content", cam_shot.get("intent", cam_shot.get("composition", ""))),
                 "focus_on": focus_on,
                 "reference_images": reference_images,
-                "composition": cam_shot.get("composition", ""),
                 "lens": cam_shot.get("lens", ""),
                 "focus_depth": cam_shot.get("focus_depth", ""),
                 "transition_in": cam_shot.get("transition_in", ""),
                 "transition_out": cam_shot.get("transition_out", ""),
+                "audio_ids": cam_shot.get("audio_ids", []),
                 "prompt_materials": materials,
             }
 

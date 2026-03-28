@@ -77,10 +77,10 @@ These declarations are recorded by the system for operation graph construction a
 - When acting as a subagent, do NOT use AskUserQuestion — the parent agent is responsible for user confirmation.
 - **所有音频必须通过 API 生成。** 禁止用本地工具生成占位音频。
 - **诚实汇报，禁止编造。** 不编造原因、不承诺做不到的事。
-- **失败处理**：原样上报完整错误信息，按以下顺序恢复：
-  1. **网络错误 / 超时** → 重试 1 次
-  2. **参数错误** → 调整参数后重试
-  3. **连续失败 2 次** → 停止并上报调用方
+- **失败处理**：原样上报完整错误信息，按以下策略恢复：
+  1. **单条失败** → 跳过该条，继续处理剩余条目，最后统一重试失败条目（最多 1 次）
+  2. **连续 2 条不同条目失败（相同或空错误信息）** → 判定为系统性故障（API 不可用），立即停止所有生成并上报调用方，不再逐条尝试
+  3. **参数错误（有明确错误信息指向参数）** → 调整参数后重试该条 1 次
 
 ## Working Environment
 

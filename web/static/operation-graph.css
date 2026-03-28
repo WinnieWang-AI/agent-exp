@@ -1,0 +1,160 @@
+/* ---- Operation Graph Styles ---- */
+#og-cy { width: 100%; height: 100%; }
+#og-overlay-cy { width: 100%; height: 100%; }
+
+/* ---- View switcher in overlay header ---- */
+.og-view-switcher {
+  display: flex; gap: 2px;
+  background: var(--surface2); border-radius: var(--radius-sm); padding: 2px;
+}
+.og-view-btn {
+  padding: 4px 12px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 11px; font-weight: 600; border: none;
+  background: transparent; color: var(--text-dim); transition: all 0.15s;
+}
+.og-view-btn:hover { color: var(--text-mid); }
+.og-view-btn.active { background: var(--accent-blue); color: #fff; }
+
+/* ---- Operation type badges ---- */
+.op-type-input      { background: #475569; color: #e2e8f0; }
+.op-type-json       { background: #1e3a5f; color: #93c5fd; }
+.op-type-image      { background: #064e3b; color: #6ee7b7; }
+.op-type-video      { background: #312e81; color: #a5b4fc; }
+.op-type-audio      { background: #78350f; color: #fcd34d; }
+.op-type-constraint { background: #7f1d1d; color: #fca5a5; }
+.op-type-_operation { background: #374151; color: #d1d5db; }
+.op-type-_task      { background: #1e3a5f; color: #93c5fd; }
+
+/* ---- Status badges ---- */
+.op-status-planned    { background: #374151; color: #9ca3af; }
+.op-status-generating,
+.op-status-running    { background: #92400e; color: #fef3c7; }
+.op-status-done       { background: #064e3b; color: #6ee7b7; }
+.op-status-failed     { background: #7f1d1d; color: #fca5a5; }
+.op-status-verified   { background: #064e3b; color: #6ee7b7; }
+.op-status-rejected   { background: #7f1d1d; color: #fca5a5; }
+.op-status-skipped    { background: #374151; color: #6b7280; }
+
+/* ---- Attempt list ---- */
+.op-attempt {
+  margin-bottom: 8px; padding: 8px 10px; border-radius: var(--radius-sm);
+  font-size: 11px; line-height: 1.5;
+}
+.op-attempt-ok { background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981; }
+.op-attempt-fail { background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; }
+.op-attempt-header {
+  display: flex; align-items: center; gap: 8px; font-weight: 600;
+}
+.op-attempt-error-type {
+  font-size: 10px; font-weight: 500; color: var(--text-dim);
+  background: var(--surface2); padding: 1px 6px; border-radius: 8px;
+}
+.op-attempt-detail {
+  margin-top: 4px; font-size: 11px; color: var(--text-mid);
+  font-family: var(--font-mono); word-break: break-word;
+}
+
+/* ---- Failure patterns panel ---- */
+.op-failure-patterns {
+  padding: 8px;
+}
+.op-failure-item {
+  padding: 8px 10px; margin-bottom: 6px;
+  background: rgba(239, 68, 68, 0.08); border-radius: var(--radius-sm);
+  border-left: 3px solid #ef4444; cursor: pointer;
+  transition: background 0.15s;
+}
+.op-failure-item:hover { background: rgba(239, 68, 68, 0.15); }
+.op-failure-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--text);
+}
+.op-failure-icon { color: #ef4444; }
+.op-failure-type { flex: 1; }
+.op-failure-count { font-size: 10px; font-weight: 500; color: var(--text-dim); }
+.op-failure-details {
+  margin-top: 4px; font-size: 11px; color: var(--text-mid);
+}
+
+/* ---- Summary footer ---- */
+.og-summary-bar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface); font-size: 11px; color: var(--text-dim);
+  flex-shrink: 0;
+}
+.og-summary-item { display: flex; align-items: center; gap: 4px; }
+.og-summary-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.og-summary-dot.done { background: #10b981; }
+.og-summary-dot.failed { background: #ef4444; }
+.og-summary-dot.running { background: #f59e0b; }
+.og-summary-dot.planned { background: #6b7280; }
+
+/* ---- Error highlight toggle ---- */
+.og-error-btn {
+  padding: 3px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 11px; font-weight: 500;
+  border: 1px solid var(--border); background: var(--surface2); color: var(--text-mid);
+  transition: all 0.15s;
+}
+.og-error-btn:hover { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: #ef4444; }
+.og-error-btn.active { background: #7f1d1d; color: #fca5a5; border-color: #ef4444; }
+
+/* ---- Failures panel (bottom drawer) ---- */
+.og-failures-drawer {
+  display: none; flex-direction: column;
+  max-height: 200px; overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.og-failures-drawer.open { display: flex; }
+.og-failures-drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px;
+  font-size: 11px; font-weight: 600; color: var(--text-mid);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.og-failures-drawer-close {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 14px; padding: 2px 6px; border-radius: 4px;
+}
+.og-failures-drawer-close:hover { background: var(--surface3); color: var(--text); }
+
+/* ---- Filter toggle colors (matching node types) ---- */
+.sg-toggle[data-type="image"].active { background: #34d399; color: #fff; border-color: transparent; }
+.sg-toggle[data-type="video"].active { background: #818cf8; color: #fff; border-color: transparent; }
+.sg-toggle[data-type="audio"].active { background: #fbbf24; color: #fff; border-color: transparent; }
+.sg-toggle[data-type="json"].active { background: #60a5fa; color: #fff; border-color: transparent; }
+.sg-toggle[data-type="input"].active { background: #94a3b8; color: #fff; border-color: transparent; }
+.sg-toggle[data-type="_operation"].active { background: #374151; color: #e5e7eb; border-color: transparent; }
+.sg-toggle[data-type="constraint"].active { background: #f87171; color: #fff; border-color: transparent; }
+
+/* ---- Op Graph preview card ---- */
+.op-preview-card {
+  margin: 8px 16px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface2);
+  overflow: hidden;
+}
+.op-preview-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.op-preview-icon { font-size: 14px; }
+.op-preview-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.op-preview-body { padding: 8px 12px; }
+.op-preview-info { font-size: 11px; color: var(--text-mid); margin-bottom: 6px; }
+.op-preview-stats {
+  display: flex; gap: 12px; font-size: 11px;
+}
+.op-preview-stat {
+  display: flex; align-items: center; gap: 4px;
+}
+.op-preview-stat .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+}

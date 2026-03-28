@@ -764,7 +764,10 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
                 if raw2 is None:
                     cancel_event.set()
                     break
-                if raw2.get("type") == "answer":
+                if raw2.get("type") == "cancel":
+                    cancel_event.set()
+                    break
+                elif raw2.get("type") == "answer":
                     qid = raw2.get("id")
                     qmsg = pending_questions.pop(qid, None)
                     if qmsg:
@@ -823,24 +826,36 @@ async def ws_auto(websocket: WebSocket):
 
     await websocket.send_json({"type": "status", "status": "ready"})
 
-    # Process the first message content
-    first_content = first_raw.get("content", "") if first_raw.get("type") == "message" else ""
-    messages_to_process = [first_content] if first_content else []
-
     heartbeat_stop = asyncio.Event()
     heartbeat_task = asyncio.create_task(_ws_heartbeat(websocket, heartbeat_stop))
 
+    incoming_queue: asyncio.Queue = asyncio.Queue()
+
+    # Re-inject the first message into the queue
+    first_content = first_raw.get("content", "") if first_raw.get("type") == "message" else ""
+    if first_content:
+        await incoming_queue.put({"type": "message", "content": first_content})
+
+    async def ws_reader():
+        try:
+            while True:
+                raw = await websocket.receive_json()
+                await incoming_queue.put(raw)
+        except WebSocketDisconnect:
+            await incoming_queue.put(None)
+
+    reader_task = asyncio.create_task(ws_reader())
+
     try:
         while True:
-            if not messages_to_process:
-                raw = await websocket.receive_json()
-                if raw.get("type") != "message":
-                    continue
-                content = raw.get("content", "")
-                if not content:
-                    continue
-            else:
-                content = messages_to_process.pop(0)
+            raw = await incoming_queue.get()
+            if raw is None:
+                break
+            if raw.get("type") != "message":
+                continue
+            content = raw.get("content", "")
+            if not content:
+                continue
 
             # Inject resume context hint into the first user message after resume
             if resume_context:
@@ -851,44 +866,60 @@ async def ws_auto(websocket: WebSocket):
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
-            try:
-                async for msg in cli.run(content, cancel_event, merge_wire_messages=True):
-                    try:
-                        agent_label = "video-auto-eval"
-                        # Detect SubagentEvents to label them as from the sub-agent
-                        if isinstance(msg, SubagentEvent):
-                            agent_label = "video-director"
+            async def run_auto_agent():
+                try:
+                    async for msg in cli.run(content, cancel_event, merge_wire_messages=True):
+                        try:
+                            agent_label = "video-auto-eval"
+                            if isinstance(msg, SubagentEvent):
+                                agent_label = "video-director"
 
-                        data = serialize_wire_message(msg)
-                        await websocket.send_json({
-                            "type": "wire",
-                            "agent": agent_label,
-                            "data": data,
-                        })
-                        _append_chat_log(session_id, "assistant", agent_label, data)
-                    except Exception:
-                        pass
+                            data = serialize_wire_message(msg)
+                            await websocket.send_json({
+                                "type": "wire",
+                                "agent": agent_label,
+                                "data": data,
+                            })
+                            _append_chat_log(session_id, "assistant", agent_label, data)
+                        except Exception:
+                            pass
 
-                    if isinstance(msg, ApprovalRequest):
-                        msg.resolve("approve")
-                    if isinstance(msg, QuestionRequest):
-                        answers = {}
-                        for q in msg.questions:
-                            answers[q.question] = q.options[0].label if q.options else ""
-                        msg.resolve(answers)
+                        if isinstance(msg, ApprovalRequest):
+                            msg.resolve("approve")
+                        if isinstance(msg, QuestionRequest):
+                            answers = {}
+                            for q in msg.questions:
+                                answers[q.question] = q.options[0].label if q.options else ""
+                            msg.resolve(answers)
 
-            except Exception as e:
-                tb = traceback.format_exc()
-                await websocket.send_json({"type": "error", "message": f"{e}\n{tb}"})
+                except Exception as e:
+                    tb = traceback.format_exc()
+                    await websocket.send_json({"type": "error", "message": f"{e}\n{tb}"})
+                _save_session_meta(session_id, "video-auto-eval", mode="auto")
+                await websocket.send_json({"type": "status", "status": "ready"})
 
-            _save_session_meta(session_id, "video-auto-eval", mode="auto")
-            await websocket.send_json({"type": "status", "status": "ready"})
+            agent_task = asyncio.create_task(run_auto_agent())
+
+            while not agent_task.done():
+                try:
+                    raw2 = await asyncio.wait_for(incoming_queue.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
+                if raw2 is None:
+                    cancel_event.set()
+                    break
+                if raw2.get("type") == "cancel":
+                    cancel_event.set()
+                    break
+
+            await agent_task
 
     except WebSocketDisconnect:
         pass
     finally:
         heartbeat_stop.set()
         heartbeat_task.cancel()
+        reader_task.cancel()
 
 
 # Chat room: build @mention mapping from AGENT_FILES
@@ -1002,12 +1033,15 @@ async def ws_room(websocket: WebSocket):
         async with send_lock:
             await websocket.send_json(data)
 
+    cancel_events: list[asyncio.Event] = []
+
     async def run_agent(agent_name: str, content: str):
         """Run a single agent and stream its wire messages to the client."""
         await safe_send({
             "type": "status", "agent": agent_name, "status": "thinking",
         })
         cancel_event = asyncio.Event()
+        cancel_events.append(cancel_event)
         try:
             async for msg in clis[agent_name].run(content, cancel_event, merge_wire_messages=True):
                 try:
@@ -1050,6 +1084,10 @@ async def ws_room(websocket: WebSocket):
                 raw = pending_messages.pop(0)
             else:
                 raw = await websocket.receive_json()
+            if raw.get("type") == "cancel":
+                for ce in cancel_events:
+                    ce.set()
+                continue
             if raw.get("type") != "message":
                 continue
 

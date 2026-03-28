@@ -1,0 +1,623 @@
+{
+  "session_id": "d4f3dba7-6937-4264-8cb8-ef762a5bdd79",
+  "project_name": "龟兔赛跑30s",
+  "created_at": 1710000000,
+  "tasks": [
+    {
+      "id": "task_story_graph",
+      "name": "Phase 1-2: 构建故事结构",
+      "purpose": "构建 story-graph.json，包含角色、场景、道具、事件，并添加镜头指令和音频状态",
+      "check_criteria": [
+        "story-graph.json 通过 ValidateStoryGraph 校验",
+        "包含所有角色实体和状态节点",
+        "事件节点覆盖完整剧情",
+        "镜头指令（camera）和音频状态已添加"
+      ],
+      "status": "verified",
+      "operations": ["op_write_sg", "op_validate_sg_1", "op_write_sg_v2", "op_validate_sg_2"],
+      "inputs": ["res_user_prompt"],
+      "outputs": ["res_story_graph"],
+      "depends_on": [],
+      "verification": {
+        "status": "passed",
+        "method": "ValidateStoryGraph",
+        "checked_at": 1710000020,
+        "issues": [],
+        "summary": "Story graph 校验通过，包含 2 角色、1 场景、1 道具、6 事件"
+      }
+    },
+    {
+      "id": "task_gen_entity_refs",
+      "name": "生成实体参考图",
+      "purpose": "为角色、场景、道具生成基础参考图，用于后续状态图和视频生成的一致性锚点",
+      "check_criteria": [
+        "角色参考图（char_turtle, char_hare）风格统一",
+        "场景参考图（loc_racecourse）构图合理",
+        "道具参考图（prop_finish_ribbon）清晰可辨"
+      ],
+      "status": "verified",
+      "operations": ["op_gen_char_turtle", "op_gen_char_hare", "op_gen_loc_racecourse", "op_gen_prop_ribbon"],
+      "inputs": ["res_story_graph"],
+      "outputs": ["res_char_turtle", "res_char_hare", "res_loc_racecourse", "res_prop_ribbon"],
+      "depends_on": ["task_story_graph"],
+      "verification": {
+        "status": "passed",
+        "method": "ReadFile 逐张检查",
+        "checked_at": 1710000060,
+        "issues": [],
+        "summary": "4/4 实体参考图生成成功，风格统一"
+      }
+    },
+    {
+      "id": "task_gen_state_refs",
+      "name": "生成状态参考图",
+      "purpose": "基于实体参考图生成角色/场景/道具在不同状态下的参考图，确保一致性",
+      "check_criteria": [
+        "状态图与实体图角色外貌一致",
+        "状态图体现场景/状态变化",
+        "所有 story-graph 中的状态节点都有对应参考图"
+      ],
+      "status": "verified",
+      "operations": [
+        "op_gen_appear_turtle_steady", "op_gen_appear_hare_fresh", "op_gen_appear_hare_rushed",
+        "op_gen_lstate_start", "op_gen_lstate_mid_shade", "op_gen_lstate_finish",
+        "op_gen_pstate_ribbon_taut", "op_gen_pstate_ribbon_torn",
+        "op_gen_cam_turtle_ws", "op_gen_cam_turtle_cu", "op_gen_cam_hare_ws", "op_gen_cam_hare_cu",
+        "op_gen_loc_start_flag", "op_gen_loc_start_clean", "op_gen_loc_mid_dapple", "op_gen_loc_finish_arch"
+      ],
+      "inputs": ["res_char_turtle", "res_char_hare", "res_loc_racecourse", "res_prop_ribbon"],
+      "outputs": [
+        "res_appear_turtle_steady", "res_appear_hare_fresh", "res_appear_hare_rushed",
+        "res_lstate_start", "res_lstate_mid_shade", "res_lstate_finish",
+        "res_pstate_ribbon_taut", "res_pstate_ribbon_torn",
+        "res_cam_turtle_ws", "res_cam_turtle_cu", "res_cam_hare_ws", "res_cam_hare_cu",
+        "res_loc_start_flag", "res_loc_start_clean", "res_loc_mid_dapple", "res_loc_finish_arch"
+      ],
+      "depends_on": ["task_gen_entity_refs"],
+      "verification": {
+        "status": "passed",
+        "method": "ReadFile 逐张检查一致性",
+        "checked_at": 1710000120,
+        "issues": [],
+        "summary": "16/16 状态参考图生成成功"
+      }
+    },
+    {
+      "id": "task_linearize",
+      "name": "生成镜头计划",
+      "purpose": "将 story-graph 线性化为 shot-plan，生成按时序排列的镜头列表",
+      "check_criteria": [
+        "shot-plan 覆盖所有事件",
+        "镜头时长总和约 30s",
+        "参考图路径正确"
+      ],
+      "status": "verified",
+      "operations": ["op_linearize"],
+      "inputs": ["res_story_graph"],
+      "outputs": ["res_shot_plan"],
+      "depends_on": ["task_gen_state_refs"],
+      "verification": {
+        "status": "passed",
+        "method": "LinearizeStoryGraph",
+        "checked_at": 1710000130,
+        "issues": [],
+        "summary": "生成 14 个镜头，总时长 30s"
+      }
+    },
+    {
+      "id": "task_gen_first_frame",
+      "name": "生成首帧图",
+      "purpose": "为第一个镜头生成首帧合成图，作为 first_frame_to_video 的输入",
+      "check_criteria": [
+        "首帧构图包含起跑线、乌龟、兔子",
+        "画面与参考图角色一致"
+      ],
+      "status": "verified",
+      "operations": ["op_gen_first_frame"],
+      "inputs": ["res_lstate_start", "res_appear_turtle_steady", "res_appear_hare_fresh"],
+      "outputs": ["res_first_frame"],
+      "depends_on": ["task_gen_state_refs"],
+      "verification": {
+        "status": "passed",
+        "method": "ReadFile 检查合成效果",
+        "checked_at": 1710000140,
+        "issues": [],
+        "summary": "首帧合成正确，角色清晰"
+      }
+    },
+    {
+      "id": "task_gen_videos",
+      "name": "生成视频片段 (14 shots)",
+      "purpose": "逐镜头生成视频并提取尾帧，后续镜头使用前一个尾帧保持衔接",
+      "check_criteria": [
+        "每个镜头角色与参考图一致",
+        "镜头间衔接自然（尾帧→首帧）",
+        "动作流畅，无明显跳帧",
+        "总时长约 30s"
+      ],
+      "status": "verified",
+      "operations": [
+        "op_gen_lineup_start_1", "op_extract_lineup_start_1",
+        "op_gen_lineup_start_2", "op_extract_lineup_start_2",
+        "op_gen_hare_leads_1", "op_extract_hare_leads_1",
+        "op_gen_hare_leads_2", "op_extract_hare_leads_2",
+        "op_gen_hare_leads_3", "op_extract_hare_leads_3",
+        "op_gen_hare_naps_1", "op_extract_hare_naps_1",
+        "op_gen_hare_naps_2", "op_extract_hare_naps_2",
+        "op_gen_turtle_passes_1", "op_extract_turtle_passes_1",
+        "op_gen_turtle_passes_2", "op_extract_turtle_passes_2",
+        "op_gen_final_sprint_1", "op_extract_final_sprint_1",
+        "op_gen_final_sprint_2", "op_extract_final_sprint_2",
+        "op_gen_final_sprint_3", "op_extract_final_sprint_3",
+        "op_gen_final_sprint_4", "op_extract_final_sprint_4",
+        "op_gen_finish_win_1", "op_extract_finish_win_1"
+      ],
+      "inputs": ["res_shot_plan", "res_first_frame"],
+      "outputs": [
+        "res_clip_lineup_start_1", "res_clip_lineup_start_2",
+        "res_clip_hare_leads_1", "res_clip_hare_leads_2", "res_clip_hare_leads_3",
+        "res_clip_hare_naps_1", "res_clip_hare_naps_2",
+        "res_clip_turtle_passes_1", "res_clip_turtle_passes_2",
+        "res_clip_final_sprint_1", "res_clip_final_sprint_2", "res_clip_final_sprint_3", "res_clip_final_sprint_4",
+        "res_clip_finish_win_1"
+      ],
+      "depends_on": ["task_linearize", "task_gen_first_frame"],
+      "verification": {
+        "status": "passed",
+        "method": "Shell ffprobe 检查 + ReadFile 预览",
+        "checked_at": 1710000600,
+        "issues": [],
+        "summary": "14/14 视频片段生成完成，总时长 30s"
+      }
+    }
+  ],
+  "resources": [
+    { "id": "res_user_prompt", "type": "input", "path": "", "status": "done", "plan": { "description": "用户输入: 龟兔赛跑30s" } },
+    { "id": "res_story_graph", "type": "json", "path": "story-graph.json", "status": "done", "plan": { "description": "Story Graph (角色/场景/事件结构)" } },
+    { "id": "res_shot_plan", "type": "json", "path": "shot-plan.json", "status": "done", "plan": { "description": "线性化镜头计划 (14 shots)" } },
+
+    { "id": "res_char_turtle", "type": "image", "path": "assets/images/char_turtle.png", "status": "done", "plan": { "description": "乌龟角色参考图" }, "actual": { "created_at": 1710000030 } },
+    { "id": "res_char_hare", "type": "image", "path": "assets/images/char_hare.png", "status": "done", "plan": { "description": "兔子角色参考图" }, "actual": { "created_at": 1710000032 } },
+    { "id": "res_loc_racecourse", "type": "image", "path": "assets/images/loc_racecourse.png", "status": "done", "plan": { "description": "赛道场景参考图" }, "actual": { "created_at": 1710000034 } },
+    { "id": "res_prop_ribbon", "type": "image", "path": "assets/images/props/prop_finish_ribbon.png", "status": "done", "plan": { "description": "终点彩带道具参考图" }, "actual": { "created_at": 1710000036 } },
+
+    { "id": "res_appear_turtle_steady", "type": "image", "path": "assets/images/appear_turtle_steady.png", "status": "done", "plan": { "description": "乌龟-沉稳出场状态" } },
+    { "id": "res_appear_hare_fresh", "type": "image", "path": "assets/images/appear_hare_fresh.png", "status": "done", "plan": { "description": "兔子-精力充沛状态" } },
+    { "id": "res_appear_hare_rushed", "type": "image", "path": "assets/images/appear_hare_rushed.png", "status": "done", "plan": { "description": "兔子-慌张冲刺状态" } },
+    { "id": "res_lstate_start", "type": "image", "path": "assets/images/lstate_start_area.png", "status": "done", "plan": { "description": "起跑区场景状态" } },
+    { "id": "res_lstate_mid_shade", "type": "image", "path": "assets/images/lstate_mid_shade.png", "status": "done", "plan": { "description": "中段树荫场景状态" } },
+    { "id": "res_lstate_finish", "type": "image", "path": "assets/images/lstate_finish_area.png", "status": "done", "plan": { "description": "终点区场景状态" } },
+    { "id": "res_pstate_ribbon_taut", "type": "image", "path": "assets/images/pstate_ribbon_taut.png", "status": "done", "plan": { "description": "彩带-绷紧状态" } },
+    { "id": "res_pstate_ribbon_torn", "type": "image", "path": "assets/images/pstate_ribbon_torn.png", "status": "done", "plan": { "description": "彩带-撕裂状态" } },
+    { "id": "res_cam_turtle_ws", "type": "image", "path": "assets/images/characters/turtle_ws_dirtroad.png", "status": "done", "plan": { "description": "乌龟全景-土路行走" } },
+    { "id": "res_cam_turtle_cu", "type": "image", "path": "assets/images/characters/turtle_cu_shell_eye.png", "status": "done", "plan": { "description": "乌龟特写-龟壳与眼神" } },
+    { "id": "res_cam_hare_ws", "type": "image", "path": "assets/images/characters/hare_ws_sprint.png", "status": "done", "plan": { "description": "兔子全景-冲刺" } },
+    { "id": "res_cam_hare_cu", "type": "image", "path": "assets/images/characters/hare_cu_fur_ear.png", "status": "done", "plan": { "description": "兔子特写-毛发耳朵" } },
+    { "id": "res_loc_start_flag", "type": "image", "path": "assets/images/locations/start_arch_flag.png", "status": "done", "plan": { "description": "起跑拱门-旗帜" } },
+    { "id": "res_loc_start_clean", "type": "image", "path": "assets/images/locations/start_arch_clean.png", "status": "done", "plan": { "description": "起跑拱门-清洁" } },
+    { "id": "res_loc_mid_dapple", "type": "image", "path": "assets/images/locations/mid_shade_dapple.png", "status": "done", "plan": { "description": "中段斑驳树荫" } },
+    { "id": "res_loc_finish_arch", "type": "image", "path": "assets/images/locations/finish_arch_ribbon.png", "status": "done", "plan": { "description": "终点拱门-彩带" } },
+
+    { "id": "res_first_frame", "type": "image", "path": "assets/frames/cam_lineup_start_shot_1_first.png", "status": "done", "plan": { "description": "首帧合成图: 起跑线+乌龟+兔子" } },
+
+    { "id": "res_tail_lineup_start_1", "type": "image", "path": "assets/frames/cam_lineup_start_shot_2_tail.png", "status": "done", "plan": { "description": "lineup_start shot1 尾帧" } },
+    { "id": "res_tail_hare_leads_1", "type": "image", "path": "assets/frames/cam_hare_leads_shot_1_tail.png", "status": "done", "plan": { "description": "hare_leads shot1 尾帧" } },
+    { "id": "res_tail_hare_leads_2", "type": "image", "path": "assets/frames/cam_hare_leads_shot_2_tail.png", "status": "done", "plan": { "description": "hare_leads shot2 尾帧" } },
+    { "id": "res_tail_hare_leads_3", "type": "image", "path": "assets/frames/cam_hare_leads_shot_3_tail.png", "status": "done", "plan": { "description": "hare_leads shot3 尾帧" } },
+    { "id": "res_tail_hare_naps_1", "type": "image", "path": "assets/frames/cam_hare_naps_shot_1_tail.png", "status": "done", "plan": { "description": "hare_naps shot1 尾帧" } },
+    { "id": "res_tail_hare_naps_2", "type": "image", "path": "assets/frames/cam_hare_naps_shot_2_tail.png", "status": "done", "plan": { "description": "hare_naps shot2 尾帧" } },
+    { "id": "res_tail_turtle_passes_1", "type": "image", "path": "assets/frames/cam_turtle_passes_shot_1_tail.png", "status": "done", "plan": { "description": "turtle_passes shot1 尾帧" } },
+    { "id": "res_tail_turtle_passes_2", "type": "image", "path": "assets/frames/cam_turtle_passes_shot_2_tail.png", "status": "done", "plan": { "description": "turtle_passes shot2 尾帧" } },
+    { "id": "res_tail_final_sprint_1", "type": "image", "path": "assets/frames/cam_final_sprint_shot_1_tail.png", "status": "done", "plan": { "description": "final_sprint shot1 尾帧" } },
+    { "id": "res_tail_final_sprint_2", "type": "image", "path": "assets/frames/cam_final_sprint_shot_2_tail.png", "status": "done", "plan": { "description": "final_sprint shot2 尾帧" } },
+    { "id": "res_tail_final_sprint_3", "type": "image", "path": "assets/frames/cam_final_sprint_shot_3_tail.png", "status": "done", "plan": { "description": "final_sprint shot3 尾帧" } },
+    { "id": "res_tail_final_sprint_4", "type": "image", "path": "assets/frames/cam_final_sprint_shot_4_tail.png", "status": "done", "plan": { "description": "final_sprint shot4 尾帧" } },
+    { "id": "res_tail_finish_win_1", "type": "image", "path": "assets/frames/cam_finish_win_shot_1_tail.png", "status": "done", "plan": { "description": "finish_win shot1 尾帧" } },
+
+    { "id": "res_clip_lineup_start_1", "type": "video", "path": "assets/clips/evt_lineup_start_shot_1.mp4", "status": "done", "plan": { "description": "镜头1: 起跑线列队 shot1" } },
+    { "id": "res_clip_lineup_start_2", "type": "video", "path": "assets/clips/evt_lineup_start_shot_2.mp4", "status": "done", "plan": { "description": "镜头2: 起跑线列队 shot2" } },
+    { "id": "res_clip_hare_leads_1", "type": "video", "path": "assets/clips/evt_hare_leads_shot_1.mp4", "status": "done", "plan": { "description": "镜头3: 兔子领先 shot1" } },
+    { "id": "res_clip_hare_leads_2", "type": "video", "path": "assets/clips/evt_hare_leads_shot_2.mp4", "status": "done", "plan": { "description": "镜头4: 兔子领先 shot2" } },
+    { "id": "res_clip_hare_leads_3", "type": "video", "path": "assets/clips/evt_hare_leads_shot_3.mp4", "status": "done", "plan": { "description": "镜头5: 兔子领先 shot3" } },
+    { "id": "res_clip_hare_naps_1", "type": "video", "path": "assets/clips/evt_hare_naps_shot_1.mp4", "status": "done", "plan": { "description": "镜头6: 兔子打盹 shot1" } },
+    { "id": "res_clip_hare_naps_2", "type": "video", "path": "assets/clips/evt_hare_naps_shot_2.mp4", "status": "done", "plan": { "description": "镜头7: 兔子打盹 shot2" } },
+    { "id": "res_clip_turtle_passes_1", "type": "video", "path": "assets/clips/evt_turtle_passes_shot_1.mp4", "status": "done", "plan": { "description": "镜头8: 乌龟超越 shot1" } },
+    { "id": "res_clip_turtle_passes_2", "type": "video", "path": "assets/clips/evt_turtle_passes_shot_2.mp4", "status": "done", "plan": { "description": "镜头9: 乌龟超越 shot2" } },
+    { "id": "res_clip_final_sprint_1", "type": "video", "path": "assets/clips/evt_final_sprint_shot_1.mp4", "status": "done", "plan": { "description": "镜头10: 最终冲刺 shot1" } },
+    { "id": "res_clip_final_sprint_2", "type": "video", "path": "assets/clips/evt_final_sprint_shot_2.mp4", "status": "done", "plan": { "description": "镜头11: 最终冲刺 shot2" } },
+    { "id": "res_clip_final_sprint_3", "type": "video", "path": "assets/clips/evt_final_sprint_shot_3.mp4", "status": "done", "plan": { "description": "镜头12: 最终冲刺 shot3" } },
+    { "id": "res_clip_final_sprint_4", "type": "video", "path": "assets/clips/evt_final_sprint_shot_4.mp4", "status": "done", "plan": { "description": "镜头13: 最终冲刺 shot4" } },
+    { "id": "res_clip_finish_win_1", "type": "video", "path": "assets/clips/evt_finish_win_shot_1.mp4", "status": "done", "plan": { "description": "镜头14: 乌龟冲线胜利" } }
+  ],
+  "operations": [
+    {
+      "id": "op_write_sg", "tool": "WriteFile", "agent": "screenwriter", "status": "done",
+      "plan": { "description": "编写 story-graph.json (Phase 1)" },
+      "actual": { "started_at": 1710000001, "finished_at": 1710000008, "duration_s": 7, "result": "success" },
+      "inputs": ["res_user_prompt"], "outputs": ["res_story_graph"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 7 }]
+    },
+    {
+      "id": "op_validate_sg_1", "tool": "ValidateStoryGraph", "agent": "screenwriter", "status": "done",
+      "plan": { "description": "校验 story-graph v1" },
+      "actual": { "started_at": 1710000008, "finished_at": 1710000009, "duration_s": 1, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": [],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_write_sg_v2", "tool": "StrReplaceFile", "agent": "screenwriter", "status": "done",
+      "plan": { "description": "Phase 2: 添加 camera 指令和 audio 状态" },
+      "actual": { "started_at": 1710000010, "finished_at": 1710000016, "duration_s": 6, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_story_graph"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 6 }]
+    },
+    {
+      "id": "op_validate_sg_2", "tool": "ValidateStoryGraph", "agent": "screenwriter", "status": "done",
+      "plan": { "description": "校验 story-graph v2 (含 camera + audio)" },
+      "actual": { "started_at": 1710000016, "finished_at": 1710000017, "duration_s": 1, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": [],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+
+    {
+      "id": "op_gen_char_turtle", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "生成乌龟角色参考图", "params": { "aspect_ratio": "3:4" } },
+      "actual": { "started_at": 1710000030, "finished_at": 1710000038, "duration_s": 8, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_char_turtle"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 8 }]
+    },
+    {
+      "id": "op_gen_char_hare", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "生成兔子角色参考图", "params": { "aspect_ratio": "3:4" } },
+      "actual": { "started_at": 1710000030, "finished_at": 1710000039, "duration_s": 9, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_char_hare"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_loc_racecourse", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "生成赛道场景参考图", "params": { "aspect_ratio": "16:9" } },
+      "actual": { "started_at": 1710000030, "finished_at": 1710000040, "duration_s": 10, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_loc_racecourse"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+    {
+      "id": "op_gen_prop_ribbon", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "生成终点彩带道具参考图" },
+      "actual": { "started_at": 1710000030, "finished_at": 1710000037, "duration_s": 7, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_prop_ribbon"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 7 }]
+    },
+
+    {
+      "id": "op_gen_appear_turtle_steady", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "乌龟沉稳出场状态图 (ref: char_turtle)" },
+      "actual": { "started_at": 1710000050, "finished_at": 1710000058, "duration_s": 8, "result": "success" },
+      "inputs": ["res_char_turtle"], "outputs": ["res_appear_turtle_steady"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 8 }]
+    },
+    {
+      "id": "op_gen_appear_hare_fresh", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "兔子精力充沛状态图 (ref: char_hare)" },
+      "actual": { "started_at": 1710000050, "finished_at": 1710000059, "duration_s": 9, "result": "success" },
+      "inputs": ["res_char_hare"], "outputs": ["res_appear_hare_fresh"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_appear_hare_rushed", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "兔子慌张冲刺状态图 (ref: char_hare + appear_hare_fresh)" },
+      "actual": { "started_at": 1710000060, "finished_at": 1710000069, "duration_s": 9, "result": "success" },
+      "inputs": ["res_char_hare", "res_appear_hare_fresh"], "outputs": ["res_appear_hare_rushed"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_lstate_start", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "起跑区场景状态图 (ref: loc_racecourse)" },
+      "actual": { "started_at": 1710000050, "finished_at": 1710000060, "duration_s": 10, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_lstate_start"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+    {
+      "id": "op_gen_lstate_mid_shade", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "中段树荫场景状态图 (ref: loc_racecourse)" },
+      "actual": { "started_at": 1710000060, "finished_at": 1710000070, "duration_s": 10, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_lstate_mid_shade"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+    {
+      "id": "op_gen_lstate_finish", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "终点区场景状态图 (ref: loc_racecourse)" },
+      "actual": { "started_at": 1710000060, "finished_at": 1710000071, "duration_s": 11, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_lstate_finish"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 11 }]
+    },
+    {
+      "id": "op_gen_pstate_ribbon_taut", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "彩带绷紧状态图 (ref: prop_ribbon)" },
+      "actual": { "started_at": 1710000060, "finished_at": 1710000068, "duration_s": 8, "result": "success" },
+      "inputs": ["res_prop_ribbon"], "outputs": ["res_pstate_ribbon_taut"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 8 }]
+    },
+    {
+      "id": "op_gen_pstate_ribbon_torn", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "彩带撕裂状态图 (ref: prop_ribbon + ribbon_taut)" },
+      "actual": { "started_at": 1710000070, "finished_at": 1710000079, "duration_s": 9, "result": "success" },
+      "inputs": ["res_prop_ribbon", "res_pstate_ribbon_taut"], "outputs": ["res_pstate_ribbon_torn"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_cam_turtle_ws", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "乌龟全景-土路行走 (ref: char_turtle)" },
+      "actual": { "started_at": 1710000080, "finished_at": 1710000088, "duration_s": 8, "result": "success" },
+      "inputs": ["res_char_turtle"], "outputs": ["res_cam_turtle_ws"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 8 }]
+    },
+    {
+      "id": "op_gen_cam_turtle_cu", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "乌龟特写-龟壳与眼神 (ref: char_turtle)" },
+      "actual": { "started_at": 1710000080, "finished_at": 1710000089, "duration_s": 9, "result": "success" },
+      "inputs": ["res_char_turtle"], "outputs": ["res_cam_turtle_cu"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_cam_hare_ws", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "兔子全景-冲刺 (ref: char_hare)" },
+      "actual": { "started_at": 1710000080, "finished_at": 1710000090, "duration_s": 10, "result": "success" },
+      "inputs": ["res_char_hare"], "outputs": ["res_cam_hare_ws"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+    {
+      "id": "op_gen_cam_hare_cu", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "兔子特写-毛发耳朵 (ref: char_hare)" },
+      "actual": { "started_at": 1710000080, "finished_at": 1710000091, "duration_s": 11, "result": "success" },
+      "inputs": ["res_char_hare"], "outputs": ["res_cam_hare_cu"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 11 }]
+    },
+    {
+      "id": "op_gen_loc_start_flag", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "起跑拱门-旗帜" },
+      "actual": { "started_at": 1710000090, "finished_at": 1710000098, "duration_s": 8, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_loc_start_flag"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 8 }]
+    },
+    {
+      "id": "op_gen_loc_start_clean", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "起跑拱门-清洁" },
+      "actual": { "started_at": 1710000090, "finished_at": 1710000099, "duration_s": 9, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_loc_start_clean"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 9 }]
+    },
+    {
+      "id": "op_gen_loc_mid_dapple", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "中段斑驳树荫" },
+      "actual": { "started_at": 1710000090, "finished_at": 1710000100, "duration_s": 10, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_loc_mid_dapple"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+    {
+      "id": "op_gen_loc_finish_arch", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "终点拱门-彩带" },
+      "actual": { "started_at": 1710000090, "finished_at": 1710000101, "duration_s": 11, "result": "success" },
+      "inputs": ["res_loc_racecourse"], "outputs": ["res_loc_finish_arch"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 11 }]
+    },
+
+    {
+      "id": "op_linearize", "tool": "LinearizeStoryGraph", "agent": "video-creator", "status": "done",
+      "plan": { "description": "线性化 story-graph → shot-plan (14 shots)" },
+      "actual": { "started_at": 1710000130, "finished_at": 1710000131, "duration_s": 1, "result": "success" },
+      "inputs": ["res_story_graph"], "outputs": ["res_shot_plan"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+
+    {
+      "id": "op_gen_first_frame", "tool": "GenerateImage", "agent": "video-creator", "status": "done",
+      "plan": { "description": "合成首帧: 起跑线 + 乌龟 + 兔子", "params": { "reference_images": ["lstate_start_area.png", "appear_turtle_steady.png", "appear_hare_fresh.png"] } },
+      "actual": { "started_at": 1710000135, "finished_at": 1710000145, "duration_s": 10, "result": "success" },
+      "inputs": ["res_lstate_start", "res_appear_turtle_steady", "res_appear_hare_fresh"], "outputs": ["res_first_frame"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 10 }]
+    },
+
+    {
+      "id": "op_gen_lineup_start_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头1: 起跑线列队 (first_frame_to_video)", "params": { "mode": "first_frame_to_video", "duration_seconds": 3 } },
+      "actual": { "started_at": 1710000150, "finished_at": 1710000200, "duration_s": 50, "result": "success" },
+      "inputs": ["res_first_frame", "res_appear_turtle_steady", "res_appear_hare_fresh", "res_lstate_start"], "outputs": ["res_clip_lineup_start_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 50 }]
+    },
+    {
+      "id": "op_extract_lineup_start_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 lineup_start_1 尾帧" },
+      "actual": { "started_at": 1710000200, "finished_at": 1710000201, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_lineup_start_1"], "outputs": ["res_tail_lineup_start_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_lineup_start_2", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头2: 起跑线列队 shot2 (first_frame_to_video)", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000205, "finished_at": 1710000250, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_lineup_start_1"], "outputs": ["res_clip_lineup_start_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_lineup_start_2", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 lineup_start_2 尾帧" },
+      "actual": { "started_at": 1710000250, "finished_at": 1710000251, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_lineup_start_2"], "outputs": ["res_tail_hare_leads_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_hare_leads_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头3: 兔子领先 shot1", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000255, "finished_at": 1710000305, "duration_s": 50, "result": "success" },
+      "inputs": ["res_tail_hare_leads_1"], "outputs": ["res_clip_hare_leads_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 50 }]
+    },
+    {
+      "id": "op_extract_hare_leads_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 hare_leads_1 尾帧" },
+      "actual": { "started_at": 1710000305, "finished_at": 1710000306, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_hare_leads_1"], "outputs": ["res_tail_hare_leads_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_hare_leads_2", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头4: 兔子领先 shot2", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000310, "finished_at": 1710000360, "duration_s": 50, "result": "success" },
+      "inputs": ["res_tail_hare_leads_2"], "outputs": ["res_clip_hare_leads_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 50 }]
+    },
+    {
+      "id": "op_extract_hare_leads_2", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 hare_leads_2 尾帧" },
+      "actual": { "started_at": 1710000360, "finished_at": 1710000361, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_hare_leads_2"], "outputs": ["res_tail_hare_leads_3"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_hare_leads_3", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头5: 兔子领先 shot3 (特写)", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000365, "finished_at": 1710000415, "duration_s": 50, "result": "success" },
+      "inputs": ["res_tail_hare_leads_3"], "outputs": ["res_clip_hare_leads_3"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 50 }]
+    },
+    {
+      "id": "op_extract_hare_leads_3", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 hare_leads_3 尾帧" },
+      "actual": { "started_at": 1710000415, "finished_at": 1710000416, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_hare_leads_3"], "outputs": ["res_tail_hare_naps_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_hare_naps_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头6: 兔子打盹 shot1", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000420, "finished_at": 1710000465, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_hare_naps_1"], "outputs": ["res_clip_hare_naps_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_hare_naps_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 hare_naps_1 尾帧" },
+      "actual": { "started_at": 1710000465, "finished_at": 1710000466, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_hare_naps_1"], "outputs": ["res_tail_hare_naps_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_hare_naps_2", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头7: 兔子打盹 shot2", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000470, "finished_at": 1710000510, "duration_s": 40, "result": "success" },
+      "inputs": ["res_tail_hare_naps_2"], "outputs": ["res_clip_hare_naps_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 40 }]
+    },
+    {
+      "id": "op_extract_hare_naps_2", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 hare_naps_2 尾帧" },
+      "actual": { "started_at": 1710000510, "finished_at": 1710000511, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_hare_naps_2"], "outputs": ["res_tail_turtle_passes_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_turtle_passes_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头8: 乌龟超越 shot1", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000515, "finished_at": 1710000560, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_turtle_passes_1"], "outputs": ["res_clip_turtle_passes_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_turtle_passes_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 turtle_passes_1 尾帧" },
+      "actual": { "started_at": 1710000560, "finished_at": 1710000561, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_turtle_passes_1"], "outputs": ["res_tail_turtle_passes_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_turtle_passes_2", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头9: 乌龟超越 shot2", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000565, "finished_at": 1710000610, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_turtle_passes_2"], "outputs": ["res_clip_turtle_passes_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_turtle_passes_2", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 turtle_passes_2 尾帧" },
+      "actual": { "started_at": 1710000610, "finished_at": 1710000611, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_turtle_passes_2"], "outputs": ["res_tail_final_sprint_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_final_sprint_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头10: 最终冲刺 shot1", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000615, "finished_at": 1710000660, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_final_sprint_1"], "outputs": ["res_clip_final_sprint_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_final_sprint_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 final_sprint_1 尾帧" },
+      "actual": { "started_at": 1710000660, "finished_at": 1710000661, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_final_sprint_1"], "outputs": ["res_tail_final_sprint_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_final_sprint_2", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头11: 最终冲刺 shot2", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000665, "finished_at": 1710000710, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_final_sprint_2"], "outputs": ["res_clip_final_sprint_2"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_final_sprint_2", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 final_sprint_2 尾帧" },
+      "actual": { "started_at": 1710000710, "finished_at": 1710000711, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_final_sprint_2"], "outputs": ["res_tail_final_sprint_3"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_final_sprint_3", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头12: 最终冲刺 shot3", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000715, "finished_at": 1710000760, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_final_sprint_3"], "outputs": ["res_clip_final_sprint_3"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_final_sprint_3", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 final_sprint_3 尾帧" },
+      "actual": { "started_at": 1710000760, "finished_at": 1710000761, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_final_sprint_3"], "outputs": ["res_tail_final_sprint_4"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_final_sprint_4", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头13: 最终冲刺 shot4", "params": { "mode": "first_frame_to_video", "duration_seconds": 2 } },
+      "actual": { "started_at": 1710000765, "finished_at": 1710000810, "duration_s": 45, "result": "success" },
+      "inputs": ["res_tail_final_sprint_4"], "outputs": ["res_clip_final_sprint_4"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 45 }]
+    },
+    {
+      "id": "op_extract_final_sprint_4", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 final_sprint_4 尾帧" },
+      "actual": { "started_at": 1710000810, "finished_at": 1710000811, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_final_sprint_4"], "outputs": ["res_tail_finish_win_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    },
+    {
+      "id": "op_gen_finish_win_1", "tool": "GenerateVideoSync", "agent": "video-creator", "status": "done",
+      "plan": { "description": "镜头14: 乌龟冲线胜利", "params": { "mode": "first_frame_to_video", "duration_seconds": 3 } },
+      "actual": { "started_at": 1710000815, "finished_at": 1710000865, "duration_s": 50, "result": "success" },
+      "inputs": ["res_tail_finish_win_1"], "outputs": ["res_clip_finish_win_1"],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 50 }]
+    },
+    {
+      "id": "op_extract_finish_win_1", "tool": "ExtractFrame", "agent": "video-creator", "status": "done",
+      "plan": { "description": "提取 finish_win_1 尾帧" },
+      "actual": { "started_at": 1710000865, "finished_at": 1710000866, "duration_s": 1, "result": "success" },
+      "inputs": ["res_clip_finish_win_1"], "outputs": [],
+      "attempts": [{ "attempt": 1, "status": "done", "duration_s": 1 }]
+    }
+  ],
+  "constraints": [
+    { "id": "constraint_001", "type": "constraint", "source": "system", "scope": "tool:GenerateVideoSync", "rule": "每个镜头必须使用前一个镜头的尾帧作为首帧输入，保证镜头衔接连续性", "created_at": 1710000150, "related_ops": ["op_gen_lineup_start_2", "op_gen_hare_leads_1", "op_gen_hare_naps_1", "op_gen_turtle_passes_1", "op_gen_final_sprint_1", "op_gen_finish_win_1"] },
+    { "id": "constraint_002", "type": "constraint", "source": "system", "scope": "tool:GenerateImage", "rule": "状态图必须使用实体参考图作为 reference_image，确保角色一致性", "created_at": 1710000050, "related_ops": ["op_gen_appear_turtle_steady", "op_gen_appear_hare_fresh", "op_gen_appear_hare_rushed"] },
+    { "id": "constraint_003", "type": "constraint", "source": "system", "scope": "global", "rule": "realistic cinematic 风格，shallow depth of field，high dynamic range", "created_at": 1710000000, "related_ops": [] },
+    { "id": "constraint_004", "type": "constraint", "source": "auto_reflect", "scope": "tool:GenerateVideoSync", "rule": "多次 Task dispatch 重试（12次），因上下文过长或生成中断需增量恢复", "created_at": 1710000400, "related_ops": ["op_gen_hare_leads_3", "op_gen_final_sprint_1"] }
+  ]
+}

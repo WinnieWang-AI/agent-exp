@@ -28,7 +28,7 @@ shot plan 数据：
   "shot_type": "close_up",
   "angle": "eye_level",
   "movement": "push_in",
-  "intent": "小红帽停步，感觉有什么在看她",
+  "content": "小红帽停步，感觉有什么在看她",
   "focus_on": ["appear_red_neat", "appear_wolf_natural"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
@@ -65,7 +65,7 @@ shot plan 数据：
   "shot_type": "wide",
   "angle": "high_angle",
   "movement": "crane_down",
-  "intent": "小红帽独自走在林间小路上，渺小而天真",
+  "content": "小红帽独自走在林间小路上，渺小而天真",
   "focus_on": ["appear_red_neat"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
@@ -100,7 +100,7 @@ shot plan 数据：
 
 1. **风格**：`style_prefix` 放在开头
 2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）、镜头焦距（`lens`）、景深（`focus_depth`）
-3. **画面构图与空间关系**：`composition` — 描述人物在画面中的位置和空间关系（如"角色 A 在画面左侧前景，角色 B 在右侧远处"）。这是保证镜头间空间连续性的关键信息，必须体现在 prompt 中
+3. **画面内容与空间关系**：`content` — 描述画面内容和人物在画面中的位置关系。这是保证镜头间空间连续性的关键信息，必须体现在 prompt 中
 5. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere。如果 `location_state.framing` 存在，只描述 `framing.visible_regions` 中的区域环境，不要描述 `framing.excluded_elements` 中的元素
 6. **角色外形**：`appearances[].visual` — 不需要详尽描述每个字段，抓关键视觉特征（如"red cloaked girl"而不是重复全部服装细节，因为 reference_images 已经传入了）
 7. **角色表演**：`minds[].emotion` + `minds[].behavior` — 这是视频的核心，描述角色的动作和情绪表达
@@ -110,6 +110,9 @@ shot plan 数据：
    - **首帧图 prompt**（GenerateImage，Seedream/Gemini）：使用 `@[role N]` 标记。在 prompt 最前面加前缀 `"Reference image characters from left to right are: @[role 1], @[role 2]."` 说明参考图顺序，然后在角色首次出现的描述旁放 `@[role N]`。编号按 `reference_image_paths` 参数顺序。
    - **视频 prompt**（GenerateVideoSync，Kling 等）：使用 `<<<image_N>>>` 标记，放在对应角色首次出现的描述旁边。编号按 `reference_images` 参数顺序。
 12. **负面提示**：`negative_prefix` 通过 `negative_prompt` 参数传入
+13. **声音描述（Sound）**：视频模型会同时生成画面和声音（环境音、对话、音效）。在 prompt 末尾用 "Sound:" 段落描述该镜头应有的声音，帮助模型生成与画面同步的音频。声音描述包含两部分：
+    - **环境音与音效**：从 `location_state.appearance`（atmosphere、weather）和角色动作（`minds[].behavior`）推断。如 `Sound: wind rustling through leaves, soft footsteps on dirt path, distant birdsong`
+    - **角色对白**：当 shot 的 `audio_ids` 关联了 `audio_dialogue` 类型的 audio_state 时，从 `prompt_materials.audio_states` 中找到对应条目的 `text` 和 `speaker`，将台词写入 prompt。格式：`The girl says "奶奶我来看你了"`。对白语言与 `video_info.language` 一致。无对白的 shot 只写环境音
 
 ### 示例：中景 + 双人互动
 
@@ -120,10 +123,9 @@ shot plan 数据：
   "shot_type": "medium",
   "angle": "eye_level",
   "movement": "static",
-  "composition": "小红帽在画面左侧前景，面朝右侧；大灰狼从右侧大橡树后探出半身，两者相距约3米",
+  "content": "林间小路上，小红帽突然停步，大灰狼从右侧大橡树后探出半身，两者相距约3米",
   "lens": "50mm",
   "focus_depth": "shallow, focus on girl",
-  "intent": "小红帽停步，感觉有什么在看她",
   "focus_on": ["appear_red_neat", "appear_wolf_natural"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
@@ -164,7 +166,7 @@ shot plan 数据：
   "shot_type": "wide",
   "angle": "high_angle",
   "movement": "crane_down",
-  "intent": "小红帽独自走在林间小路上，渺小而天真",
+  "content": "小红帽独自走在林间小路上，渺小而天真",
   "focus_on": ["appear_red_neat"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
@@ -195,7 +197,7 @@ shot plan 数据：
   "shot_type": "close_up",
   "angle": "low_angle",
   "movement": "push_in",
-  "intent": "外婆发现来的不是小红帽，恐惧涌上脸庞",
+  "content": "外婆发现来的不是小红帽，恐惧涌上脸庞",
   "focus_on": ["appear_grandma_home"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",

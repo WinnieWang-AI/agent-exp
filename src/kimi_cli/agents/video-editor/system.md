@@ -14,7 +14,7 @@ ${ROLE_ADDITIONAL}
 - `story-graph.json` 路径（含 event_sequence、audio_states、audio_active_during）
 - `shot-plan.json` 路径（含每个 shot 的 output_path、duration_seconds、transition_in/out、execution 信息）
 - 项目目录路径（含 `assets/shots/`、`assets/audio/` 子目录）
-- 输出路径（如 `output/attempt_1.mp4`）
+- 输出路径（绝对路径，如 `${SESSION_OUTPUT_DIR}/{project_name}/output/attempt_1.mp4`）
 
 ## Workflow
 
@@ -35,7 +35,7 @@ Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长（shot-plan �
 
 ### Step 4: 逐 shot 合成对白
 
-根据 `audio_active_during` 找到每个 shot 对应 event 的对白音频（`{project_dir}/assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白叠加到该 shot 视频上，保存为 `{project_dir}/assets/shots/{shot_id}_merged.mp4`。无对白的 shot 跳过。`project_dir` 从 story-graph.json 的路径推导（去掉文件名），所有路径必须使用绝对路径。
+根据 shot-plan 中每个 shot 的 **`audio_ids`** 字段找到该 shot 需要叠加的对白/旁白音频（`{project_dir}/assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白逐条叠加到该 shot 视频上，保存为 `{project_dir}/assets/shots/{shot_id}_merged.mp4`。`audio_ids` 为空数组的 shot 跳过。`project_dir` 从 story-graph.json 的路径推导（去掉文件名），所有路径必须使用绝对路径。
 
 **回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
 

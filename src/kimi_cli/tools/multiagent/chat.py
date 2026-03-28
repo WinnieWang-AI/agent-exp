@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import re
 from pathlib import Path
 from typing import override
@@ -7,7 +8,7 @@ from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.agentspec import get_agents_dir
-from kimi_cli.soul import MaxStepsReached, get_wire_or_none, run_soul
+from kimi_cli.soul import MaxStepsReached, RunCancelled, get_cancel_event_or_none, get_wire_or_none, run_soul
 from kimi_cli.soul.agent import Agent, Runtime, load_agent
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
@@ -188,8 +189,36 @@ class ChatWithAgent(CallableTool2[Params]):
             await context.restore()
         soul = KimiSoul(agent, context=context)
 
+        parent_cancel = get_cancel_event_or_none()
+        cancel_event = asyncio.Event()
+
+        async def _propagate_cancel():
+            await parent_cancel.wait()
+            cancel_event.set()
+
+        propagate_task = asyncio.create_task(_propagate_cancel()) if parent_cancel else None
         try:
-            await run_soul(soul, message, _ui_loop_fn, asyncio.Event())
+            await run_soul(soul, message, _ui_loop_fn, cancel_event)
+
+            _error_msg = (
+                f"Agent '{agent_name}' did not produce a valid response. "
+                "You may need to retry or adjust your message."
+            )
+
+            if len(context.history) == 0 or context.history[-1].role != "assistant":
+                return ToolError(message=_error_msg, brief="No response from agent")
+
+            final_response = context.history[-1].extract_text(sep="\n")
+
+            # Brief response continuation
+            if len(final_response) < 200 and MAX_CONTINUE_ATTEMPTS > 0:
+                await run_soul(soul, CONTINUE_PROMPT, _ui_loop_fn, cancel_event)
+                if len(context.history) > 0 and context.history[-1].role == "assistant":
+                    final_response = context.history[-1].extract_text(sep="\n")
+
+            return ToolOk(output=final_response)
+        except RunCancelled:
+            raise
         except MaxStepsReached as e:
             return ToolError(
                 message=(
@@ -198,21 +227,8 @@ class ChatWithAgent(CallableTool2[Params]):
                 ),
                 brief="Max steps reached",
             )
-
-        _error_msg = (
-            f"Agent '{agent_name}' did not produce a valid response. "
-            "You may need to retry or adjust your message."
-        )
-
-        if len(context.history) == 0 or context.history[-1].role != "assistant":
-            return ToolError(message=_error_msg, brief="No response from agent")
-
-        final_response = context.history[-1].extract_text(sep="\n")
-
-        # Brief response continuation
-        if len(final_response) < 200 and MAX_CONTINUE_ATTEMPTS > 0:
-            await run_soul(soul, CONTINUE_PROMPT, _ui_loop_fn, asyncio.Event())
-            if len(context.history) > 0 and context.history[-1].role == "assistant":
-                final_response = context.history[-1].extract_text(sep="\n")
-
-        return ToolOk(output=final_response)
+        finally:
+            if propagate_task:
+                propagate_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await propagate_task

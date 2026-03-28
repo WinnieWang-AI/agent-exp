@@ -102,7 +102,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 
 1. **风格**：`style_prefix` 放在 prompt 开头
 2. **镜头语言**：景别（`shot_type`）、角度（`angle`）、运动（`movement`）、焦距（`lens`）、景深（`focus_depth`）
-3. **构图与空间关系**：`composition` — 角色在画面中的位置（如"左侧前景、右侧远处"）
+3. **画面内容与空间关系**：`content` — 画面内容和角色在画面中的位置
 4. **场景环境**：`location_state.appearance` 的 lighting / weather / atmosphere。如果 `location_state.framing` 存在，只描述 `visible_regions` 中的区域环境，不要描述 `excluded_elements` 中的元素
 5. **角色外形**：从简，抓关键特征（如"red-cloaked girl"），参考图已传入不需重复全部细节
 6. **角色表演**：`minds[].emotion` + `minds[].behavior` — 视频的核心
@@ -180,7 +180,7 @@ Screenwriter 标注了这两个事件在叙事时间和空间上连续（`contin
 ```json
 {
   "shot_type": "medium", "angle": "eye_level", "movement": "static",
-  "composition": "小红帽在画面左侧，大灰狼从右侧树后探出",
+  "content": "林间小路上，小红帽停步，大灰狼从右侧树后探出，两者相距约3米",
   "focus_on": ["appear_red_neat", "appear_wolf_natural"],
   "prompt_materials": {
     "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",

@@ -31,8 +31,7 @@ LinearizeStoryGraph(
 输出 `shot-plan.json`，包含每个摄影镜头的执行信息：
 - `shot_id`：镜头唯一 ID（格式 `{event_id}_shot_{order}`，超长镜头拆分为 `{shot_id}_part_N`）
 - `event_id`：所属事件
-- `shot_type`、`angle`、`movement`、`intent`、`focus_on`：运镜信息，用于 prompt 组装
-- `composition`：画面构图和人物空间关系描述，用于 prompt 中描述空间布局
+- `shot_type`、`angle`、`movement`、`content`、`focus_on`：运镜信息，用于 prompt 组装。`content` 同时包含画面内容和空间布局
 - `lens`、`focus_depth`：镜头焦距和景深信息，用于 prompt 中描述视觉风格
 - `transition_in`、`transition_out`：转场方式，用于剪辑组装阶段
 - `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、relationships、style（**不含 reference_image 路径**）

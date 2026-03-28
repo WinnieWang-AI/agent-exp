@@ -203,17 +203,18 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 {
   "id": "cam_wolf_encounter",
   "for_event": "evt_wolf_encounter",  // 或 ["evt_a", "evt_b"] 用于 PARALLEL 事件交叉剪辑
+  "design_rationale": "事件时长7s，单shot可覆盖；用medium景别配合static运镜聚焦对话",  // 必填：时长如何确定，shot为什么这样设计
   "shots": [
     {
       "order": 1,
       "shot_type": "medium",          // extreme_wide|wide|medium|close_up|extreme_close|detail_insert|over_shoulder|pov
       "angle": "eye_level",           // eye_level|low_angle|high_angle|dutch_angle|bird_eye
       "movement": "static",           // static|pan_left|push_in|pull_out|tracking|handheld_shake|crane_down|slow_360_orbit|fast_tracking|...
-      "composition": "小红帽在画面左侧前景，大灰狼从右侧树后探出，相距约3米",  // 画面构图与人物空间关系
+      "content": "林间小路上，小红帽突然停步，大灰狼从右侧大橡树后缓缓探出头，两者相距约3米",  // 谁在哪里做什么
       "lens": "50mm",                 // 镜头焦距（可选）
       "focus_depth": "shallow, focus on girl",  // 景深（可选）
       "focus_on": ["appear_red_neat", "appear_wolf_natural"],  // 引用状态 ID
-      "intent": "小红帽停步，感觉有什么在看她",
+      "audio_ids": ["astate_dlg_wolf_greet"],  // 该 shot 播放的对白/旁白 ID，无对白写 []
       "duration": 7,                  // 该 shot 时长（秒），5-10 之间
       "transition_in": "cut",         // 入场转场方式（可选）
       "transition_out": "dissolve"    // 出场转场方式（可选）
@@ -222,7 +223,16 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
 }
 ```
 
-**`composition` 是关键字段**：必须描述人物在画面中的空间位置和相对关系（如"A在左侧前景，B在右侧远处"），这是保证镜头间空间连续性的核心信息。`lens`、`focus_depth`、`transition_in`、`transition_out` 为可选字段。
+**`content` 是关键字段**：描述这个 shot 画面中**谁在哪里做什么**。包含三个要素：
+- **角色动作**：每个出镜角色正在做什么（如"小红帽停步回头"、"大灰狼从树后探出头"）
+- **空间关系**：角色之间、角色与环境之间的位置关系（如"两者相距约3米"、"站在河边浅滩"）
+- **关键细节**：影响画面的道具、环境变化（如"粮袋背在身上"、"水面反光"）
+
+不要在 `content` 中重复景别、角度、运镜——这些由 `shot_type`、`angle`、`movement` 字段描述。`lens`、`focus_depth`、`transition_in`、`transition_out` 为可选字段。
+
+**`design_rationale` 字段（必填）**：说明时长是如何确定的、shot 为什么这样设计。例如"事件需要15s表现完整对话，超过单shot上限10s，拆为2个shot分别表现问答双方"。
+
+**`audio_ids` 字段（必填）**：该 shot 播放的对白/旁白 ID 列表。每个 ID 必须存在于 `audio_states` 中且 layer 为 `audio_dialogue`。无对白的 shot 写空数组 `[]`。BGM 通过 `audio_active_during` 按事件级别覆盖，不写入 `audio_ids`。
 
 #### video_info（视频全局规格）
 
@@ -485,6 +495,7 @@ loc_racecourse (spatial_layout):
 **Step 5: 设计镜头（camera_directives）**
 - 为每个事件（或 PARALLEL 事件组）设计分镜
 - `focus_on` 引用 appearance/prop_state/location_state 的 ID（不是实体 ID）
+- **每个 shot 必须填写 `audio_ids`**（在 Step 6 设计完音频后回填）：将对白/旁白分配到具体 shot，无对白的 shot 写 `[]`
 
 **镜头时长约束——匹配视频生成能力**
 
@@ -505,6 +516,7 @@ loc_racecourse (spatial_layout):
   - BGM 生成工具无法精确控制时长，组装时会裁剪适配，因此不需要为每个情绪段单独设计 BGM——用 1 段统一风格的音乐覆盖多个事件即可
 - 对白类型需要设定 `speaker`、`text`、`tone`、`voice_direction`
 - 设定 `audio_active_during` 和 `audio_transitions` 的转场方式
+- **回填 `audio_ids`**：音频设计完成后，将每条对白/旁白的 ID 写入对应 shot 的 `audio_ids` 字段。确保每条 `audio_dialogue` 类型的 audio_state 恰好出现在一个 shot 的 `audio_ids` 中（不遗漏、不重复）。`audio_active_during` 保留用于 BGM 的事件级覆盖
 
 **阶段二写入与验证**
 1. 读取已有的 `story-graph.json`，在其中补充 `camera_directives`、`audio_states`、`audio_active_during`、`audio_transitions`。

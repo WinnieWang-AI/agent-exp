@@ -140,6 +140,7 @@ async def run_soul(
     """
     wire = Wire(file_backend=wire_file)
     wire_token = _current_wire.set(wire)
+    cancel_token = _current_cancel_event.set(cancel_event)
 
     logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
     ui_task = asyncio.create_task(ui_loop_fn(wire))
@@ -148,12 +149,13 @@ async def run_soul(
     soul_task = asyncio.create_task(soul.run(user_input))
 
     cancel_event_task = asyncio.create_task(cancel_event.wait())
-    await asyncio.wait(
-        [soul_task, cancel_event_task],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
 
     try:
+        await asyncio.wait(
+            [soul_task, cancel_event_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
         if cancel_event.is_set():
             logger.debug("Cancelling the run task")
             soul_task.cancel()
@@ -168,6 +170,17 @@ async def run_soul(
                 await cancel_event_task
             soul_task.result()  # this will raise if any exception was raised in the run task
     finally:
+        # Ensure both tasks are always cleaned up, even if an external
+        # CancelledError interrupts this function (e.g. parent cancelling us).
+        if not soul_task.done():
+            soul_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await soul_task
+        if not cancel_event_task.done():
+            cancel_event_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await cancel_event_task
+
         logger.debug("Shutting down the UI loop")
         # shutting down the wire should break the UI loop
         wire.shutdown()
@@ -180,10 +193,12 @@ async def run_soul(
         except TimeoutError:
             logger.warning("UI loop timed out")
         finally:
+            _current_cancel_event.reset(cancel_token)
             _current_wire.reset(wire_token)
 
 
 _current_wire = ContextVar[Wire | None]("current_wire", default=None)
+_current_cancel_event = ContextVar[asyncio.Event | None]("current_cancel_event", default=None)
 
 
 def get_wire_or_none() -> Wire | None:
@@ -192,6 +207,14 @@ def get_wire_or_none() -> Wire | None:
     Expect to be not None when called from anywhere in the agent loop.
     """
     return _current_wire.get()
+
+
+def get_cancel_event_or_none() -> asyncio.Event | None:
+    """
+    Get the current cancel event or None.
+    Expect to be not None when called from anywhere in the agent loop.
+    """
+    return _current_cancel_event.get()
 
 
 def wire_send(msg: WireMessage) -> None:

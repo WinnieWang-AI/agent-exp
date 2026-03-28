@@ -16,6 +16,7 @@ class DiffDisplayBlock(DisplayBlock):
 class TodoDisplayItem(BaseModel):
     title: str
     status: Literal["pending", "in_progress", "done"]
+    description: str = ""
 
 
 class TodoDisplayBlock(DisplayBlock):
@@ -79,7 +80,7 @@ class StoryGraphShot(BaseModel):
     shot_type: str = ""
     angle: str = ""
     movement: str = ""
-    intent: str = ""
+    content: str = ""
     focus_on: list[str] = []
     is_continuation: bool = False
     sequence_prev_shot_id: str = ""

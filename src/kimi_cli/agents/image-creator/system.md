@@ -123,15 +123,25 @@ Task(
 
 ### 即时回填
 
-**每生成一张图并通过校验后，立即用 StrReplaceFile 更新 story-graph.json**：
+**每生成一张图并通过校验后，立即用 StrReplaceFile 更新 story-graph.json**。
+
+⚠️ **关键：old 字符串必须包含足够上下文来唯一定位目标节点。** `"reference_image": null` 在文件中出现多次（每个实体/状态节点各一次），如果只用它作为 old 字符串，StrReplaceFile 会替换第一个匹配——导致图片路径写入错误的节点。
+
+**正确做法**：old 字符串必须包含该节点的 `"id"` 行，确保唯一匹配。示例：
 
 ```json
-// 替换前
-"reference_image": null
-// 替换后
-"reference_image": "{project_dir}/assets/images/char_red.png",
-"generation_prompt": "hand-drawn illustration, warm color palette ..."
+// ✅ 正确：包含 id 行，唯一匹配 char_red 节点
+old: "\"id\": \"char_red\",\n      \"name\": \"小红\",\n      \"reference_image\": null"
+new: "\"id\": \"char_red\",\n      \"name\": \"小红\",\n      \"reference_image\": \"{project_dir}/assets/images/char_red.png\",\n      \"generation_prompt\": \"hand-drawn illustration, warm color palette ...\""
 ```
+
+```json
+// ❌ 错误：仅用 "reference_image": null，会命中第一个出现的位置，而非目标节点
+old: "\"reference_image\": null"
+new: "\"reference_image\": \"{project_dir}/assets/images/char_red.png\""
+```
+
+**实际操作**：回填前先确认目标节点的 `id` 和相邻字段（如 `name`），将它们一起放入 old 字符串。new 字符串保持相同的上下文，仅替换 `reference_image` 值并追加 `generation_prompt`。
 
 不要等所有图片完成再批量回填——逐张回填让前端实时展示进度。
 

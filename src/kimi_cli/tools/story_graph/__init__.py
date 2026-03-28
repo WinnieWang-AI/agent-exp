@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from kimi_cli.tools.story_graph.indexes import build_indexes
 from kimi_cli.tools.story_graph.linearize import LinearizeStoryGraph
+from kimi_cli.tools.story_graph.resolve import resolve_reference_image
 from kimi_cli.tools.story_graph.view import build_story_graph_view
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 
@@ -165,6 +166,12 @@ def _validate_references(data: dict[str, Any], ids: dict[str, set[str]]) -> list
             for ref in shot.get("focus_on", []):
                 if ref not in all_ids:
                     issues.append(f'camera {cd["id"]} shot {shot.get("order")}: focus_on "{ref}" not defined')
+            # audio_ids: each must be a dialogue audio_state
+            for aid in shot.get("audio_ids", []):
+                if aid not in ids["audio_state"]:
+                    issues.append(
+                        f'camera {cd["id"]} shot {shot.get("order")}: audio_ids "{aid}" not found in audio_states'
+                    )
 
     # relationships
     for c in data.get("characters", []):
@@ -256,6 +263,26 @@ def _validate_coverage(data: dict[str, Any], ids: dict[str, set[str]]) -> list[s
     for e in data.get("events", []):
         if e["id"] not in evt_has_style:
             issues.append(f'event {e["id"]}: no production_style active (style_active_during)')
+
+    # Check audio_ids coverage: every audio_dialogue state must appear in exactly one shot
+    dialogue_ids = {
+        aus["id"] for aus in data.get("audio_states", []) if aus.get("layer") == "audio_dialogue"
+    }
+    audio_ids_seen: dict[str, list[str]] = {}  # audio_id -> list of cam/shot locations
+    has_camera = bool(data.get("camera_directives"))
+    for cd in data.get("camera_directives", []):
+        for shot in cd.get("shots", []):
+            shot_label = f'camera {cd["id"]} shot {shot.get("order")}'
+            if "audio_ids" not in shot:
+                issues.append(f'{shot_label}: missing audio_ids field (use [] for no dialogue)')
+            for aid in shot.get("audio_ids", []):
+                audio_ids_seen.setdefault(aid, []).append(shot_label)
+    if has_camera:
+        for aid in dialogue_ids - set(audio_ids_seen.keys()):
+            issues.append(f'audio_state {aid} (dialogue) not assigned to any shot via audio_ids')
+        for aid, locations in audio_ids_seen.items():
+            if len(locations) > 1:
+                issues.append(f'audio_state {aid} assigned to multiple shots: {locations}')
 
     # Check no state has empty active_during
     for map_name in ["appearance_active_during", "prop_active_during",
