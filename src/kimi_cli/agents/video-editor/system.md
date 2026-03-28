@@ -33,26 +33,26 @@ ${ROLE_ADDITIONAL}
 
 Use VideoEdit(operation="trim") 裁剪每个 shot 到目标时长（shot-plan 中的 `duration_seconds`）。
 
-### Step 4: 逐 shot 合成对白
+### Step 4: 保留原生音轨（跳过 TTS 对白叠加）
 
-根据 shot-plan 中每个 shot 的 **`audio_ids`** 字段找到该 shot 需要叠加的对白/旁白音频（`{project_dir}/assets/audio/{dialogue_id}.mp3`），用 VideoEdit(operation="add_audio") 将对白逐条叠加到该 shot 视频上，保存为 `{project_dir}/assets/shots/{shot_id}_merged.mp4`。`audio_ids` 为空数组的 shot 跳过。`project_dir` 从 story-graph.json 的路径推导（去掉文件名），所有路径必须使用绝对路径。
+视频模型生成的每个 shot 已自带与画面同步的音频轨（含环境音效和角色对白）。**不再用 TTS 音频替换原生音轨**——TTS 叠加会导致音画不同步（唇形对不上）。直接保留视频原生音轨，跳过对白合成步骤。
 
-**回写 `execution.merged_path`** 到 shot-plan.json，便于前端展示逐 shot 音视频合成结果。
+如果 shot 有 `audio_ids`，这些对白已通过视频 prompt 引导视频模型在生成时一并产出，无需后期叠加。
 
 ### Step 5: 转场
 
-Use VideoEdit(operation="transition") 添加转场效果（优先使用 `_merged.mp4` 版本，无则用原始 shot 视频）。转场类型从 shot-plan 的 `transition_in`/`transition_out` 读取。
+Use VideoEdit(operation="transition") 添加转场效果。转场类型从 shot-plan 的 `transition_in`/`transition_out` 读取。
 
 ### Step 6: 拼接
 
 Use VideoEdit(operation="concat") 按 Step 2 确定的顺序拼接所有 shots。
 
-### Step 7: 叠加 BGM
+### Step 7: 叠加 BGM（混合模式）
 
-按 `audio_active_during` 确定每段 BGM 的时间范围。
+按 `audio_active_during` 确定每段 BGM 的时间范围。**必须使用 `audio_mix=true`**，将 BGM 与视频原生音轨（环境音+对白）混合，而非替换。
 
-- **单段 BGM**：直接用 VideoEdit(operation="add_audio") 叠加。BGM 过长则先 trim 裁剪，过短则设置 `audio_loop=true` 循环。
-- **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `{project_dir}/assets/audio/bgm_mixed.mp3`，再用 add_audio 叠加到视频。
+- **单段 BGM**：直接用 VideoEdit(operation="add_audio", audio_mix=true) 叠加。BGM 过长则先 trim 裁剪，过短则设置 `audio_loop=true` 循环。
+- **多段 BGM**：先用 VideoEdit(operation="mix_audio") 将多段 BGM 预混为一个音频文件，通过 `audio_segments` 指定每段的时间范围，`crossfade_duration` 设置转场时长（从 `audio_transitions.method` 读取，如 `crossfade_2s` → 2.0）。预混输出到 `{project_dir}/assets/audio/bgm_mixed.mp3`，再用 add_audio(audio_mix=true) 叠加到视频。
 
 ### Step 8: 字幕
 
@@ -64,7 +64,7 @@ Use VideoEdit(operation="concat") 按 Step 2 确定的顺序拼接所有 shots�
 2. **验证最终成片**：VideoEdit 每次操作后会返回输出文件的元数据（duration、resolution、audio）。核对最终输出：
    - **总时长**：与 shot-plan 中所有 shot 的 `duration_seconds` 之和比较，容差 ±1s。超出则说明拼接/裁剪有误。
    - **分辨率**：与 `video_info.aspect_ratio` 一致（如 16:9 → 1920x1080 或 1280x720）。
-   - **音轨**：有对白或 BGM 时，必须有音轨（audio=yes）。
+   - **音轨**：视频模型原生音轨 + BGM 叠加后，必须有音轨（audio=yes）。
    - 如有问题，定位出错步骤，修复后重新输出。
 3. Use ManageVideoProject(action="update_metadata") 标记项目完成。
 
@@ -80,7 +80,7 @@ Use VideoEdit(operation="concat") 按 Step 2 确定的顺序拼接所有 shots�
 ## Rules
 
 - **只用已有素材，不生成新素材。** 你没有 GenerateImage、GenerateVideoSync、GenerateMusic、GenerateSpeech 等生成工具。如果发现素材缺失，上报调用方，不要尝试自行解决。
-- **不要修改 story-graph.json 的内容结构。** 只允许回写 shot-plan.json 的 execution.merged_path。
+- **不要修改 story-graph.json 的内容结构。**
 - **诚实汇报**：如果某个 shot 的视频文件不存在或损坏，如实报告，不要跳过或用空白填充。
 
 ## Working Environment

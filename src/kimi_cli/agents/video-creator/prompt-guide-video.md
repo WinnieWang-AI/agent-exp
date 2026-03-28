@@ -146,7 +146,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera, 50mm lens, shallow depth of field with focus on the girl. On the left foreground of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the path, facing right, tilting her head with wide curious eyes and a flicker of unease. About three meters away on the right side, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low and hunching his body to appear smaller and less threatening. Sunlit forest clearing with god rays and scattered wildflowers. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness."
+"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera, 50mm lens, shallow depth of field with focus on the girl. On the left foreground of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the path, facing right, tilting her head with wide curious eyes and a flicker of unease. About three meters away on the right side, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low and hunching his body to appear smaller and less threatening. Sunlit forest clearing with god rays and scattered wildflowers. The wolf approaches with a gentle, disarming manner while the girl clutches her basket — covered with a red-and-white checkered cloth — a little tighter. Two strangers meeting for the first time, an air of deceptive gentleness. Sound: gentle breeze through leaves, a twig snapping under the wolf's paw, the wolf says in a warm friendly tone '你好啊小姑娘，你要去哪里呀？'"
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -178,7 +178,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from high angle, camera slowly craning down. A vast dense forest with towering pines, golden god rays streaming through the canopy, gentle breeze stirring the leaves. A tiny red-cloaked figure <<<image_1>>> skips merrily along a winding dirt path, hopping and looking around with childlike wonder, pausing to pick a wildflower, butterflies dancing in the warm sunlit air. The girl appears small and innocent against the grand ancient woodland."
+"hand-drawn illustration, warm color palette, children's storybook style. Wide shot from high angle, camera slowly craning down. A vast dense forest with towering pines, golden god rays streaming through the canopy, gentle breeze stirring the leaves. A tiny red-cloaked figure <<<image_1>>> skips merrily along a winding dirt path, hopping and looking around with childlike wonder, pausing to pick a wildflower, butterflies dancing in the warm sunlit air. The girl appears small and innocent against the grand ancient woodland. Sound: birds singing, wind through pine trees, soft footsteps on dirt, the girl humming a cheerful tune."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -212,7 +212,7 @@ shot plan 数据：
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown and lace nightcap <<<image_1>>>, wisps of gray hair peeking out, her frail pale face lit by the dim flicker of a fireplace. Her eyes widen in shock, mouth falling slightly open, body instinctively shrinking backward as terror washes over her expression. The cozy cottage interior shifts from warmth to an oppressive, claustrophobic feeling."
+"hand-drawn illustration, warm color palette, children's storybook style. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown and lace nightcap <<<image_1>>>, wisps of gray hair peeking out, her frail pale face lit by the dim flicker of a fireplace. Her eyes widen in shock, mouth falling slightly open, body instinctively shrinking backward as terror washes over her expression. The cozy cottage interior shifts from warmth to an oppressive, claustrophobic feeling. Sound: crackling fireplace, a sharp gasp from the old woman, creaking floorboards."
 
 参数：
 - negative_prompt: "photorealistic, dark, horror, oversaturated"
@@ -237,3 +237,4 @@ shot plan 数据：
 6. **style_prefix 放 prompt 开头，negative_prefix 放 `negative_prompt` 参数**：不要混放，不要通过 `style` 参数重复传入。
 7. **relationships 影响氛围描写**：如果两个角色是"陌生人"，描述中体现初次相遇的试探感；如果是"信任的朋友"，体现亲密随意的互动。不需要直接写出关系名称，而是融入动作和氛围。
 8. **prop_states 按需提及**：道具只在画面中有重要作用时提及（如"clutches her basket tighter"），不需要每个 shot 都描述所有道具。
+9. **声音描述放在 prompt 末尾**：以 "Sound:" 开头，用逗号分隔各声音元素。环境音从场景推断（森林→鸟鸣风声，室内→壁炉声），动作音效从角色行为推断（奔跑→急促脚步，开门→门轴吱呀）。有对白时写明谁说了什么（`the wolf says "..."`）。**不要描述 BGM**——BGM 由独立流程统一生成，视频模型不负责 BGM。

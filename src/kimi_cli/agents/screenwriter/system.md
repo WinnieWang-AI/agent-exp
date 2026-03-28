@@ -508,13 +508,13 @@ loc_racecourse (spatial_layout):
 
 **Step 6: 设计音频（audio_states）**
 
-**⚠️ 只允许两种 layer：`audio_bgm` 和 `audio_dialogue`。禁止使用 `audio_ambience`、`audio_sfx` 或其他任何自定义 layer——当前没有对应的生成工具，写入会导致流程失败。**
+**⚠️ 只允许两种 layer：`audio_bgm` 和 `audio_dialogue`。禁止使用 `audio_ambience`、`audio_sfx` 或其他任何自定义 layer——环境音效由视频生成模型在生成视频时自动产出，不需要单独设计。**
 
 - **BGM 数量约束**：
   - 短视频（总时长 ≤30s）：**只设计 1 个** BGM 状态节点，覆盖全片
   - 中等视频（30s-1min）：**最多 2 个** BGM 状态节点
   - BGM 生成工具无法精确控制时长，组装时会裁剪适配，因此不需要为每个情绪段单独设计 BGM——用 1 段统一风格的音乐覆盖多个事件即可
-- 对白类型需要设定 `speaker`、`text`、`tone`、`voice_direction`
+- 对白类型需要设定 `speaker`、`text`、`tone`、`voice_direction`。**对白将通过视频 prompt 引导视频模型在生成视频时一并产出**（保证唇形同步），不再由 TTS 单独生成。因此 `text` 字段尤为重要——它是视频 prompt 中角色台词的唯一来源
 - 设定 `audio_active_during` 和 `audio_transitions` 的转场方式
 - **回填 `audio_ids`**：音频设计完成后，将每条对白/旁白的 ID 写入对应 shot 的 `audio_ids` 字段。确保每条 `audio_dialogue` 类型的 audio_state 恰好出现在一个 shot 的 `audio_ids` 中（不遗漏、不重复）。`audio_active_during` 保留用于 BGM 的事件级覆盖
 

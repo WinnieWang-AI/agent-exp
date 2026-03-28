@@ -628,7 +628,8 @@ function computePositions(data) {
 
   // Step 0: Video info + production style nodes — top row, well above events
   const PRODUCTION_Y = -80;
-  // Video info nodes (ratio, duration, language)
+  // Story detail + video info nodes (ratio, duration, language)
+  pos['_story_detail']        = { x: EVENT_X - 400,       y: PRODUCTION_Y };
   pos['video_info__ratio']    = { x: EVENT_X - 200,       y: PRODUCTION_Y };
   pos['video_info__duration'] = { x: EVENT_X,              y: PRODUCTION_Y };
   pos['video_info__language'] = { x: EVENT_X + 200,        y: PRODUCTION_Y };

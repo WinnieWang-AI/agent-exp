@@ -128,13 +128,13 @@ Task(
 Task(
   subagent_name="audio-creator",
   session_id="create_audio_{project_name}",
-  prompt="生成 BGM 和对白",
+  prompt="生成 BGM（对白由视频模型在生成时一并产出，不需要 TTS）",
   context_files=["${SESSION_OUTPUT_DIR}/{project_name}/story-graph.json"]
 )
 ```
 
 - **视频**：调用 video-creator，逐 shot 生成视频。**不要在 prompt 中指定生成方式（image_to_video / reference_to_video）或是否生成首帧图**——这些是 video-creator 根据 shot-guide.md 自主决策的，director 不应干预。Shot plan 已在 Step 1.8a 生成。
-- **音频**：调用 audio-creator，生成 BGM + 对白/旁白。audio-creator 从 story-graph.json 读取 audio_states 和 video_info。
+- **音频**：调用 audio-creator，仅生成 BGM。对白由视频模型在生成视频时通过 prompt 引导一并产出（保证音画同步），不再通过 TTS 单独生成。audio-creator 从 story-graph.json 读取 audio_states 和 video_info。
 
 两个 Task 会并行执行。**当两者都完成后**进入 Step 2c。
 

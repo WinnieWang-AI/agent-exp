@@ -34,7 +34,8 @@ LinearizeStoryGraph(
 - `shot_type`、`angle`、`movement`、`content`、`focus_on`：运镜信息，用于 prompt 组装。`content` 同时包含画面内容和空间布局
 - `lens`、`focus_depth`：镜头焦距和景深信息，用于 prompt 中描述视觉风格
 - `transition_in`、`transition_out`：转场方式，用于剪辑组装阶段
-- `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、relationships、style（**不含 reference_image 路径**）
+- `prompt_materials`：所有活跃的 appearances、minds、location_state、prop_states、relationships、style（**不含 reference_image 路径**）。`audio_states` 中 `layer: "audio_dialogue"` 的条目包含 `text`、`speaker`、`tone` 字段，用于在视频 prompt 中写入角色对白
+- `audio_ids`：该 shot 关联的对白 audio_state ID 列表。对白通过视频 prompt 引导视频模型生成（保证音画同步），不再由 TTS 后期叠加
 - `is_continuation`：是否为同一镜头的 duration-split 后续部分
 - `prev_shot`：仅当 `is_continuation: true` 时有值，包含前一 part 的 shot_id 和 output_path
 - `prev_shot_in_sequence`：Linearizer 预计算的跨 shot 接续（screenwriter 标注的叙事时间连续），包含前一 shot 的 shot_id 和 output_path，为 null 则无接续
@@ -103,6 +104,8 @@ GenerateImage(
 **4. 组装 Prompt 并调用生成**（参考 `shot-guide.md` 的写作规范）：
 
 **⚠️ `<<<image_N>>>` 标记是必须的**：视频 prompt 中，每个出镜角色/环境/道具在首次描述时必须插入 `<<<image_N>>>` 标记（N 从 1 开始，按 `reference_images` 参数中的顺序编号）。没有这个标记，视频模型无法将参考图与角色关联，角色一致性会完全丧失。示例：`"a woman in white gown <<<image_1>>> stands in a moonlit courtyard <<<image_2>>>"`。
+
+**⚠️ 声音描述是必须的**：视频模型会同时生成画面和声音。在 prompt 末尾用 "Sound:" 描述该镜头的环境音效和角色对白（详见 `prompt-guide-video.md` 第 13 条）。当 shot 的 `audio_ids` 不为空时，从 `prompt_materials.audio_states` 中找到对应的 `audio_dialogue` 条目，将其 `text` 写入 prompt 作为角色台词。
 
 ```
 GenerateVideoSync(

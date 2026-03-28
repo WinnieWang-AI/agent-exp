@@ -515,6 +515,37 @@ def linearize(data: dict[str, Any], project_dir: str = "") -> dict[str, Any]:
                     if entity_ref:
                         reference_images[entity["id"]] = entity_ref
 
+            # Resolve audio_ids: merge referenced dialogue states into
+            # prompt_materials so video-creator has text/speaker/tone for
+            # embedding spoken lines in the video prompt.
+            shot_audio_ids = cam_shot.get("audio_ids", [])
+            if shot_audio_ids:
+                existing_ids = {a["id"] for a in materials["audio_states"]}
+                extra_dialogue: list[dict[str, Any]] = []
+                for aid in shot_audio_ids:
+                    if aid not in existing_ids:
+                        aus = g.nodes.get(aid)
+                        if aus and aus.get("layer") == "audio_dialogue":
+                            entry: dict[str, Any] = {
+                                "id": aus["id"],
+                                "layer": aus.get("layer", ""),
+                                "phase": aus.get("phase", ""),
+                                "style": aus.get("style", ""),
+                            }
+                            for key in ("text", "speaker", "tone"):
+                                if aus.get(key):
+                                    entry[key] = aus[key]
+                            extra_dialogue.append(entry)
+                if extra_dialogue:
+                    shot_materials = {
+                        **materials,
+                        "audio_states": materials["audio_states"] + extra_dialogue,
+                    }
+                else:
+                    shot_materials = materials
+            else:
+                shot_materials = materials
+
             base_entry = {
                 "event_id": event_id,
                 "camera_directive_id": cam["id"],
@@ -529,8 +560,8 @@ def linearize(data: dict[str, Any], project_dir: str = "") -> dict[str, Any]:
                 "focus_depth": cam_shot.get("focus_depth", ""),
                 "transition_in": cam_shot.get("transition_in", ""),
                 "transition_out": cam_shot.get("transition_out", ""),
-                "audio_ids": cam_shot.get("audio_ids", []),
-                "prompt_materials": materials,
+                "audio_ids": shot_audio_ids,
+                "prompt_materials": shot_materials,
             }
 
             if duration <= MAX_SHOT_DURATION:

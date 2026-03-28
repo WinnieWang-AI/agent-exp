@@ -35,22 +35,13 @@ CheckMusicJob(
 c. 从生成的选项中选择最合适的。
 d. **BGM 时长适配**：Suno 生成的音乐时长不可精确控制。组装阶段会用 trim 裁剪或 `audio_loop=true` 循环来匹配视频时长，生成时无需关心时长匹配。
 
-#### 2. Dialogue / Narration（`layer: "audio_dialogue"`）
+#### 2. 对白 — 不再由本 agent 生成
 
-a. 对每个对白状态节点，使用其 `text`、`speaker`、`voice_direction` 字段调用 GenerateSpeech。
-b. **`output_path` 必须使用 `{project_dir}/assets/audio/{audio_state_id}.mp3`**（绝对路径）：
-```
-GenerateSpeech(
-  text=audio_state.text,
-  output_path="{project_dir}/assets/audio/{audio_state_id}.mp3",
-  voice_id=<根据 speaker 和 voice_direction 选择>,
-  language=<从 video_info 获取>
-)
-```
+对白（`layer: "audio_dialogue"`）已改由视频生成模型在生成视频时一并产出（通过 prompt 引导），以保证音画同步（唇形对齐）。跳过所有 `audio_dialogue` 类型的 audio_state，不调用 GenerateSpeech。
 
 #### 3. 完成
 
-音频素材生成完成后，报告结果（BGM 和对白的数量和路径），等待调用方指示。
+音频素材生成完成后，报告结果（BGM 的数量和路径），等待调用方指示。
 
 **注意**：音频混合、时间对齐、叠加到视频等后期工作由 Editor agent 负责，本 agent 只负责生成原始音频文件。
 
