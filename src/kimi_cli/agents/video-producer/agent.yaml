@@ -1,0 +1,34 @@
+version: 1
+agent:
+  extend: default
+  name: video-producer
+  system_prompt_path: ./system.md
+  compaction_prompt_path: ./compact.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kimi_cli.tools.multiagent:Task"
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.video:ManageVideoProject"
+  subagents:
+    video-screenwriter:
+      path: ../video-screenwriter/agent.yaml
+      description: "编剧：根据创意简报编写结构化剧本（meta.json / entities.json / outline.json / act-{N}.json）"
+    video-director:
+      path: ../video-director/agent.yaml
+      description: "导演：将编剧的剧本拆解为事件序列，设计镜头、音频、状态规划，产出制作计划"
+    art-designer:
+      path: ../art-designer/agent.yaml
+      description: "美术：根据 states.json 的视觉描述生成两层参考图（实体基准图 + 状态变化图）"
+    video-camera:
+      path: ../video-camera/agent.yaml
+      description: "摄影：逐 shot 生成视频片段（画面+同期声），管理镜头间视觉连续性"
+    video-composer:
+      path: ../video-composer/agent.yaml
+      description: "作曲：从 shots.json 的 bgm 字段聚合音乐分段，生成 BGM（assets/audio/*.mp3）"
+    video-editor:
+      path: ../video-editor/agent.yaml
+      description: "剪辑：将视频片段+BGM+字幕组装为最终成片（拼接、转场、混音、字幕烧录）"

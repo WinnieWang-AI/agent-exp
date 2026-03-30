@@ -207,7 +207,7 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
                 pending_task_calls.append(call_id)
 
             else:
-                # Director-level tool call
+                # Maker-level tool call
                 tool_idx += 1
                 sid = f"actual_tool_{tool_idx}"
                 produced, consumed = _extract_file_paths(fn_name, args)
@@ -216,7 +216,7 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
                     id=sid,
                     label=fn_name,
                     kind="tool_call",
-                    agent="director",
+                    agent="maker",
                     tool=fn_name,
                     resources_in=[_short_path(p) for p in consumed],
                     resources_out=[_short_path(p) for p in produced],
@@ -234,7 +234,7 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
         if msg_type == "ToolResult":
             result_call_id = payload.get("tool_call_id", "")
 
-            # Attach result to director tool call
+            # Attach result to maker tool call
             step_id = inner_call_to_step.get(result_call_id)
             if step_id and result_call_id not in delegations:
                 rv = payload.get("return_value", {})
@@ -248,7 +248,7 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
                             s.is_error = rv.get("is_error", False)
                             break
 
-            # Track completed delegations for director summary attachment
+            # Track completed delegations for maker summary attachment
             if result_call_id in delegations:
                 recently_completed_delegations.append(delegations[result_call_id])
 
@@ -343,7 +343,7 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
                                 s.subagent_report = (existing + "\n" + text).strip() if existing else text
                                 break
 
-        # Director-level ContentPart — step declaration or summary
+        # Maker-level ContentPart — step declaration or summary
         if msg_type == "ContentPart":
             text = payload.get("text", "")
             if text.strip():
@@ -351,11 +351,11 @@ def trace_session(chat_path: Path) -> ExecutionPlan:
                 if step_decl:
                     pending_step_decl = step_decl
                 else:
-                    # Director summary — attach to recently completed delegations
+                    # Maker summary — attach to recently completed delegations
                     for did in recently_completed_delegations:
                         for s in steps:
                             if s.id == did:
-                                s.director_summary = text
+                                s.maker_summary = text
                                 break
 
     # Handle incomplete batch

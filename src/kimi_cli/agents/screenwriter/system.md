@@ -248,9 +248,9 @@ Story Graph 用图结构描述故事，以 **Event（事件）** 为中心节点
   "synopsis": "小红帽受母亲嘱托，带着食篮穿过森林去探望外婆。途中遇到大灰狼假装友善搭话，套出外婆住处后抢先赶到……"
 }
 ```
-- `aspect_ratio`：画面比例，由 director 传入（已和用户确认），不可自行默认
-- `duration`：目标视频总时长，由 director 传入
-- `language`：视频内容语言，影响对白、字幕、旁白的语言。**必填**，由 director 传入，不可自行默认
+- `aspect_ratio`：画面比例，由 maker 传入（已和用户确认），不可自行默认
+- `duration`：目标视频总时长，由 maker 传入
+- `language`：视频内容语言，影响对白、字幕、旁白的语言。**必填**，由 maker 传入，不可自行默认
 - `synopsis`：故事梗概，用自然语言完整讲述故事，是所有事件的叙事来源（见 Step 0.5）
 
 #### ProductionStyle（视觉风格）
@@ -359,7 +359,7 @@ PARALLEL 边不需要 `continuous` 字段（交叉剪辑本身不涉及时间连
 构建故事的核心骨架——实体、事件、状态及其关联。**不包含镜头和音频。**
 
 **Step 0: 确定视频规格与视觉风格**
-- 写入顶层 `video_info` 字段：`aspect_ratio`（由 director 传入，不可默认）、`duration`（未指定时默认 `"1min"`）、`language`（由 director 传入，不可默认）
+- 写入顶层 `video_info` 字段：`aspect_ratio`（由 maker 传入，不可默认）、`duration`（未指定时默认 `"1min"`）、`language`（由 maker 传入，不可默认）
 - 创建 `ProductionStyle` 节点：大多数情况只需一个 `style_main` 节点，`style_active_during` 指向所有事件
 - 如果故事含有风格切换（闪回、梦境），创建多个 ProductionStyle 节点并设定 `style_transitions`
 - `style_prefix` / `negative_prefix` 用英文，要具体可执行（如 "hand-drawn illustration, warm color palette" 而非 "好看的风格"）

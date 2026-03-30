@@ -15,7 +15,7 @@ __all__ = ["AnalyzeAgentGraph"]
 class Params(BaseModel):
     agents: list[str] = Field(
         description=(
-            'List of agent names to analyze (e.g. ["video-director"]). '
+            'List of agent names to analyze (e.g. ["video-maker"]). '
             'Use ["*"] to analyze all agents.'
         ),
     )

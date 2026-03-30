@@ -27,9 +27,9 @@ echo "  http://${HOST}:${PORT}"
 echo "========================================="
 echo ""
 echo "Tabs:"
-echo "  - Video Director:   chat directly with the director agent"
+echo "  - Video Maker:      chat directly with the maker agent"
 echo "  - Auto Evaluator:   chat directly with the auto-eval agent"
-echo "  - Auto Interaction: watch auto-eval drive director autonomously"
+echo "  - Auto Interaction: watch auto-eval drive maker autonomously"
 echo ""
 
 PYTHONPATH="src:$PYTHONPATH" exec python -m uvicorn web.server:app \

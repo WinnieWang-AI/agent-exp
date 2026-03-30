@@ -317,10 +317,10 @@ class PlanStep(BaseModel):
     # From structured step declarations (【目标】/【验证】)
     goal: str = ""
     check_criteria: str = ""
-    # Subagent/director narrative
+    # Subagent/maker narrative
     intent: str = ""
     subagent_report: str = ""
-    director_summary: str = ""
+    maker_summary: str = ""
 
 
 class ExecutionPlan(BaseModel):

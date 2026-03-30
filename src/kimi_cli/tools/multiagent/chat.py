@@ -52,7 +52,7 @@ def _discover_agents() -> dict[str, Path]:
 
 class Params(BaseModel):
     agent_name: str = Field(
-        description="Name of the builtin agent to chat with (e.g. 'video-director')."
+        description="Name of the builtin agent to chat with (e.g. 'video-maker')."
     )
     message: str = Field(
         description=(

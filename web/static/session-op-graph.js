@@ -403,7 +403,7 @@ function sogShowDetail(nodeData, targetPrefix) {
     }
     if (raw.prompt_preview) h += _sogField('Prompt', `<div style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto">${_sogEsc(raw.prompt_preview)}</div>`);
     if (raw.subagent_report) h += _sogField('\ud83d\udcdd Subagent Report', `<div style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:#93c5fd">${_sogEsc(raw.subagent_report)}</div>`);
-    if (raw.director_summary) h += _sogField('\ud83d\udce3 Director Summary', `<div style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:#fbbf24">${_sogEsc(raw.director_summary)}</div>`);
+    if (raw.maker_summary) h += _sogField('\ud83d\udce3 Maker Summary', `<div style="font-size:11px;white-space:pre-wrap;max-height:300px;overflow-y:auto;color:#fbbf24">${_sogEsc(raw.maker_summary)}</div>`);
   } else if (nodeData.nodeType === 'tool_call') {
     if (raw.goal) h += _sogField('\ud83c\udfaf Goal', `<div style="font-size:12px;font-weight:600;color:#c4b5fd;white-space:pre-wrap">${_sogEsc(raw.goal)}</div>`);
     if (raw.check_criteria) h += _sogField('\u2705 Verify', `<div style="font-size:11px;color:#6ee7b7;white-space:pre-wrap">${_sogEsc(raw.check_criteria)}</div>`);

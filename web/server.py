@@ -1,9 +1,9 @@
 """
-Web server for interacting with video-director and video-auto-eval agents.
+Web server for interacting with video-maker and video-auto-eval agents.
 
 Provides:
 - WebSocket endpoints for real-time agent communication
-- Three modes: chat with director, chat with auto-eval, auto-interaction mode
+- Three modes: chat with maker, chat with auto-eval, auto-interaction mode
 - Session management: each conversation gets a session_id for persistence and retrieval
 """
 
@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from kaos.path import KaosPath
 
-from kimi_cli.agentspec import VIDEO_DIRECTOR_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE
+from kimi_cli.agentspec import VIDEO_MAKER_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE, VIDEO_PRODUCER_AGENT_FILE, VIDEO_SCREENWRITER_AGENT_FILE
 from kimi_cli.tools.story_graph.view import build_story_graph_view
 from web.op_graph import parse_chat_to_op_graph
 from kimi_cli.app import KimiCLI, enable_logging
@@ -84,16 +84,25 @@ WEB_SESSIONS_DIR = Path.cwd() / "output" / ".sessions"
 WEB_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 AGENT_FILES = {
-    "video-director": VIDEO_DIRECTOR_AGENT_FILE,
+    "video-maker": VIDEO_MAKER_AGENT_FILE,
     "video-auto-eval": VIDEO_AUTO_EVAL_AGENT_FILE,
     "agent-optimizer": AGENT_OPTIMIZER_AGENT_FILE,
     "screenwriter": SCREENWRITER_AGENT_FILE,
+    "video-producer": VIDEO_PRODUCER_AGENT_FILE,
+    "video-screenwriter": VIDEO_SCREENWRITER_AGENT_FILE,
 }
 
 
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/screenplay")
+async def screenplay():
+    """Redirect to main page (standalone screenplay viewer removed)."""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse("/")
 
 
 @app.head("/files/{file_path:path}")
@@ -223,6 +232,34 @@ def _save_session_meta(session_id: str, agent_name: str, mode: str) -> None:
     meta_path.write_text(json.dumps(meta, ensure_ascii=False))
 
 
+def _extract_screenplay_dir(content: Any) -> str | None:
+    """Extract screenplay directory from a chat log entry's content (ToolCall or SubagentEvent)."""
+    if not isinstance(content, dict):
+        return None
+    screenplay_basenames = {"meta.json", "entities.json", "outline.json"}
+    # Unwrap SubagentEvent
+    entry_content = content
+    if entry_content.get("type") == "SubagentEvent":
+        entry_content = (entry_content.get("payload") or {}).get("event")
+        if not entry_content:
+            return None
+    if entry_content.get("type") != "ToolCall":
+        return None
+    payload = entry_content.get("payload") or {}
+    func = payload.get("function") or {}
+    if func.get("name") != "WriteFile":
+        return None
+    try:
+        args = json.loads(func.get("arguments", "{}"))
+    except Exception:
+        return None
+    path = args.get("path", "")
+    basename = path.rsplit("/", 1)[-1] if "/" in path else path
+    if basename in screenplay_basenames:
+        return path.rsplit("/", 1)[0]
+    return None
+
+
 def _build_session_summary(session_id: str) -> dict[str, Any]:
     """Build a summary of an existing session for display on resume."""
     summary: dict[str, Any] = {"session_id": session_id}
@@ -333,21 +370,28 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
     if final_videos:
         summary["final_video"] = str(final_videos[0])
 
-    # Last user message from chat log
+    # Scan chat log for last user message and screenplay path
     chat_path = _get_session_dir(session_id) / "chat.jsonl"
     if chat_path.exists():
         last_user_msg = None
+        screenplay_dir = None
+        screenplay_files = {"meta.json", "entities.json", "outline.json"}
         for line in chat_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             try:
                 entry = json.loads(line)
-                if entry.get("role") == "user":
+                if entry.get("role") == "user" and isinstance(entry.get("content"), str):
                     last_user_msg = entry.get("content", "")
+                # Detect screenplay file paths from WriteFile ToolCall (including SubagentEvent)
+                if not screenplay_dir:
+                    screenplay_dir = _extract_screenplay_dir(entry.get("content"))
             except Exception:
                 pass
         if last_user_msg:
             summary["last_user_message"] = last_user_msg[:200]
+        if screenplay_dir:
+            summary["screenplay_path"] = screenplay_dir
 
     return summary
 
@@ -413,7 +457,7 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
             incomplete = []
             for did in last_ids:
                 d = next((n for n in nodes if n["id"] == did), None)
-                if d and not d.get("subagent_report") and not d.get("director_summary"):
+                if d and not d.get("subagent_report") and not d.get("maker_summary"):
                     incomplete.append(d)
             if incomplete:
                 detail_lines.append("")
@@ -789,7 +833,7 @@ async def ws_auto(websocket: WebSocket):
     WebSocket endpoint for auto-interaction mode.
 
     The client sends an initial prompt to video-auto-eval, which will then
-    autonomously interact with video-director via ChatWithAgent tool.
+    autonomously interact with video-maker via ChatWithAgent tool.
     All wire events (including SubagentEvents) are streamed to the client.
 
     Protocol:
@@ -872,7 +916,7 @@ async def ws_auto(websocket: WebSocket):
                         try:
                             agent_label = "video-auto-eval"
                             if isinstance(msg, SubagentEvent):
-                                agent_label = "video-director"
+                                agent_label = "video-maker"
 
                             data = serialize_wire_message(msg)
                             await websocket.send_json({
@@ -923,17 +967,17 @@ async def ws_auto(websocket: WebSocket):
 
 
 # Chat room: build @mention mapping from AGENT_FILES
-# e.g. "video-director" -> mention alias "Director", "video-auto-eval" -> "Evaluator"
+# e.g. "video-maker" -> mention alias "Maker", "video-auto-eval" -> "Evaluator"
 AGENT_MENTION_ALIASES: dict[str, str] = {}
 for _agent_key in AGENT_FILES:
-    # "video-director" -> "Director", "video-auto-eval" -> "Evaluator"
+    # "video-maker" -> "Maker", "video-auto-eval" -> "Evaluator"
     _alias = _agent_key.split("-")[-1].capitalize()
     # Special case: "auto-eval" -> "Evaluator"
     if _agent_key == "video-auto-eval":
         _alias = "Evaluator"
     AGENT_MENTION_ALIASES[_alias.lower()] = _agent_key
 
-# Build regex from aliases: @Director|@Evaluator|@All|...
+# Build regex from aliases: @Maker|@Evaluator|@All|...
 _mention_pattern = "|".join(re.escape(a) for a in AGENT_MENTION_ALIASES)
 MENTION_RE = re.compile(rf"@({_mention_pattern}|all)\b", re.IGNORECASE)
 

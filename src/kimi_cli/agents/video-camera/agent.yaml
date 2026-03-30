@@ -1,0 +1,16 @@
+version: 1
+agent:
+  extend: default
+  name: video-camera
+  system_prompt_path: ./system.md
+  system_prompt_args:
+    ROLE_ADDITIONAL: ""
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:WriteFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"
+    - "kimi_cli.tools.video:GenerateVideoSync"
+    - "kimi_cli.tools.video:ExtractFrame"
+    - "kimi_cli.tools.video:GenerateImage"
+  subagents: {}

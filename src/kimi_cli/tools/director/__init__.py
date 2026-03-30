@@ -1,0 +1,540 @@
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, override
+
+from kosong.tooling import CallableTool2, ToolReturnValue
+from pydantic import BaseModel, Field
+
+from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+
+__all__ = ["ValidateDirectorOutput"]
+
+
+class Params(BaseModel):
+    project_path: str = Field(description="Absolute path to the project directory.")
+
+
+def _load_json(path: Path) -> dict[str, Any] | None:
+    """Load a JSON file, return None if not found or invalid."""
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def _parse_duration(duration_str: str) -> float:
+    """Parse duration string like '1min', '30s', '3min' to seconds."""
+    s = duration_str.strip().lower()
+    if s.endswith("min"):
+        return float(s[:-3]) * 60
+    if s.endswith("s"):
+        return float(s[:-1])
+    # Try as plain number (assume seconds)
+    try:
+        return float(s)
+    except ValueError:
+        return 0
+
+
+def validate_director_output(project_path: str) -> dict[str, Any]:
+    """Run all cross-file validations and return a report."""
+    project = Path(project_path)
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Load files
+    meta = _load_json(project / "meta.json")
+    entities = _load_json(project / "entities.json")
+    events = _load_json(project / "events.json")
+    states = _load_json(project / "states.json")
+    shots = _load_json(project / "shots.json")
+
+    # Check file existence
+    missing = []
+    if meta is None:
+        missing.append("meta.json")
+    if entities is None:
+        missing.append("entities.json")
+    if events is None:
+        missing.append("events.json")
+    if states is None:
+        missing.append("states.json")
+    if shots is None:
+        missing.append("shots.json")
+
+    if missing:
+        errors.append(f"Missing files: {', '.join(missing)}")
+        # Can't continue without core files
+        if any(f in missing for f in ["entities.json", "events.json"]):
+            return _build_report(errors, warnings, project_path)
+
+    # Collect IDs
+    entity_ids: set[str] = set()
+    character_ids: set[str] = set()
+    location_ids: set[str] = set()
+    prop_ids: set[str] = set()
+    location_areas: dict[str, set[str]] = {}  # loc_id -> area_ids
+
+    if entities:
+        for c in entities.get("characters", []):
+            entity_ids.add(c["id"])
+            character_ids.add(c["id"])
+        for loc in entities.get("locations", []):
+            entity_ids.add(loc["id"])
+            location_ids.add(loc["id"])
+            areas = {a["id"] for a in loc.get("areas", [])}
+            location_areas[loc["id"]] = areas
+        for p in entities.get("props", []):
+            entity_ids.add(p["id"])
+            prop_ids.add(p["id"])
+
+    event_ids: set[str] = set()
+    event_dialogues: dict[str, list[dict]] = {}  # event_id -> dialogues
+    event_characters: dict[str, set[str]] = {}  # event_id -> character IDs
+    event_props: dict[str, set[str]] = {}  # event_id -> prop IDs
+    event_locations: dict[str, str] = {}  # event_id -> location ID
+
+    if events:
+        for e in events.get("events", []):
+            eid = e["id"]
+            event_ids.add(eid)
+            event_dialogues[eid] = e.get("dialogues", [])
+            event_characters[eid] = set(e.get("characters", []))
+            event_props[eid] = set(e.get("props", []))
+            event_locations[eid] = e.get("location", "")
+
+    state_ids: set[str] = set()
+    appearance_ids: set[str] = set()
+    mind_ids: set[str] = set()
+    pstate_ids: set[str] = set()
+    lstate_ids: set[str] = set()
+
+    if states:
+        for a in states.get("character_appearances", []):
+            state_ids.add(a["id"])
+            appearance_ids.add(a["id"])
+        for m in states.get("character_minds", []):
+            state_ids.add(m["id"])
+            mind_ids.add(m["id"])
+        for p in states.get("prop_states", []):
+            state_ids.add(p["id"])
+            pstate_ids.add(p["id"])
+        for l in states.get("location_states", []):
+            state_ids.add(l["id"])
+            lstate_ids.add(l["id"])
+
+    # === events → entities ===
+    if events and entities:
+        for e in events.get("events", []):
+            eid = e["id"]
+            for cid in e.get("characters", []):
+                if cid not in character_ids:
+                    errors.append(f'event {eid}: character "{cid}" not in entities.json')
+            for pid in e.get("props", []):
+                if pid not in prop_ids:
+                    errors.append(f'event {eid}: prop "{pid}" not in entities.json')
+            loc = e.get("location", "")
+            if loc and loc not in location_ids:
+                errors.append(f'event {eid}: location "{loc}" not in entities.json')
+
+    # === states → entities ===
+    if states and entities:
+        for a in states.get("character_appearances", []):
+            if a.get("entity") not in character_ids:
+                errors.append(f'appearance {a["id"]}: entity "{a.get("entity")}" not in entities.json')
+        for m in states.get("character_minds", []):
+            if m.get("entity") not in character_ids:
+                errors.append(f'mind {m["id"]}: entity "{m.get("entity")}" not in entities.json')
+        for p in states.get("prop_states", []):
+            if p.get("entity") not in prop_ids:
+                errors.append(f'prop_state {p["id"]}: entity "{p.get("entity")}" not in entities.json')
+        for l in states.get("location_states", []):
+            if l.get("entity") not in location_ids:
+                errors.append(f'location_state {l["id"]}: entity "{l.get("entity")}" not in entities.json')
+
+    # === states → events (active_during) ===
+    if states and events:
+        active_during = states.get("active_during", {})
+
+        # Check event IDs exist
+        for category, mapping in active_during.items():
+            for sid, evt_list in mapping.items():
+                if sid not in state_ids:
+                    errors.append(f'active_during.{category}: state "{sid}" not defined')
+                for evt in evt_list:
+                    if evt not in event_ids:
+                        errors.append(f'active_during.{category}[{sid}]: event "{evt}" not in events.json')
+
+        # Check coverage: every event's characters have appearance + mind
+        appear_map = active_during.get("character_appearance", {})
+        mind_map = active_during.get("character_mind", {})
+        lstate_map = active_during.get("location_state", {})
+        pstate_map = active_during.get("prop_state", {})
+
+        # Build state entity lookup
+        appear_entity: dict[str, str] = {}
+        for a in states.get("character_appearances", []):
+            appear_entity[a["id"]] = a.get("entity", "")
+        mind_entity: dict[str, str] = {}
+        for m in states.get("character_minds", []):
+            mind_entity[m["id"]] = m.get("entity", "")
+        pstate_entity: dict[str, str] = {}
+        for p in states.get("prop_states", []):
+            pstate_entity[p["id"]] = p.get("entity", "")
+        lstate_entity: dict[str, str] = {}
+        for l in states.get("location_states", []):
+            lstate_entity[l["id"]] = l.get("entity", "")
+
+        for eid in event_ids:
+            # Character appearance coverage
+            for cid in event_characters.get(eid, set()):
+                covers = [
+                    sid for sid, evts in appear_map.items()
+                    if eid in evts and appear_entity.get(sid) == cid
+                ]
+                if len(covers) == 0:
+                    errors.append(f'event {eid}: character "{cid}" has no character_appearance')
+                elif len(covers) > 1:
+                    errors.append(
+                        f'event {eid}: character "{cid}" has multiple appearances: {covers}'
+                    )
+
+            # Character mind coverage
+            for cid in event_characters.get(eid, set()):
+                covers = [
+                    sid for sid, evts in mind_map.items()
+                    if eid in evts and mind_entity.get(sid) == cid
+                ]
+                if len(covers) == 0:
+                    errors.append(f'event {eid}: character "{cid}" has no character_mind')
+                elif len(covers) > 1:
+                    errors.append(
+                        f'event {eid}: character "{cid}" has multiple minds: {covers}'
+                    )
+
+            # Location state coverage
+            loc = event_locations.get(eid, "")
+            if loc:
+                covers = [
+                    sid for sid, evts in lstate_map.items()
+                    if eid in evts and lstate_entity.get(sid) == loc
+                ]
+                if len(covers) == 0:
+                    errors.append(f'event {eid}: location "{loc}" has no location_state')
+                elif len(covers) > 1:
+                    errors.append(
+                        f'event {eid}: location "{loc}" has multiple location_states: {covers}'
+                    )
+
+            # Prop state coverage
+            for pid in event_props.get(eid, set()):
+                covers = [
+                    sid for sid, evts in pstate_map.items()
+                    if eid in evts and pstate_entity.get(sid) == pid
+                ]
+                if len(covers) == 0:
+                    errors.append(f'event {eid}: prop "{pid}" has no prop_state')
+                elif len(covers) > 1:
+                    errors.append(
+                        f'event {eid}: prop "{pid}" has multiple prop_states: {covers}'
+                    )
+
+    # === event_sequence DAG check ===
+    if events:
+        seq = events.get("event_sequence", [])
+        mentioned: set[str] = set()
+        for edge in seq:
+            f = edge.get("from", "")
+            t = edge.get("to", "")
+            if f not in event_ids:
+                errors.append(f'event_sequence: from "{f}" not in events')
+            if t not in event_ids:
+                errors.append(f'event_sequence: to "{t}" not in events')
+            mentioned.add(f)
+            mentioned.add(t)
+
+        orphans = event_ids - mentioned
+        if orphans and len(event_ids) > 1:
+            errors.append(f'orphan events not in event_sequence: {sorted(orphans)}')
+
+    # === shots → events ===
+    if shots and events:
+        shot_event_ids: set[str] = set()
+        for s in shots.get("shots", []):
+            eid = s.get("event_id", "")
+            if eid not in event_ids:
+                errors.append(f'shot {s["id"]}: event_id "{eid}" not in events.json')
+            shot_event_ids.add(eid)
+
+        uncovered = event_ids - shot_event_ids
+        if uncovered:
+            errors.append(f'events without shots: {sorted(uncovered)}')
+
+    # === shots → states (focus_on) ===
+    if shots and states:
+        active_during = states.get("active_during", {})
+        all_active: dict[str, set[str]] = {}  # state_id -> set of event_ids
+        for _cat, mapping in active_during.items():
+            for sid, evts in mapping.items():
+                all_active.setdefault(sid, set()).update(evts)
+
+        for s in shots.get("shots", []):
+            sid = s["id"]
+            eid = s.get("event_id", "")
+            for ref in s.get("focus_on", []):
+                if ref not in state_ids:
+                    errors.append(f'shot {sid}: focus_on "{ref}" not in states.json')
+                elif eid and eid not in all_active.get(ref, set()):
+                    errors.append(
+                        f'shot {sid}: focus_on "{ref}" not active during event "{eid}"'
+                    )
+
+    # === shots dialogues → events dialogues ===
+    if shots and events:
+        # Collect all dialogues from shots, keyed by (speaker, text)
+        shot_dialogues: list[tuple[str, str, str]] = []  # (speaker, text, shot_id)
+        for s in shots.get("shots", []):
+            for d in s.get("dialogues", []):
+                shot_dialogues.append((d.get("speaker", ""), d.get("text", ""), s["id"]))
+
+        # Collect all dialogues from events
+        event_dialogue_set: set[tuple[str, str]] = set()
+        for eid, dials in event_dialogues.items():
+            for d in dials:
+                event_dialogue_set.add((d.get("speaker", ""), d.get("text", "")))
+
+        # Check no event dialogue is missing from shots
+        shot_dialogue_set: set[tuple[str, str]] = set()
+        for speaker, text, _ in shot_dialogues:
+            shot_dialogue_set.add((speaker, text))
+
+        missing_dialogues = event_dialogue_set - shot_dialogue_set
+        if missing_dialogues:
+            for speaker, text in missing_dialogues:
+                errors.append(
+                    f'dialogue not assigned to any shot: speaker="{speaker}", text="{text[:30]}..."'
+                )
+
+        # Check no duplicate dialogue assignments
+        seen: dict[tuple[str, str], list[str]] = {}
+        for speaker, text, shot_id in shot_dialogues:
+            key = (speaker, text)
+            seen.setdefault(key, []).append(shot_id)
+        for key, shot_ids in seen.items():
+            if len(shot_ids) > 1:
+                warnings.append(
+                    f'dialogue assigned to multiple shots: speaker="{key[0]}", '
+                    f'text="{key[1][:30]}...", shots={shot_ids}'
+                )
+
+    # === shot duration checks ===
+    if shots:
+        total = 0.0
+        for s in shots.get("shots", []):
+            dur = s.get("duration_seconds", 0)
+            total += dur
+            if dur < 3:
+                warnings.append(f'shot {s["id"]}: duration {dur}s < 3s minimum')
+            if dur > 10:
+                warnings.append(f'shot {s["id"]}: duration {dur}s > 10s maximum')
+
+        declared_total = shots.get("total_duration_seconds", 0)
+        if abs(total - declared_total) > 0.5:
+            errors.append(
+                f'total_duration_seconds ({declared_total}) does not match '
+                f'sum of shot durations ({total})'
+            )
+
+        if meta:
+            target_str = meta.get("video_info", {}).get("duration", "")
+            if target_str:
+                target = _parse_duration(target_str)
+                if target > 0:
+                    deviation = abs(total - target) / target
+                    if deviation > 0.1:
+                        errors.append(
+                            f'total duration ({total}s) deviates {deviation:.0%} from '
+                            f'target ({target}s), exceeds ±10% threshold'
+                        )
+                    elif deviation > 0.05:
+                        warnings.append(
+                            f'total duration ({total}s) deviates {deviation:.0%} from '
+                            f'target ({target}s)'
+                        )
+
+    # === reference image file existence (warning only — images generated separately by art-designer) ===
+    if states:
+        for category in ["character_appearances", "prop_states", "location_states"]:
+            for node in states.get(category, []):
+                ref = node.get("reference_image")
+                if ref and not Path(ref).is_file():
+                    warnings.append(
+                        f'{node["id"]}: reference_image "{ref}" does not exist yet'
+                    )
+
+    # === shot ID uniqueness ===
+    if shots:
+        seen_ids: set[str] = set()
+        for s in shots.get("shots", []):
+            if s["id"] in seen_ids:
+                errors.append(f'duplicate shot ID: {s["id"]}')
+            seen_ids.add(s["id"])
+
+    # === shot_order validation ===
+    if shots:
+        shot_order = shots.get("shot_order")
+        all_shot_ids = {s["id"] for s in shots.get("shots", [])}
+        if shot_order is None:
+            warnings.append("shots.json missing shot_order field")
+        elif not isinstance(shot_order, list):
+            errors.append("shot_order must be an array of shot IDs")
+        else:
+            order_set = set(shot_order)
+            # Check completeness
+            missing_from_order = all_shot_ids - order_set
+            if missing_from_order:
+                errors.append(
+                    f"shot_order missing shots: {sorted(missing_from_order)}"
+                )
+            extra_in_order = order_set - all_shot_ids
+            if extra_in_order:
+                errors.append(
+                    f"shot_order contains unknown shots: {sorted(extra_in_order)}"
+                )
+            # Check duplicates
+            if len(shot_order) != len(order_set):
+                dupes = [
+                    sid for sid in order_set
+                    if shot_order.count(sid) > 1
+                ]
+                errors.append(f"shot_order has duplicates: {dupes}")
+            # Check intra-event order consistency
+            shot_by_id = {s["id"]: s for s in shots.get("shots", [])}
+            prev_order_in_event: dict[str, int] = {}
+            for sid in shot_order:
+                s = shot_by_id.get(sid)
+                if not s:
+                    continue
+                eid = s.get("event_id", "")
+                order = s.get("order", 0)
+                if eid in prev_order_in_event:
+                    if order < prev_order_in_event[eid]:
+                        errors.append(
+                            f"shot_order: {sid} (order={order}) appears after "
+                            f"a later shot in event {eid}"
+                        )
+                prev_order_in_event[eid] = order
+
+    return _build_report(errors, warnings, project_path, meta, events, states, shots)
+
+
+def _build_report(
+    errors: list[str],
+    warnings: list[str],
+    project_path: str,
+    meta: dict | None = None,
+    events: dict | None = None,
+    states: dict | None = None,
+    shots: dict | None = None,
+) -> dict[str, Any]:
+    """Build the validation report dict."""
+    summary: dict[str, Any] = {}
+    if entities := _load_json(Path(project_path) / "entities.json"):
+        summary["entities"] = (
+            len(entities.get("characters", []))
+            + len(entities.get("locations", []))
+            + len(entities.get("props", []))
+        )
+    if events:
+        summary["events"] = len(events.get("events", []))
+    if states:
+        summary["states"] = (
+            len(states.get("character_appearances", []))
+            + len(states.get("character_minds", []))
+            + len(states.get("prop_states", []))
+            + len(states.get("location_states", []))
+        )
+    if shots:
+        summary["shots"] = len(shots.get("shots", []))
+        summary["total_duration_seconds"] = shots.get("total_duration_seconds", 0)
+    if meta:
+        target = meta.get("video_info", {}).get("duration", "")
+        if target:
+            summary["target_duration_seconds"] = _parse_duration(target)
+
+    return {
+        "status": "PASS" if not errors else "FAIL",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "summary": summary,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+class ValidateDirectorOutput(CallableTool2[Params]):
+    name: str = "ValidateDirectorOutput"
+    description: str = load_desc(Path(__file__).parent / "validate.md")
+    params: type[Params] = Params
+
+    @override
+    async def __call__(self, params: Params) -> ToolReturnValue:
+        builder = ToolResultBuilder()
+        project = Path(params.project_path)
+        if not project.is_dir():
+            return builder.error(
+                f"Directory not found: {params.project_path}",
+                brief="Directory not found",
+            )
+
+        report = validate_director_output(params.project_path)
+
+        # Write report to file
+        report_path = project / "validation-report.json"
+        report_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # Build output
+        status = report["status"]
+        summary = report["summary"]
+        errors = report["errors"]
+        warnings = report["warnings"]
+
+        builder.write(f"Status: {status}\n\n")
+
+        if summary:
+            builder.write("Summary:\n")
+            for k, v in summary.items():
+                builder.write(f"  {k}: {v}\n")
+            builder.write("\n")
+
+        if errors:
+            builder.write(f"Errors ({len(errors)}):\n")
+            for e in errors:
+                builder.write(f"  - {e}\n")
+            builder.write("\n")
+
+        if warnings:
+            builder.write(f"Warnings ({len(warnings)}):\n")
+            for w in warnings:
+                builder.write(f"  - {w}\n")
+            builder.write("\n")
+
+        if not errors and not warnings:
+            builder.write("No issues found.\n")
+
+        brief = f"{status}: {len(errors)} errors, {len(warnings)} warnings"
+        if status == "PASS":
+            return builder.ok(
+                message=f"Validation passed. Report saved to {report_path}",
+                brief=brief,
+            )
+        else:
+            return builder.ok(
+                message=f"Validation found {len(errors)} error(s). Report saved to {report_path}",
+                brief=brief,
+            )

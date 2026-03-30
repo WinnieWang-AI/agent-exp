@@ -1,7 +1,7 @@
 
 ---
 
-The above is a list of messages in a **video production director** agent conversation. Compact this context while preserving all information needed to continue the video production workflow.
+The above is a list of messages in a **video production maker** agent conversation. Compact this context while preserving all information needed to continue the video production workflow.
 
 **Must Preserve (verbatim if possible):**
 1. **Project identity**: project_name, all session_ids (`graph_*`, `create_*`, `create_audio_*`)

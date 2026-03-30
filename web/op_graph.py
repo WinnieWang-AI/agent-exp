@@ -3,7 +3,7 @@ Parse chat.jsonl wire messages into an agent operation graph.
 
 The graph shows:
 1. User goals (from TurnBegin)
-2. Task delegations (director -> subagent via Task tool)
+2. Task delegations (maker -> subagent via Task tool)
 3. Tool calls within each delegation
 4. Resources (files/assets) produced or consumed
 """
@@ -167,7 +167,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
     # Current batch of parallel delegations being dispatched
     current_parallel_batch: list[str] = []
 
-    # Track recently completed delegation ids for attaching director summaries
+    # Track recently completed delegation ids for attaching maker summaries
     recently_completed_delegations: list[str] = []
 
     # Pending step declaration (goal + check_criteria) from ContentPart, to attach to next ToolCall
@@ -286,7 +286,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 pending_task_calls.append(call_id)
 
             else:
-                # Director-level tool call (not Task)
+                # Maker-level tool call (not Task)
                 tool_idx += 1
                 tid = f"tool_{tool_idx}"
                 node_data = {
@@ -294,7 +294,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                     "type": "tool_call",
                     "label": fn_name,
                     "tool": fn_name,
-                    "agent": "director",
+                    "agent": "maker",
                     "args_preview": json.dumps(args, ensure_ascii=False)[:200],
                     "timestamp": ts,
                     "result": None,
@@ -317,7 +317,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
         # Top-level ToolResult
         if msg_type == "ToolResult":
             result_call_id = payload.get("tool_call_id", "")
-            # Attach result to director-level tool_call nodes
+            # Attach result to maker-level tool_call nodes
             tool_node_id = inner_call_to_node.get(result_call_id)
             if tool_node_id and result_call_id not in [d.get("call_id") for d in delegations.values()]:
                 rv = payload.get("return_value", {})
@@ -330,7 +330,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                             n["result"] = msg_text
                             n["is_error"] = rv.get("is_error", False)
                             break
-            # Track completed Task delegations for attaching director summaries
+            # Track completed Task delegations for attaching maker summaries
             if result_call_id in delegations:
                 recently_completed_delegations.append(delegations[result_call_id]["id"])
 
@@ -454,7 +454,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                                 n["subagent_report"] = (existing + "\n" + text).strip() if existing else text
                                 break
 
-        # Director-level ContentPart — step declaration or summary
+        # Maker-level ContentPart — step declaration or summary
         if msg_type == "ContentPart":
             text = payload.get("text", "")
             if text.strip():
@@ -463,11 +463,11 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 if step_decl:
                     pending_step_decl = step_decl
                 else:
-                    # Not a step declaration — it's a director summary to user
+                    # Not a step declaration — it's a maker summary to user
                     for did in recently_completed_delegations:
                         for n in nodes:
                             if n["id"] == did:
-                                n["director_summary"] = text
+                                n["maker_summary"] = text
                                 break
 
     # Handle any remaining incomplete batch (session ended mid-execution)

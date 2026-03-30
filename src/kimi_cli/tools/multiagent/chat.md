@@ -8,6 +8,6 @@ Available agents:
 ${AGENTS_MD}
 
 Parameters:
-- `agent_name`: Name of the builtin agent to chat with (e.g. "video-director", "video-creator").
+- `agent_name`: Name of the builtin agent to chat with (e.g. "video-maker", "video-creator").
 - `message`: Your message to the agent, as a user would type it.
 - `session_id`: Optional session ID for stateful multi-turn dialogue. Use the same ID across calls to maintain context.

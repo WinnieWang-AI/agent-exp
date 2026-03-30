@@ -38,7 +38,7 @@ Use `context_files` to pass structured data files to the subagent instead of cop
 
 This is the preferred way to share project data (story graph, shot plan, configuration) with subagents:
 - Keeps the prompt focused on the instruction (what to do)
-- Avoids duplicating large file contents in the director's context
+- Avoids duplicating large file contents in the maker's context
 - The subagent gets the latest file content at call time
 
 Example: `context_files: ["/path/to/story-graph.json", "/path/to/shot-plan.json"]`

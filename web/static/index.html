@@ -16,6 +16,8 @@
 <script src="/static/session-op-graph.js" defer></script>
 <script src="/static/agent-graph.js" defer></script>
 <script src="/static/plan-compare-graph.js" defer></script>
+<script src="/static/screenplay-viewer.js" defer></script>
+<script src="/static/director-viewer.js" defer></script>
 <style>
 :root {
   --bg: #0f1117;
@@ -31,8 +33,9 @@
   --accent-orange: #f7a44c;
   --accent-red: #ef5b5b;
   --accent-purple: #a78bfa;
-  --director-color: #5b8def;
+  --maker-color: #5b8def;
   --eval-color: #4ecdc4;
+  --producer-color: #f59e0b;
   --radius: 10px;
   --radius-sm: 6px;
   --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
@@ -67,11 +70,12 @@ body {
 .tab:hover { color: var(--text-mid); background: var(--surface2); }
 .tab.active { color: var(--text); background: var(--surface2); border-color: var(--border); }
 .tab .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-.tab .dot.director { background: var(--director-color); }
+.tab .dot.maker { background: var(--maker-color); }
 .tab .dot.eval { background: var(--eval-color); }
 .tab .dot.auto { background: var(--accent-orange); }
-.tab .dot.room { background: linear-gradient(135deg, var(--director-color), var(--eval-color)); }
+.tab .dot.room { background: linear-gradient(135deg, var(--maker-color), var(--eval-color)); }
 .tab .dot.optimizer { background: var(--accent-purple); }
+.tab .dot.producer { background: var(--producer-color); }
 
 .header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .status-badge {
@@ -138,9 +142,10 @@ body {
   text-transform: uppercase; letter-spacing: 0.6px;
   padding: 2px 7px; border-radius: 4px; margin-bottom: 6px;
 }
-.msg-assistant .agent-tag.director { background: rgba(91,141,239,0.15); color: var(--director-color); }
+.msg-assistant .agent-tag.maker { background: rgba(91,141,239,0.15); color: var(--maker-color); }
 .msg-assistant .agent-tag.eval { background: rgba(78,205,196,0.15); color: var(--eval-color); }
 .msg-assistant .agent-tag.screenwriter { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.msg-assistant .agent-tag.producer { background: rgba(245,158,11,0.15); color: var(--producer-color); }
 .msg-assistant .msg-text {}
 
 /* Activity row (tool calls, subagent work) */
@@ -324,7 +329,7 @@ body {
   border-radius: 3px;
   padding: 0 3px;
 }
-.mention.director { color: var(--director-color); background: rgba(91,141,239,0.15); }
+.mention.maker { color: var(--maker-color); background: rgba(91,141,239,0.15); }
 .mention.eval { color: var(--eval-color); background: rgba(78,205,196,0.15); }
 
 /* Mention autocomplete dropdown */
@@ -502,14 +507,148 @@ body {
 /* Plan Compare in sidebar */
 #pc-detail { transform:translateX(100%); transition:transform 0.2s; }
 #pc-detail.open { transform:translateX(0); }
+
+/* ---- Screenplay Sidebar (Producer panel) ---- */
+#sp-sidebar { display:none; flex-direction:column; width:45%; flex-shrink:0; background:var(--bg); overflow:hidden; border-left:1px solid var(--border); }
+#sp-sidebar.open { display:flex; }
+#sp-sidebar-header {
+  display:flex; align-items:center; gap:8px; padding:8px 12px;
+  border-bottom:1px solid var(--border); background:var(--surface); flex-shrink:0;
+}
+#sp-sidebar-header h3 { font-size:13px; font-weight:700; white-space:nowrap; }
+#sp-sidebar-meta { font-size:11px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#sp-sidebar-body { flex:1; overflow-y:auto; padding:12px; }
+.sp-nav-btn {
+  background:var(--surface2); border:1px solid var(--border); color:var(--text);
+  font-size:11px; padding:2px 8px; border-radius:var(--radius-sm);
+  cursor:pointer; transition:all 0.15s;
+}
+.sp-nav-btn:hover { background:var(--surface3); }
+.sp-nav-btn:disabled { opacity:0.3; cursor:default; }
+#sp-reopen-tab { display:none; writing-mode:vertical-rl; text-orientation:mixed; padding:12px 5px; cursor:pointer; user-select:none; font-size:11px; font-weight:600; letter-spacing:1px; color:var(--text-dim); background:var(--surface); border-left:2px solid var(--border); flex-shrink:0; align-items:center; justify-content:center; }
+#sp-reopen-tab:hover { color:var(--text); background:var(--surface2); }
+#sp-reopen-tab.has-data { display:flex; }
+#sp-resize-handle { display:none; width:5px; flex-shrink:0; cursor:col-resize; background:var(--border); transition:background 0.15s; }
+#sp-resize-handle:hover { background:var(--producer-color); }
+#sp-resize-handle.visible { display:block; }
+/* Screenplay content styles (dark theme) */
+.sp-act-block { margin-bottom: 12px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
+.sp-act-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+.sp-act-header:hover { background: var(--surface3); }
+.sp-act-toggle { font-size: 11px; color: var(--text-dim); transition: transform 0.2s; }
+.sp-act-toggle.open { transform: rotate(90deg); }
+.sp-act-title { font-size: 13px; font-weight: 600; }
+.sp-act-summary { font-size: 11px; color: var(--text-dim); margin-left: auto; max-width: 50%; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-act-scenes { display: none; }
+.sp-act-scenes.open { display: block; }
+.sp-scene-card { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; }
+.sp-scene-card:last-child { border-bottom: none; }
+.sp-scene-card:hover { background: var(--surface2); }
+.sp-scene-num { flex-shrink: 0; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; background: rgba(245,158,11,0.15); color: var(--producer-color); border-radius: 50%; font-size: 10px; font-weight: 600; margin-top: 2px; }
+.sp-scene-body { flex: 1; min-width: 0; }
+.sp-scene-title { font-size: 12px; font-weight: 500; margin-bottom: 1px; }
+.sp-scene-summary { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-scene-tags { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.sp-tag { font-size: 9px; padding: 1px 6px; border-radius: 8px; }
+.sp-tag.loc { background: rgba(78,205,196,0.15); color: var(--eval-color); }
+.sp-tag.chr { background: rgba(245,158,11,0.15); color: var(--producer-color); }
+.sp-tag.time { background: rgba(91,141,239,0.15); color: var(--accent-blue); }
+.sp-tag.mood { background: rgba(167,139,250,0.15); color: var(--accent-purple); }
+/* Scene detail */
+.sp-detail { }
+.sp-detail-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.sp-detail-desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; font-style: italic; margin-bottom: 12px; }
+.sp-detail-meta { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.sp-beat { margin-bottom: 10px; }
+.sp-beat-action { font-size: 12px; color: var(--text-mid); line-height: 1.7; padding-left: 4px; }
+.sp-beat-dialogue { margin-left: 24px; }
+.sp-beat-speaker { font-size: 11px; font-weight: 600; color: var(--producer-color); margin-bottom: 1px; }
+.sp-beat-speaker .sp-tone { font-weight: 400; color: var(--text-dim); font-size: 10px; margin-left: 4px; font-style: italic; }
+.sp-beat-text { font-size: 12px; line-height: 1.6; color: var(--text); }
+.sp-beat-narrator { margin-left: 16px; font-style: italic; color: var(--text-dim); border-left: 2px solid var(--border); padding-left: 8px; }
+/* Entity cards in sidebar scene detail */
+.sp-entity-section-bar { font-size: 10px; font-weight: 600; color: var(--text-dim); margin: 12px 0 6px; padding-top: 8px; border-top: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.5px; }
+.sp-entity-card { margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.sp-entity-hdr { display: flex; align-items: center; gap: 6px; padding: 6px 10px; cursor: pointer; transition: background 0.15s; }
+.sp-entity-hdr:hover { background: var(--surface2); }
+.sp-entity-icon { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #fff; flex-shrink: 0; }
+.sp-entity-icon.character { background: #f59e0b; }
+.sp-entity-icon.location { background: #4ecdc4; }
+.sp-entity-icon.prop { background: #a78bfa; }
+.sp-entity-name { font-size: 12px; font-weight: 500; }
+.sp-entity-tags { font-size: 9px; color: var(--text-dim); margin-left: auto; }
+.sp-entity-body { display: none; padding: 0 10px 8px; font-size: 11px; }
+.sp-entity-body.open { display: block; }
+.sp-entity-trait { display: flex; gap: 5px; margin-bottom: 2px; }
+.sp-entity-trait-k { color: var(--text-dim); flex-shrink: 0; min-width: 40px; }
+.sp-entity-trait-v { color: var(--text-mid); }
+.sp-entity-section { font-size: 10px; font-weight: 600; color: var(--text-dim); margin: 6px 0 3px; padding-top: 4px; border-top: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.5px; }
+.sp-entity-state { font-size: 11px; color: var(--text-mid); margin-bottom: 2px; }
+.sp-entity-rel { display: flex; gap: 4px; align-items: center; font-size: 11px; margin-bottom: 2px; }
+.sp-entity-rel-target { color: var(--accent-blue); cursor: pointer; }
+.sp-entity-rel-target:hover { text-decoration: underline; }
+
+/* ---- Sidebar Tabs (Screenplay / Director) ---- */
+.sidebar-tabs { display:flex; gap:2px; }
+.sidebar-tab { padding:2px 8px; font-size:11px; font-weight:600; color:var(--text-dim); background:transparent; border:none; border-bottom:2px solid transparent; cursor:pointer; transition:all 0.15s; }
+.sidebar-tab:hover { color:var(--text-mid); }
+.sidebar-tab.active { color:var(--producer-color); border-bottom-color:var(--producer-color); }
+.sidebar-tab.has-data { color:var(--text-mid); }
+
+/* ---- Director Viewer Styles ---- */
+#sp-story-panel, #dr-story-panel { display:none; }
+#sp-story-panel.active, #dr-story-panel.active { display:block; }
+.dr-summary-bar { display:flex; gap:12px; align-items:center; padding:8px 0; margin-bottom:8px; font-size:11px; color:var(--text-dim); border-bottom:1px solid var(--border); }
+.dr-summary-stat { display:flex; align-items:center; gap:3px; }
+.dr-summary-stat .dr-num { font-weight:700; color:var(--text); font-size:12px; }
+.dr-evt-block { margin-bottom:8px; background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
+.dr-evt-header { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--surface2); border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+.dr-evt-header:hover { background:var(--surface3); }
+.dr-evt-toggle { font-size:11px; color:var(--text-dim); transition:transform 0.2s; }
+.dr-evt-toggle.open { transform:rotate(90deg); }
+.dr-evt-title { font-size:12px; font-weight:600; flex:1; min-width:0; }
+.dr-evt-tags { display:flex; gap:4px; margin-left:auto; flex-shrink:0; }
+.dr-evt-body { display:none; padding:8px 12px; font-size:11px; }
+.dr-evt-body.open { display:block; }
+.dr-evt-desc { color:var(--text-mid); line-height:1.6; margin-bottom:8px; }
+.dr-section-label { font-size:10px; font-weight:600; color:var(--text-dim); margin:8px 0 4px; padding-top:6px; border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:0.5px; }
+.dr-chip { display:inline-block; font-size:10px; padding:1px 6px; border-radius:8px; margin:0 3px 3px 0; }
+.dr-chip.char { background:rgba(245,158,11,0.15); color:var(--producer-color); }
+.dr-chip.loc { background:rgba(78,205,196,0.15); color:var(--eval-color); }
+.dr-chip.prop { background:rgba(167,139,250,0.15); color:var(--accent-purple); }
+.dr-chip.time { background:rgba(91,141,239,0.15); color:var(--accent-blue); }
+.dr-state-change { display:flex; gap:4px; align-items:baseline; margin-bottom:2px; font-size:11px; }
+.dr-state-change .entity { color:var(--producer-color); font-weight:500; }
+.dr-state-change .aspect { color:var(--text-dim); }
+.dr-state-change .detail { color:var(--text-mid); }
+.dr-dialogue { margin-bottom:4px; margin-left:12px; }
+.dr-dialogue .speaker { font-size:11px; font-weight:600; color:var(--producer-color); }
+.dr-dialogue .tone { font-weight:400; color:var(--text-dim); font-size:10px; margin-left:4px; font-style:italic; }
+.dr-dialogue .text { font-size:11px; color:var(--text); line-height:1.5; }
+.dr-interaction { font-size:11px; color:var(--text-mid); margin-bottom:2px; }
+.dr-shot-card { margin:4px 0; padding:6px 8px; background:var(--surface2); border-radius:var(--radius-sm); border:1px solid var(--border); }
+.dr-shot-header { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.dr-shot-id { font-size:10px; font-weight:600; color:var(--accent-blue); }
+.dr-shot-cam { font-size:10px; color:var(--text-dim); }
+.dr-shot-dur { font-size:10px; font-weight:600; color:var(--accent-green); margin-left:auto; }
+.dr-shot-content { font-size:11px; color:var(--text-mid); line-height:1.5; margin-bottom:4px; }
+.dr-shot-audio { font-size:10px; color:var(--text-dim); }
+.dr-shot-audio span { margin-right:8px; }
+/* Director detail view */
+.dr-detail-title { font-size:15px; font-weight:600; margin-bottom:4px; }
+.dr-detail-desc { font-size:12px; color:var(--text-dim); line-height:1.6; font-style:italic; margin-bottom:12px; }
+.dr-detail-meta { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>Video Agent Studio</h1>
   <div class="tab-bar">
-    <div class="tab active" data-tab="director" onclick="switchTab('director', event)">
-      <span class="dot director"></span>Director
+    <div class="tab active" data-tab="producer" onclick="switchTab('producer', event)">
+      <span class="dot producer"></span>Producer
+    </div>
+    <div class="tab" data-tab="maker" onclick="switchTab('maker', event)">
+      <span class="dot maker"></span>Maker
     </div>
     <div class="tab" data-tab="eval" onclick="switchTab('eval', event)">
       <span class="dot eval"></span>Evaluator
@@ -543,21 +682,61 @@ body {
 </div>
 
 <div class="main">
-  <div class="panel" id="panel-director">
-    <div class="sg-sticky-bar" id="sg-sticky-director">
+  <div class="panel active" id="panel-producer" style="flex-direction:row;">
+    <!-- Left: chat area -->
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;">
+      <div class="messages" id="messages-producer">
+        <div class="empty-state">
+          <div class="e-icon">&#127916;</div>
+          <p>Chat with <strong>Video Producer</strong> — manages video production, coordinates screenwriter and other agents.</p>
+        </div>
+      </div>
+      <div class="input-area"><div class="input-row">
+        <textarea id="input-producer" placeholder="Message Producer..." rows="1" onkeydown="onKey(event,'producer')"></textarea>
+        <button class="btn btn-send" id="btn-producer" onclick="send('producer')">Send</button>
+      </div></div>
+    </div>
+    <!-- Reopen tab (visible when sidebar closed but has data) -->
+    <div id="sp-reopen-tab" onclick="spToggleSidebar()"><span id="reopen-label">Screenplay</span></div>
+    <!-- Resize handle -->
+    <div id="sp-resize-handle"></div>
+    <!-- Right: screenplay sidebar -->
+    <div id="sp-sidebar">
+      <div id="sp-sidebar-header">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" id="sidebar-tab-sp" onclick="sidebarSwitchTab('screenplay')">Screenplay</button>
+          <button class="sidebar-tab" id="sidebar-tab-dr" onclick="sidebarSwitchTab('director')">Director</button>
+        </div>
+        <span id="sp-sidebar-meta"></span>
+        <div style="margin-left:auto;display:flex;gap:4px;align-items:center;">
+          <button class="sp-nav-btn" id="sp-btn-back" style="display:none">← Back</button>
+          <button class="sp-nav-btn" id="sp-btn-prev" style="display:none" disabled>‹</button>
+          <button class="sp-nav-btn" id="sp-btn-next" style="display:none" disabled>›</button>
+          <button class="sp-nav-btn" onclick="spToggleSidebar()">✕</button>
+        </div>
+      </div>
+      <div id="sp-sidebar-body">
+        <div id="sp-story-panel" class="active"></div>
+        <div id="dr-story-panel"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-maker">
+    <div class="sg-sticky-bar" id="sg-sticky-maker">
       <span class="sg-sticky-icon">&#128205;</span>
-      <span class="sg-sticky-label" id="sg-sticky-label-director">Story Graph</span>
+      <span class="sg-sticky-label" id="sg-sticky-label-maker">Story Graph</span>
       <button class="sg-sticky-btn" onclick="toggleStoryGraphPanel()">Show Graph</button>
     </div>
-    <div class="messages" id="messages-director">
+    <div class="messages" id="messages-maker">
       <div class="empty-state">
         <div class="e-icon">&#127916;</div>
-        <p>Chat with <strong>Video Director</strong> — orchestrates video creation and evaluation.</p>
+        <p>Chat with <strong>Video Maker</strong> — orchestrates video creation and evaluation.</p>
       </div>
     </div>
     <div class="input-area"><div class="input-row">
-      <textarea id="input-director" placeholder="Message Director..." rows="1" onkeydown="onKey(event,'director')"></textarea>
-      <button class="btn btn-send" id="btn-director" onclick="send('director')">Send</button>
+      <textarea id="input-maker" placeholder="Message Maker..." rows="1" onkeydown="onKey(event,'maker')"></textarea>
+      <button class="btn btn-send" id="btn-maker" onclick="send('maker')">Send</button>
     </div></div>
   </div>
 
@@ -593,13 +772,13 @@ body {
       </div>
       <div class="agent-lane">
         <div class="lane-header">
-          <div class="ldot" style="background:var(--director-color)"></div>Director
+          <div class="ldot" style="background:var(--maker-color)"></div>Maker
           <span style="margin-left:auto;display:flex;align-items:center;gap:4px;">
-            <div class="sdot" id="auto-dot-director" style="width:6px;height:6px;border-radius:50%;background:var(--accent-green)"></div>
-            <span id="auto-status-director" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">Ready</span>
+            <div class="sdot" id="auto-dot-maker" style="width:6px;height:6px;border-radius:50%;background:var(--accent-green)"></div>
+            <span id="auto-status-maker" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;">Ready</span>
           </span>
         </div>
-        <div class="messages" id="messages-auto-director"></div>
+        <div class="messages" id="messages-auto-maker"></div>
       </div>
     </div>
     <div class="input-area" id="input-area-auto"><div class="input-row">
@@ -618,7 +797,7 @@ body {
         </div>
       </div>
       <div class="input-area"><div class="input-row">
-        <textarea id="input-optimizer" placeholder="e.g. 分析一下 video-director 最近的表现..." rows="1" onkeydown="onKey(event,'optimizer')"></textarea>
+        <textarea id="input-optimizer" placeholder="e.g. 分析一下 video-maker 最近的表现..." rows="1" onkeydown="onKey(event,'optimizer')"></textarea>
         <button class="btn btn-send" id="btn-optimizer" onclick="send('optimizer')">Send</button>
       </div></div>
     </div>
@@ -837,14 +1016,14 @@ body {
 
 <script>
 const S = {
-  tab: 'director',
+  tab: 'producer',
   ws: {},
   status: {},
-  hasMsg: { director: false, eval: false, auto: false, room: false, optimizer: false },
+  hasMsg: { maker: false, eval: false, auto: false, room: false, optimizer: false, producer: false },
   // Per-agent status tracking for chat room mode
-  roomAgentStatus: { 'video-director': 'ready', 'video-auto-eval': 'ready' },
+  roomAgentStatus: { 'video-maker': 'ready', 'video-auto-eval': 'ready' },
 };
-const AGENTS = { director: 'video-director', eval: 'video-auto-eval', optimizer: 'agent-optimizer' };
+const AGENTS = { maker: 'video-maker', eval: 'video-auto-eval', optimizer: 'agent-optimizer', producer: 'video-producer' };
 const curAst = {};   // current assistant element per container
 const curTool = {};   // current pending tool activity element per container
 let currentStoryGraphPath = null;  // latest known story graph path
@@ -852,7 +1031,7 @@ let currentOpGraphPath = null;     // (legacy, kept for compatibility)
 // Views merged — unified graph (narrative + assets)
 
 // ==== Tabs (multi-select) ====
-const activeTabs = new Set(['director']);
+const activeTabs = new Set(['producer']);
 
 function switchTab(t, e) {
   if (e && (e.ctrlKey || e.metaKey)) {
@@ -884,7 +1063,7 @@ function applyTabs() {
 
   // Show active panels and insert dividers between them
   const main = document.querySelector('.main');
-  const allPanels = ['director', 'eval', 'auto', 'room', 'optimizer', 'agentgraph', 'opgraph'];
+  const allPanels = ['producer', 'maker', 'eval', 'auto', 'room', 'optimizer', 'agentgraph', 'opgraph'];
   let visibleCount = 0;
   for (const tab of allPanels) {
     if (!activeTabs.has(tab)) continue;
@@ -1174,6 +1353,23 @@ function onWsMsg(t, m) {
     }
   } else if (m.type === 'resumed') {
     showResumedSummary(t, m.summary);
+    // Restore screenplay sidebar from resume summary
+    if (m.summary && m.summary.screenplay_path && typeof spLoadData === 'function') {
+      currentScreenplayPath = m.summary.screenplay_path;
+      const tab = document.getElementById('sp-reopen-tab');
+      if (tab) tab.classList.add('has-data');
+      spOpenSidebar('screenplay');
+    }
+    // Restore director sidebar from resume summary
+    if (m.summary && m.summary.director_path && typeof drLoadData === 'function') {
+      currentDirectorPath = m.summary.director_path;
+      const tab = document.getElementById('sp-reopen-tab');
+      if (tab) tab.classList.add('has-data');
+      const drTabBtn = document.getElementById('sidebar-tab-dr');
+      if (drTabBtn) drTabBtn.classList.add('has-data');
+      if (!currentScreenplayPath) spOpenSidebar('director');
+      else { _updateReopenLabel(); drLoadData(); }
+    }
   } else if (m.type === 'agents' && t === 'room') {
     initRoomAgents(m.agents);
   } else if (m.type === 'status') {
@@ -1194,7 +1390,7 @@ function onWsMsg(t, m) {
 }
 
 function ctr(t, agent) {
-  if (t === 'auto') return agent === 'video-director' ? 'messages-auto-director' : 'messages-auto-eval';
+  if (t === 'auto') return agent === 'video-maker' ? 'messages-auto-maker' : 'messages-auto-eval';
   if (t === 'room') return 'messages-room';
   return `messages-${t}`;
 }
@@ -1253,6 +1449,10 @@ function routeWire(tab, wd, agent, depth) {
             }, 1500);
           }
           // operation-graph.json detection removed — assets view now uses story-graph + shot-plan
+          // Screenplay file detection
+          spDetectScreenplayWrite(fp);
+          // Director file detection
+          if (typeof drDetectWrite === 'function') drDetectWrite(fp);
         } catch {}
       }
       if (name === 'ValidateStoryGraph') {
@@ -1464,8 +1664,8 @@ function routeWire(tab, wd, agent, depth) {
       const inner = p.event;
       if (!inner) break;
       // In single-agent chat, subagent events show in same container but labeled
-      // In auto mode, route to director lane
-      const subAgent = (tab === 'auto') ? 'video-director' : agent;
+      // In auto mode, route to maker lane
+      const subAgent = (tab === 'auto') ? 'video-maker' : agent;
       routeWire(tab, inner, subAgent, depth + 1);
       break;
     }
@@ -1488,7 +1688,7 @@ function routeWire(tab, wd, agent, depth) {
 // ==== Assistant text (streaming accumulation) ====
 // ==== Auto mode: per-agent status ====
 function setAutoAgentStatus(agent, status) {
-  const key = agent === 'video-director' ? 'director' : 'eval';
+  const key = agent === 'video-maker' ? 'maker' : 'eval';
   const dot = $('auto-dot-' + key);
   const txt = $('auto-status-' + key);
   if (!dot || !txt) return;
@@ -1504,11 +1704,12 @@ function setAutoAgentStatus(agent, status) {
 }
 
 function tabForContainer(c) {
-  if (c === 'messages-auto-eval' || c === 'messages-auto-director') return 'auto';
+  if (c === 'messages-auto-eval' || c === 'messages-auto-maker') return 'auto';
   if (c === 'messages-room' || c.startsWith('room-card-body-')) return 'room';
-  if (c === 'messages-director') return 'director';
+  if (c === 'messages-maker') return 'maker';
   if (c === 'messages-eval') return 'eval';
   if (c === 'messages-optimizer') return 'optimizer';
+  if (c === 'messages-producer') return 'producer';
   return S.tab;
 }
 
@@ -1582,8 +1783,8 @@ function appendAst(c, text, agent) {
       const ra = roomAgents.find(a => a.name === agent);
       if (ra) {
         tag = `<span class="agent-tag" style="background:${ra.color}20;color:${ra.color}">${esc(ra.alias)}</span><br>`;
-      } else if (agent === 'video-director') {
-        tag = '<span class="agent-tag director">Director</span><br>';
+      } else if (agent === 'video-maker') {
+        tag = '<span class="agent-tag maker">Maker</span><br>';
       } else if (agent === 'video-auto-eval') {
         tag = '<span class="agent-tag eval">Evaluator</span><br>';
       }
@@ -1893,7 +2094,7 @@ function addError(c, text) {
 function clearEmpty(t) {
   if (t === 'auto') {
     $('messages-auto-eval').innerHTML = '';
-    $('messages-auto-director').innerHTML = '';
+    $('messages-auto-maker').innerHTML = '';
   } else if (t === 'room') {
     const em = $('messages-room').querySelector('.empty-state');
     if (em) em.remove();
@@ -2422,6 +2623,147 @@ function toggleStoryGraphPanel() {
   }
 }
 
+// ==== Sidebar (Screenplay + Director) ====
+// Rendering logic in screenplay-viewer.js and director-viewer.js (loaded separately)
+// This section has detection, sidebar toggle, and tab switching
+
+let _activeSidebarTab = 'screenplay'; // 'screenplay' | 'director'
+
+function spDetectScreenplayWrite(filePath) {
+  const basename = filePath.split('/').pop();
+  if (['meta.json', 'entities.json', 'outline.json'].includes(basename) || /^act-\d+\.json$/.test(basename)) {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    if (dir) {
+      currentScreenplayPath = dir;
+      const tabBtn = document.getElementById('sidebar-tab-sp');
+      if (tabBtn) tabBtn.classList.add('has-data');
+      spOpenSidebar('screenplay');
+      clearTimeout(window._spRefreshTimer);
+      window._spRefreshTimer = setTimeout(() => spLoadData(), 1500);
+    }
+    return true;
+  }
+  return false;
+}
+
+function drDetectWrite(filePath) {
+  const basename = filePath.split('/').pop();
+  if (['events.json', 'states.json', 'shots.json'].includes(basename)) {
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    if (dir) {
+      currentDirectorPath = dir;
+      const tabBtn = document.getElementById('sidebar-tab-dr');
+      if (tabBtn) tabBtn.classList.add('has-data');
+      spOpenSidebar('director');
+      clearTimeout(window._drRefreshTimer);
+      window._drRefreshTimer = setTimeout(() => { if (typeof drLoadData === 'function') drLoadData(); }, 1500);
+    }
+    return true;
+  }
+  return false;
+}
+
+function sidebarSwitchTab(which) {
+  _activeSidebarTab = which;
+  const spTab = document.getElementById('sidebar-tab-sp');
+  const drTab = document.getElementById('sidebar-tab-dr');
+  const spPanel = document.getElementById('sp-story-panel');
+  const drPanel = document.getElementById('dr-story-panel');
+  if (spTab) spTab.classList.toggle('active', which === 'screenplay');
+  if (drTab) drTab.classList.toggle('active', which === 'director');
+  if (spPanel) spPanel.classList.toggle('active', which === 'screenplay');
+  if (drPanel) drPanel.classList.toggle('active', which === 'director');
+  // Update nav buttons for active tab
+  _sidebarUpdateNav();
+  // Update meta
+  const metaEl = document.getElementById('sp-sidebar-meta');
+  if (which === 'screenplay' && spMeta) {
+    const vi = spMeta.video_info || {};
+    const parts = [vi.aspect_ratio, vi.duration, vi.language].filter(Boolean);
+    if (metaEl) metaEl.textContent = parts.join(' · ');
+  } else if (which === 'director' && typeof drGetMeta === 'function') {
+    if (metaEl) metaEl.textContent = drGetMeta();
+  } else {
+    if (metaEl) metaEl.textContent = 'No data yet';
+  }
+}
+
+function _sidebarUpdateNav() {
+  const back = document.getElementById('sp-btn-back');
+  const prev = document.getElementById('sp-btn-prev');
+  const next = document.getElementById('sp-btn-next');
+  if (_activeSidebarTab === 'screenplay') {
+    // Screenplay nav
+    if (back) { back.onclick = () => spShowOutline(); back.style.display = spCurrentView === 'scene' ? '' : 'none'; }
+    if (prev) { prev.onclick = () => spNavigateScene(-1); prev.style.display = spCurrentView === 'scene' ? '' : 'none'; }
+    if (next) { next.onclick = () => spNavigateScene(1); next.style.display = spCurrentView === 'scene' ? '' : 'none'; }
+  } else {
+    // Director nav
+    const inDetail = typeof drCurrentView !== 'undefined' && drCurrentView === 'detail';
+    if (back) { back.onclick = () => { if (typeof drShowOverview === 'function') drShowOverview(); }; back.style.display = inDetail ? '' : 'none'; }
+    if (prev) { prev.onclick = () => { if (typeof drNavigateEvent === 'function') drNavigateEvent(-1); }; prev.style.display = inDetail ? '' : 'none'; }
+    if (next) { next.onclick = () => { if (typeof drNavigateEvent === 'function') drNavigateEvent(1); }; next.style.display = inDetail ? '' : 'none'; }
+  }
+}
+
+function _updateReopenLabel() {
+  const label = document.getElementById('reopen-label');
+  if (!label) return;
+  const hasSp = !!currentScreenplayPath;
+  const hasDr = typeof currentDirectorPath !== 'undefined' && !!currentDirectorPath;
+  if (hasSp && hasDr) label.textContent = 'SP | Dir';
+  else if (hasDr) label.textContent = 'Director';
+  else label.textContent = 'Screenplay';
+}
+
+function spToggleSidebar() {
+  const sidebar = document.getElementById('sp-sidebar');
+  if (sidebar && sidebar.classList.contains('open')) spCloseSidebar();
+  else spOpenSidebar();
+}
+
+function spOpenSidebar(switchTo) {
+  const sidebar = document.getElementById('sp-sidebar');
+  const handle = document.getElementById('sp-resize-handle');
+  const tab = document.getElementById('sp-reopen-tab');
+  if (sidebar) sidebar.classList.add('open');
+  if (handle) handle.classList.add('visible');
+  if (tab) tab.classList.remove('has-data');
+  if (switchTo) sidebarSwitchTab(switchTo);
+  if (_activeSidebarTab === 'screenplay' && currentScreenplayPath && !spOutline) spLoadData();
+  if (_activeSidebarTab === 'director' && typeof currentDirectorPath !== 'undefined' && currentDirectorPath && typeof drLoadData === 'function' && !drEvents) drLoadData();
+}
+
+function spCloseSidebar() {
+  const sidebar = document.getElementById('sp-sidebar');
+  const handle = document.getElementById('sp-resize-handle');
+  const tab = document.getElementById('sp-reopen-tab');
+  if (sidebar) sidebar.classList.remove('open');
+  if (handle) handle.classList.remove('visible');
+  const hasData = currentScreenplayPath || (typeof currentDirectorPath !== 'undefined' && currentDirectorPath);
+  if (tab && hasData) tab.classList.add('has-data');
+  _updateReopenLabel();
+}
+
+// Resize handle for screenplay sidebar
+(function() {
+  let dragging = false, startX = 0, startW = 0;
+  document.addEventListener('mousedown', e => {
+    if (e.target.id === 'sp-resize-handle') {
+      dragging = true; startX = e.clientX;
+      startW = document.getElementById('sp-sidebar').offsetWidth;
+      e.preventDefault();
+    }
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const sidebar = document.getElementById('sp-sidebar');
+    const newW = Math.max(250, Math.min(startW + (startX - e.clientX), window.innerWidth * 0.7));
+    sidebar.style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+})();
+
 function addMedia(c, src, type) {
   const t = tabForContainer(c);
   if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
@@ -2449,11 +2791,11 @@ function addMedia(c, src, type) {
 }
 
 // ==== Chat Room: dynamic agent list ====
-// roomAgents: [{alias: "Director", name: "video-director", color: "..."}, ...]
+// roomAgents: [{alias: "Maker", name: "video-maker", color: "..."}, ...]
 const roomAgents = [];
 // Color palette for agents (cycles if more agents than colors)
 const AGENT_COLORS = [
-  'var(--director-color)', 'var(--eval-color)', 'var(--accent-orange)',
+  'var(--maker-color)', 'var(--eval-color)', 'var(--accent-orange)',
   'var(--accent-purple)', 'var(--accent-red)', '#e0a458',
 ];
 
@@ -2494,7 +2836,7 @@ function buildMentionDropdown() {
   allItem.className = 'mention-item';
   allItem.dataset.mention = 'All';
   allItem.onclick = () => pickMention('All');
-  allItem.innerHTML = '<div style="width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,var(--director-color),var(--eval-color))"></div> All';
+  allItem.innerHTML = '<div style="width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,var(--maker-color),var(--eval-color))"></div> All';
   dd.appendChild(allItem);
   for (const a of roomAgents) {
     const item = document.createElement('div');
@@ -2681,7 +3023,7 @@ function onRoomKey(e) {
 
 // ==== Init: apply tabs & pre-connect all ====
 applyTabs();
-['director', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
+['maker', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
 </script>
 
 <script>
