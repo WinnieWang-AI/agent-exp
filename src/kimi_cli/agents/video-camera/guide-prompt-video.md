@@ -10,15 +10,15 @@
 
 | Prompt 要素 | 数据来源 | 说明 |
 |------------|---------|------|
-| 风格 | `meta.json` → `production_styles[0].style_prefix` | 放 prompt 开头 |
-| 负面提示 | `meta.json` → `production_styles[0].negative_prefix` | 通过 `negative_prompt` 参数传入 |
+| 风格 | `meta.json` → `style.style_prefix` | 放 prompt 开头 |
+| 负面提示 | `meta.json` → `style.negative_prefix` | 通过 `negative_prompt` 参数传入 |
 | 画面比例 | `meta.json` → `video_info.aspect_ratio` | 通过 `aspect_ratio` 参数传入 |
 | 对白语言 | `meta.json` → `video_info.language` | 对白文本保持原语言 |
 | 镜头语言 | `shots.json` → shot 的 `shot_type` / `angle` / `movement` | 翻译为英文描述 |
 | 画面内容 | `shots.json` → shot 的 `content` | 翻译为英文，保留空间关系描述 |
 | 场景环境 | `states.json` → focus_on 的 LocationState → `lighting` / `weather` / `atmosphere` | 编织进场景描述 |
 | 角色外形 | `states.json` → focus_on 的 CharacterAppearance → `visual` | 从简，抓关键特征 |
-| 角色行为 | `states.json` → active_during 同 event 的 CharacterMind → `emotion` / `behavior` | 视频核心 |
+| 角色行为 | `events.json` → 当前事件的 `interactions` / `mood` / `state_changes` | 视频核心 |
 | 对白 | `shots.json` → shot 的 `dialogues` | 写入 Sound: 段 |
 | 音效 | `shots.json` → shot 的 `sfx` | 写入 Sound: 段 |
 | 参考图 | `states.json` → 各状态的 `reference_image` 字段 | 通过 reference_images 参数传入 |
@@ -32,7 +32,7 @@
 3. **画面内容与空间关系**：content 的英文翻译，保留角色位置关系
 4. **场景环境**：LocationState 的 lighting / weather / atmosphere
 5. **角色外形**：从简，用最显著特征标识（如 "red-cloaked girl"），参考图已传入不需重复全部细节
-6. **角色表演**：CharacterMind 的 emotion + behavior — 这是视频的核心
+6. **角色表演**：events.json 当前事件的 interactions / mood / state_changes 推断角色的情绪和表演 — 这是视频的核心
 7. **道具**：只在画面中有重要作用时提及
 8. **参考图关联标记**：`<<<image_N>>>`，放在角色/场景首次出现的描述旁
 9. **声音描述**：以 "Sound:" 开头，放在 prompt 末尾
@@ -44,7 +44,7 @@
 - **环境音**：从场景推断（森林→鸟鸣风声，室内→壁炉声）
 - **动作音效**：从 sfx 字段和角色行为推断（奔跑→急促脚步，开门→门轴吱呀）
 - **角色对白**：从 dialogues 字段提取，格式 `the girl says "奶奶我来看你了"`，保持原语言
-- **不描述 BGM** — BGM 由作曲 agent 独立生成
+- **禁止 BGM** — 始终在 Sound 段末尾加 `"No background music."` BGM 由作曲 agent 独立生成，视频模型不应产出任何音乐
 
 ### 参考图关联标记
 
@@ -68,13 +68,26 @@
 
 与视频 prompt 的区别：首帧图只描述一个瞬间，视频 prompt 描述动作的时间推进。
 
-## 跨镜头接续时的 Prompt 写法
+## 跨镜头转换时的 Prompt 写法
 
-使用了前一 shot 尾帧作为参考图时，prompt 中必须交代时序：
+当 Step 2b 决定使用尾帧作为"变化起点"的辅助参考时，prompt 必须交代转换过程：
 
-- 描述角色从上一个场景如何过渡到当前场景
-- 如果尾帧放在 reference_images 中：`"The video starts from <<<image_N>>>, where the girl is at the forest edge. She walks out and approaches the cottage..."`
-- 不能只写静态画面描述（"女孩站在小屋前"），要写动态过渡（"女孩从森林走出，来到小屋前"）
+**场景转换**（角色状态不变 + 场景变了）：
+- 描述角色如何从前一个空间移动到当前空间
+- `"The video starts from <<<image_N>>>, where the girl is at the forest edge. She walks out of the tree line and approaches the cottage..."`
+- 不能只写终点状态（"女孩站在小屋前"），要写移动过程
+
+**状态转换**（角色状态变了）：
+- 尾帧是变化前的样子，新参考图是变化后的目标
+- 描述变化发生的过程：`"The video starts from <<<image_N>>>, where the girl's cloak is still intact. The wolf lunges and tears the red cloak <<<image_1>>>, leaving it shredded..."`
+- 两种参考图各有角色：尾帧 = before，新参考图 = after
+
+**同 event 内不同镜头**（transition 非 cut，content 关联前一画面）：
+- 描述视角转换：`"The video starts from <<<image_N>>>, showing the wide scene. Camera pushes in to reveal the wolf's expression..."`
+
+**不使用尾帧时**（硬切）：
+- 直接描述当前场景，无需交代前一画面
+- 正常使用角色/场景参考图
 
 ## 写作要点
 
@@ -83,6 +96,14 @@
 3. **角色外形从简**：reference_images 已传入角色参考图，prompt 中用关键特征标识即可
 4. **style_prefix 放开头，negative_prefix 放 negative_prompt 参数**：不混放
 5. **不要遗漏 `<<<image_N>>>` 标记**：缺标记 = 角色一致性丢失
+
+## Prompt 生成后自检
+
+每次组装完 prompt、确定 reference_images 列表后，执行以下 3 点检查：
+
+1. **数量匹配**：reference_images 有 N 张 → prompt 中必须有 N 个 `<<<image_N>>>` 标记。少一个都不行。
+2. **角色对应**：每个 `<<<image_N>>>` 标记必须紧跟对应实体的描述。不能把角色 A 的标记放在角色 B 的描述旁。编号严格按 reference_images 列表顺序。
+3. **转换描述**：如果使用了尾帧作为辅助参考（变化起点），prompt 中必须有 `"The video starts from <<<image_N>>>"` 描述转换过程。不能只描述终点状态。
 
 ## 示例
 
@@ -108,7 +129,7 @@ states.json 中查到：
 - appear_red_neat → visual: {costume: "红色丝绒斗篷，白色连衣裙"}, reference_image: "assets/images/appear_red_neat.png"
 - appear_wolf_natural → visual: {costume: "灰褐色毛皮，蓬松尾巴"}, reference_image: "assets/images/appear_wolf_natural.png"
 - lstate_forest_bright → lighting: "丁达尔光束", atmosphere: "童话美好"
-- 同 event 的 CharacterMind: char_red → behavior: "停下脚步，侧头倾听"; char_wolf → behavior: "缓缓走出，弓着身体"
+- 同 event 的 interactions / state_changes: char_red → "停下脚步，侧头倾听"; char_wolf → "缓缓走出，弓着身体"
 
 视频 prompt：
 "hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. On the left side of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the forest path, tilting her head with wide curious eyes and a hint of unease. About three meters away on the right, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low to appear smaller. Sunlit forest clearing <<<image_3>>> with god rays and scattered wildflowers. Sound: a twig snapping, gentle breeze, the wolf says in a warm friendly tone '你好啊小姑娘，你要去哪里呀？'"

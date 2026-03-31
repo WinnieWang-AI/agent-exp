@@ -29,8 +29,17 @@
 | video_info.aspect_ratio | string | 是 | 画面比例，如 "16:9"、"9:16"、"1:1" |
 | video_info.duration | string | 是 | 目标时长，如 "30s"、"1min"、"3min" |
 | video_info.language | string | 是 | 对白语言，如 "中文"、"英文" |
-| style.style_prefix | string | 是 | 视觉风格正向描述（英文） |
+| style.style_prefix | string | 是 | **纯视觉风格**正向描述（英文）。只写画风、色调、质感、光影风格，**禁止**混入具体场景/环境/地点描述——那些属于 location 的 description。 |
 | style.negative_prefix | string | 是 | 视觉风格排除描述（英文） |
+
+**style_prefix 正误示例：**
+
+| | 示例 | 原因 |
+|---|---|---|
+| ✅ | `photorealistic, cinematic, realistic lighting, high dynamic range` | 纯画风 + 光影风格 |
+| ✅ | `hand-drawn illustration, warm color palette, soft watercolor texture` | 纯画风 + 色调 |
+| ❌ | `photorealistic, cinematic, modern city and cosmic vistas` | "modern city and cosmic vistas" 是场景内容，不是风格 |
+| ❌ | `anime style, cherry blossom school campus` | "cherry blossom school campus" 是场景内容 |
 
 ## entities.json
 
@@ -64,7 +73,7 @@
 | name | string | 是 | 角色名 |
 | tags | string[] | 是 | 多维标签（角色类型、阵营、家族、世代等） |
 | fixed_traits | object | 是 | 角色的固定视觉特征，key-value 自由定义。必须具体且有区分度 |
-| relationships | object | 否 | key 为目标角色 ID，value 为关系数组 |
+| relationships | object | 是 | key 为目标角色 ID，value 为关系数组。每个角色必须声明与其他相关角色的关系 |
 
 **Relationship 条目：**
 
@@ -179,6 +188,7 @@
   "time_of_day": "midday",
   "period": "1920年代初",
   "mood": "表面友善，暗藏危险",
+  "narrative_weight": "turning_point",
   "thread": "主线",
   "narrative_mode": "present"
 }
@@ -195,6 +205,7 @@
 | time_of_day | string | 否 | 一天中的时段：morning / midday / afternoon / evening / night |
 | period | string | 否 | 年代/时期标记，如 "1920年代初"、"二十年后" |
 | mood | string | 否 | 场景整体情感氛围 |
+| narrative_weight | string | 是 | 叙事功能权重：`"climax"` / `"turning_point"` / `"setup"` / `"transition"`。climax = 情绪最高点；turning_point = 故事走向发生不可逆变化；setup = 建立信息、铺垫冲突；transition = 连接两个重要时刻的过渡 |
 | thread | string | 否 | 所属故事线名称。同名 thread 构成一条叙事线 |
 | narrative_mode | string | 否 | 叙事模式：present（默认）/ flashback / flash_forward / parallel |
 

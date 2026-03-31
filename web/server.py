@@ -392,6 +392,10 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
             summary["last_user_message"] = last_user_msg[:200]
         if screenplay_dir:
             summary["screenplay_path"] = screenplay_dir
+            # Director data lives in the same directory; expose if events.json exists
+            sp_dir = Path(screenplay_dir)
+            if (sp_dir / "events.json").exists():
+                summary["director_path"] = screenplay_dir
 
     return summary
 
@@ -593,7 +597,9 @@ async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[Ki
     if session_id is None:
         session_id = str(uuid.uuid4())
     session_output_dir = Path.cwd() / "output" / session_id
-    session_output_dir.mkdir(parents=True, exist_ok=True)
+    # Don't mkdir here — the directory will be created on demand when tools
+    # actually write files.  Creating it eagerly leaves empty dirs behind
+    # when WebSocket connections fail before any real work happens.
 
     session = await Session.create(work_dir, session_id=session_id)
     cli = await KimiCLI.create(

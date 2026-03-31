@@ -124,6 +124,13 @@ def resolve_image_to_url(path_or_url: str, tos_config: TOSConfig | None = None) 
 class VideoProvider(ABC):
     """Abstract base class for video generation providers."""
 
+    def supports_audio(self, request: GenerationRequest) -> bool:
+        """Whether this provider generates audio for the given request.
+
+        Default: True. Subclasses override for mode/model-specific behavior.
+        """
+        return True
+
     @abstractmethod
     async def submit_job(self, request: GenerationRequest) -> VideoJobSubmission:
         """Submit a video generation job. Returns immediately with a job ID."""

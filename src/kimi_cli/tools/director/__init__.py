@@ -108,7 +108,6 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
 
     state_ids: set[str] = set()
     appearance_ids: set[str] = set()
-    mind_ids: set[str] = set()
     pstate_ids: set[str] = set()
     lstate_ids: set[str] = set()
 
@@ -116,15 +115,26 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
         for a in states.get("character_appearances", []):
             state_ids.add(a["id"])
             appearance_ids.add(a["id"])
-        for m in states.get("character_minds", []):
-            state_ids.add(m["id"])
-            mind_ids.add(m["id"])
         for p in states.get("prop_states", []):
             state_ids.add(p["id"])
             pstate_ids.add(p["id"])
         for l in states.get("location_states", []):
             state_ids.add(l["id"])
             lstate_ids.add(l["id"])
+
+    # === events: narrative_weight ===
+    _valid_weights = {"climax", "turning_point", "setup", "transition"}
+    if events:
+        for e in events.get("events", []):
+            eid = e["id"]
+            nw = e.get("narrative_weight")
+            if not nw:
+                errors.append(f'event {eid}: missing narrative_weight')
+            elif nw not in _valid_weights:
+                errors.append(
+                    f'event {eid}: invalid narrative_weight "{nw}", '
+                    f'must be one of {sorted(_valid_weights)}'
+                )
 
     # === events → entities ===
     if events and entities:
@@ -145,9 +155,6 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
         for a in states.get("character_appearances", []):
             if a.get("entity") not in character_ids:
                 errors.append(f'appearance {a["id"]}: entity "{a.get("entity")}" not in entities.json')
-        for m in states.get("character_minds", []):
-            if m.get("entity") not in character_ids:
-                errors.append(f'mind {m["id"]}: entity "{m.get("entity")}" not in entities.json')
         for p in states.get("prop_states", []):
             if p.get("entity") not in prop_ids:
                 errors.append(f'prop_state {p["id"]}: entity "{p.get("entity")}" not in entities.json')
@@ -159,8 +166,11 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
     if states and events:
         active_during = states.get("active_during", {})
 
-        # Check event IDs exist
+        # Check event IDs exist (only validate known categories)
+        _valid_categories = {"character_appearance", "prop_state", "location_state"}
         for category, mapping in active_during.items():
+            if category not in _valid_categories:
+                continue
             for sid, evt_list in mapping.items():
                 if sid not in state_ids:
                     errors.append(f'active_during.{category}: state "{sid}" not defined')
@@ -168,9 +178,8 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
                     if evt not in event_ids:
                         errors.append(f'active_during.{category}[{sid}]: event "{evt}" not in events.json')
 
-        # Check coverage: every event's characters have appearance + mind
+        # Check coverage: every event's characters have appearance
         appear_map = active_during.get("character_appearance", {})
-        mind_map = active_during.get("character_mind", {})
         lstate_map = active_during.get("location_state", {})
         pstate_map = active_during.get("prop_state", {})
 
@@ -178,9 +187,6 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
         appear_entity: dict[str, str] = {}
         for a in states.get("character_appearances", []):
             appear_entity[a["id"]] = a.get("entity", "")
-        mind_entity: dict[str, str] = {}
-        for m in states.get("character_minds", []):
-            mind_entity[m["id"]] = m.get("entity", "")
         pstate_entity: dict[str, str] = {}
         for p in states.get("prop_states", []):
             pstate_entity[p["id"]] = p.get("entity", "")
@@ -200,19 +206,6 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
                 elif len(covers) > 1:
                     errors.append(
                         f'event {eid}: character "{cid}" has multiple appearances: {covers}'
-                    )
-
-            # Character mind coverage
-            for cid in event_characters.get(eid, set()):
-                covers = [
-                    sid for sid, evts in mind_map.items()
-                    if eid in evts and mind_entity.get(sid) == cid
-                ]
-                if len(covers) == 0:
-                    errors.append(f'event {eid}: character "{cid}" has no character_mind')
-                elif len(covers) > 1:
-                    errors.append(
-                        f'event {eid}: character "{cid}" has multiple minds: {covers}'
                     )
 
             # Location state coverage
@@ -292,6 +285,42 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
                         f'shot {sid}: focus_on "{ref}" not active during event "{eid}"'
                     )
 
+    # === act files → events dialogues (screenplay dialogue extraction completeness) ===
+    # Build event_dialogue_set early (also used by shots→events check below)
+    event_dialogue_set: set[tuple[str, str]] = set()
+    for eid, dials in event_dialogues.items():
+        for d in dials:
+            event_dialogue_set.add((d.get("speaker", ""), d.get("text", "")))
+
+    if events:
+        # Collect all dialogue beats from act-*.json files
+        act_dialogue_set: set[tuple[str, str]] = set()  # (speaker, text)
+        act_files = sorted(project.glob("act-*.json"))
+        for act_file in act_files:
+            act_data = _load_json(act_file)
+            if not act_data:
+                continue
+            for scene in act_data.get("scenes", []):
+                for beat in scene.get("beats", []):
+                    if beat.get("type") == "dialogue":
+                        speaker = beat.get("speaker", "")
+                        text = beat.get("text", "")
+                        if speaker and text:
+                            act_dialogue_set.add((speaker, text))
+
+        if act_dialogue_set:
+            missing_from_events = act_dialogue_set - event_dialogue_set
+            if missing_from_events:
+                errors.append(
+                    f'{len(missing_from_events)} dialogue(s) in screenplay not extracted to events.json'
+                )
+                for speaker, text in list(missing_from_events)[:5]:
+                    errors.append(
+                        f'  missing: speaker="{speaker}", text="{text[:40]}..."'
+                    )
+                if len(missing_from_events) > 5:
+                    errors.append(f'  ... and {len(missing_from_events) - 5} more')
+
     # === shots dialogues → events dialogues ===
     if shots and events:
         # Collect all dialogues from shots, keyed by (speaker, text)
@@ -299,12 +328,6 @@ def validate_director_output(project_path: str) -> dict[str, Any]:
         for s in shots.get("shots", []):
             for d in s.get("dialogues", []):
                 shot_dialogues.append((d.get("speaker", ""), d.get("text", ""), s["id"]))
-
-        # Collect all dialogues from events
-        event_dialogue_set: set[tuple[str, str]] = set()
-        for eid, dials in event_dialogues.items():
-            for d in dials:
-                event_dialogue_set.add((d.get("speaker", ""), d.get("text", "")))
 
         # Check no event dialogue is missing from shots
         shot_dialogue_set: set[tuple[str, str]] = set()
@@ -453,7 +476,6 @@ def _build_report(
     if states:
         summary["states"] = (
             len(states.get("character_appearances", []))
-            + len(states.get("character_minds", []))
             + len(states.get("prop_states", []))
             + len(states.get("location_states", []))
         )

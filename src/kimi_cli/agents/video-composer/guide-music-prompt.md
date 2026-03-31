@@ -1,6 +1,6 @@
 # Music Prompt 编写规范
 
-> 为每个 BGM 分段编写 GenerateMusic 的 prompt 时，参考本文件。
+> 为每首 BGM 主题曲编写 GenerateMusic 的 prompt 时，参考本文件。
 
 ## 基本规则
 
@@ -31,17 +31,28 @@
 | cyberpunk / sci-fi | electronic, synth, ambient, industrial |
 | vintage / retro | jazz, lo-fi, warm analog |
 
-## 从 bgm 描述翻译
+## 主题曲 Prompt 写法
+
+主题曲会在多个场景中复用，prompt 应描述**通用氛围和风格**，不绑定具体事件情节。
 
 <example>
-| 中文 bgm 描述 | 英文 Music Prompt |
-|---------------|------------------|
+| 主题曲定位 | 英文 Music Prompt |
+|-----------|------------------|
+| 温暖日常主题（贯穿全片的主基调） | Warm whimsical folk, acoustic guitar arpeggios, soft glockenspiel, gentle flute, cozy and tender, moderate tempo, cinematic cartoon underscore |
+| 紧张/悬疑主题（冲突与挑战段落） | Cautious tension, low pizzicato strings, soft hand percussion, muted woodwinds, steady pulse, cinematic underscore, understated and building |
+| 欢快冒险主题 | Bright upbeat orchestral, adventurous and cheerful, woodwinds and strings, moderate tempo, playful and energetic |
+| 史诗/高潮主题 | Epic orchestral, powerful brass and percussion, soaring strings, triumphant, building intensity |
+| 安静/留白 | 不生成（标记为 silence，由编排决定静默区间） |
+</example>
+
+## 从中文情绪描述翻译
+
+<example>
+| 中文描述 | 英文 Music Prompt |
+|---------|------------------|
 | 轻柔的木吉他指弹，温馨家庭氛围 | Gentle acoustic fingerstyle guitar, warm and cozy family atmosphere, soft folk melody |
 | 紧张的弦乐震音，危险逼近 | Tense tremolo strings, rising suspense, dark orchestral, danger approaching |
-| 明快的管弦乐，冒险出发的欢快感 | Bright upbeat orchestral, adventurous and cheerful, woodwinds and strings, moderate tempo |
 | 诡异的音乐盒旋律 | Eerie music box melody, unsettling, detuned, slow tempo, creepy nursery rhyme |
-| 宏大的管弦乐高潮 | Epic orchestral climax, powerful brass and percussion, soaring strings, triumphant |
-| 安静，只有环境音 | 不生成（silence 分段跳过） |
 </example>
 
 ## 写作技巧

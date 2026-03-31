@@ -78,11 +78,15 @@
 
 对每个需要生成的状态：
 1. 读取状态的视觉描述（CharacterAppearance 的 visual、LocationState 的 lighting/atmosphere 等）
-2. 基于描述和全局风格，设计该状态的视觉方案：
+2. 确定对应的实体基础图路径：`{project_path}/assets/images/{entity_id}.png`（Step 2 已生成）
+3. 基于描述和全局风格，设计该状态的视觉方案：
    - 与实体基础图保持一致的基础特征
    - 突出状态变化的视觉差异
-3. 组装 prompt，将对应实体图作为 reference_image_paths 传入（确保一致性）
-4. 生成图片，路径：`{project_path}/assets/images/{state_id}.png`
+4. 调用 GenerateImage，**必须传入以下参数**：
+   - `prompt`: 按 guide-prompt.md 组装（style_prefix 在 prompt 开头）
+   - `reference_image_paths`: **必须传入对应实体基础图路径**，如 `["{project_path}/assets/images/loc_farm_yard.png"]`（lstate → loc 图），`["{project_path}/assets/images/char_pony.png"]`（appear → char 图）。这是保证状态图与实体图视觉风格一致的关键机制（provider 会将参考图作为视觉输入），**不可省略**
+   - `negative_prompt`: 传入 negative_prefix + 通用排除项
+   - `output_path`: `{project_path}/assets/images/{state_id}.png`
 5. 用 ReadMediaFile 审查：
    - 与实体图的角色/场景是否一致（不能变成另一个人/地方）
    - 状态变化是否体现（换装后衣服确实变了）
@@ -91,7 +95,18 @@
 
 ### Step 4: 写回结果
 
-读取当前 `{project_path}/states.json`，为每个状态节点添加 `reference_image` 字段：
+#### 4a. 更新 entities.json
+
+读取当前 `{project_path}/entities.json`，为每个生成了图片的实体（角色、场景、道具）添加 `reference_image` 字段：
+
+- 生成成功：绝对路径指向 `{project_path}/assets/images/{entity_id}.png`
+- 生成失败：null
+
+用 WriteFile 写回 entities.json。
+
+#### 4b. 更新 states.json
+
+读取当前 `{project_path}/states.json`，为 `character_appearances`、`location_states`、`prop_states` 中的状态节点添加 `reference_image` 字段：
 
 - 生成成功的状态：绝对路径指向图片文件
 - 去重跳过的状态：绝对路径指向对应实体图
@@ -110,6 +125,7 @@
 ## 输出
 
 - `{project_path}/assets/images/` 下的参考图文件
+- 更新后的 `entities.json`（每个实体增加 reference_image 字段）
 - 更新后的 `states.json`（每个状态节点增加 reference_image 字段）
 
 ## 错误处理

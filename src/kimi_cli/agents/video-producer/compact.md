@@ -13,7 +13,7 @@ The above is a list of messages in a **video production producer** agent convers
    - 参考图：实体图成功/失败数、状态图成功/失败数
    - 视频片段：成功/失败/总数（从 generation-status.json 摘要）
    - BGM：成功/失败/总数（从 music-status.json 摘要）
-   - 成片：最近一次输出路径、attempt 编号
+   - 成片：最近一次输出路径、video 编号
 7. **User confirmations**: 用户已确认的阶段（剧本 / 制作计划 / 成片）
 8. **Pending issues**: 未解决的错误（错误码、错误消息、出自哪个 agent）、用户的修改要求
 9. **Key file paths**: meta.json / entities.json / events.json / states.json / shots.json / generation-status.json / music-status.json 的项目相对路径（不需要逐个列出内容）
@@ -50,7 +50,7 @@ The above is a list of messages in a **video production producer** agent convers
 - current_phase: [需求确认 / 项目初始化 / 剧本创作 / 制作规划 / 美术设计 / 摄影+作曲 / 后期组装 / 交付]
 - next_action: [下一步要做什么]
 - user_confirmed: [已确认的阶段列表]
-- attempt_n: [N]（成片输出编号，首次为 1）
+- video_n: [N]（成片输出编号，首次为 1）
 </workflow_state>
 
 <screenplay_summary>
@@ -73,7 +73,7 @@ The above is a list of messages in a **video production producer** agent convers
 - 参考图（状态）: 成功 [N] / 跳过 [N] / 失败 [N]
 - 视频片段: 成功 [N] / 失败 [N] / 总 [N]
 - BGM: 成功 [N] / 失败 [N] / 总 [N]
-- 成片: [attempt_N.mp4 路径 or 未生成]
+- 成片: [video_N.mp4 路径 or 未生成]
 </asset_status>
 
 <pending_issues>

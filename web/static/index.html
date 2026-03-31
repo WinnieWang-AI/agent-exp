@@ -18,6 +18,7 @@
 <script src="/static/plan-compare-graph.js" defer></script>
 <script src="/static/screenplay-viewer.js" defer></script>
 <script src="/static/director-viewer.js" defer></script>
+<script src="/static/video-viewer.js" defer></script>
 <style>
 :root {
   --bg: #0f1117;
@@ -595,12 +596,38 @@ body {
 .sidebar-tab.active { color:var(--producer-color); border-bottom-color:var(--producer-color); }
 .sidebar-tab.has-data { color:var(--text-mid); }
 
+/* Sub-tabs inside screenplay panel */
+.sp-sub-tabs { display:flex; gap:0; margin-bottom:12px; border-bottom:1px solid var(--border); }
+.sp-sub-tab { padding:6px 14px; font-size:11px; font-weight:600; color:var(--text-dim); background:transparent; border:none; border-bottom:2px solid transparent; cursor:pointer; transition:all 0.15s; }
+.sp-sub-tab:hover { color:var(--text-mid); }
+.sp-sub-tab.active { color:var(--producer-color); border-bottom-color:var(--producer-color); }
+.sp-sub-tab .sp-sub-tab-count { font-weight:400; color:var(--text-dim); margin-left:4px; font-size:10px; }
+.sp-sub-panel { display:none; }
+.sp-sub-panel.active { display:block; }
+/* Entity scene appearances */
+.sp-entity-appearances { margin-top:6px; padding-top:4px; border-top:1px solid var(--border); }
+.sp-entity-appear-item { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; cursor:pointer; color:var(--text-mid); transition:color 0.15s; }
+.sp-entity-appear-item:hover { color:var(--producer-color); }
+.sp-entity-appear-num { width:18px; height:18px; display:flex; align-items:center; justify-content:center; background:rgba(245,158,11,0.1); color:var(--producer-color); border-radius:50%; font-size:9px; font-weight:600; flex-shrink:0; }
+
 /* ---- Director Viewer Styles ---- */
-#sp-story-panel, #dr-story-panel { display:none; }
-#sp-story-panel.active, #dr-story-panel.active { display:block; }
+#sp-story-panel, #dr-story-panel, #vv-story-panel { display:none; }
+#sp-story-panel.active, #dr-story-panel.active, #vv-story-panel.active { display:block; }
 .dr-summary-bar { display:flex; gap:12px; align-items:center; padding:8px 0; margin-bottom:8px; font-size:11px; color:var(--text-dim); border-bottom:1px solid var(--border); }
 .dr-summary-stat { display:flex; align-items:center; gap:3px; }
 .dr-summary-stat .dr-num { font-weight:700; color:var(--text); font-size:12px; }
+.dr-act-block { margin-bottom:12px; background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
+.dr-act-header { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--surface2); border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
+.dr-act-header:hover { background:var(--surface3); }
+.dr-act-toggle { font-size:11px; color:var(--text-dim); transition:transform 0.2s; }
+.dr-act-toggle.open { transform:rotate(90deg); }
+.dr-act-title { font-size:13px; font-weight:600; }
+.dr-act-events { display:none; }
+.dr-act-events.open { display:block; }
+.dr-act-events .dr-evt-block { margin-bottom:0; border:none; border-radius:0; border-bottom:1px solid var(--border); background:transparent; }
+.dr-act-events .dr-evt-block:last-child { border-bottom:none; }
+.dr-act-events .dr-evt-header { border-bottom:none; }
+.dr-evt-num { flex-shrink:0; width:22px; height:22px; display:flex; align-items:center; justify-content:center; background:rgba(74,125,224,0.15); color:var(--accent-blue); border-radius:50%; font-size:10px; font-weight:600; }
 .dr-evt-block { margin-bottom:8px; background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; }
 .dr-evt-header { display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--surface2); border-bottom:1px solid var(--border); cursor:pointer; user-select:none; }
 .dr-evt-header:hover { background:var(--surface3); }
@@ -634,10 +661,112 @@ body {
 .dr-shot-content { font-size:11px; color:var(--text-mid); line-height:1.5; margin-bottom:4px; }
 .dr-shot-audio { font-size:10px; color:var(--text-dim); }
 .dr-shot-audio span { margin-right:8px; }
+.dr-shot-audio-player { margin:4px 0 2px; }
+.dr-shot-audio-player audio { width:100%; height:28px; }
+.dr-bgm-timeline { margin-bottom:12px; }
+.dr-bgm-segment { padding:6px 8px; background:var(--surface2); border-radius:var(--radius-sm); margin-bottom:4px; border-left:3px solid var(--accent-purple); }
+.dr-bgm-segment.failed { border-left-color:var(--accent-red); opacity:0.6; }
+.dr-bgm-seg-header { display:flex; justify-content:space-between; align-items:center; }
+.dr-bgm-seg-time { font-size:11px; font-family:var(--font-mono); color:var(--accent-purple); }
+.dr-bgm-seg-dur { font-size:10px; color:var(--text-dim); }
+.dr-bgm-seg-desc { font-size:11px; color:var(--text-mid); margin-top:2px; }
+.dr-final-output { margin-bottom:12px; padding:8px; background:var(--surface2); border-radius:6px; }
+.dr-final-video { width:100%; border-radius:4px; margin-top:4px; }
+.dr-shot-video { width:100%; border-radius:4px; margin:4px 0; }
+
+/* ==== Video Viewer ==== */
+.vv-section { margin-bottom:20px; }
+.vv-section-title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:8px; display:flex; align-items:baseline; gap:8px; }
+.vv-section-meta { font-size:11px; font-weight:400; color:var(--text-dim); }
+.vv-empty { font-size:11px; color:var(--text-dim); padding:8px 0; }
+.vv-final-video-wrap { background:var(--surface2); border-radius:6px; padding:8px; }
+.vv-final-video { width:100%; border-radius:4px; }
+.vv-final-label { font-size:11px; color:var(--text-dim); margin-top:4px; text-align:center; }
+
+/* Timeline */
+.vv-timeline-wrap { overflow-x:auto; padding-bottom:8px; }
+.vv-tl-ruler { position:relative; height:20px; margin-bottom:2px; margin-left:48px; }
+.vv-tl-tick { position:absolute; top:0; height:100%; border-left:1px solid var(--border); }
+.vv-tl-tick span { position:absolute; top:0; left:3px; font-size:9px; color:var(--text-dim); font-family:var(--font-mono); white-space:nowrap; }
+.vv-tl-track { position:relative; display:flex; align-items:stretch; min-height:32px; margin-bottom:4px; }
+.vv-tl-track-label { width:48px; flex-shrink:0; font-size:10px; font-weight:600; color:var(--text-dim); display:flex; align-items:center; justify-content:flex-end; padding-right:4px; }
+.vv-tl-track-bar { position:relative; flex-shrink:0; background:var(--surface2); border-radius:3px; min-height:32px; }
+.vv-tl-clip { position:absolute; top:2px; bottom:2px; border-radius:3px; overflow:hidden; cursor:pointer; display:flex; align-items:center; padding:0 4px; transition:opacity 0.15s; }
+.vv-tl-clip:hover { opacity:0.85; }
+.vv-tl-clip.done { opacity:1; }
+.vv-tl-clip.failed { opacity:0.4; background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,0.15) 3px,rgba(0,0,0,0.15) 6px) !important; }
+.vv-tl-clip.pending { opacity:0.5; }
+.vv-tl-clip-label { font-size:9px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 2px rgba(0,0,0,0.5); }
+.vv-tl-audio { background:var(--accent-purple); cursor:default; }
+.vv-tl-trans { font-size:8px; color:rgba(255,255,255,0.8); margin-left:2px; }
+
+/* Assets */
+.vv-asset-group { margin-bottom:14px; }
+.vv-asset-group-title { font-size:12px; font-weight:600; color:var(--text-mid); margin-bottom:6px; display:flex; align-items:baseline; gap:6px; }
+.vv-asset-count { font-size:10px; font-weight:400; color:var(--text-dim); }
+.vv-asset-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:8px; }
+.vv-asset-card { background:var(--surface2); border-radius:var(--radius-sm); overflow:hidden; cursor:pointer; transition:box-shadow 0.15s; border:1px solid var(--border); }
+.vv-asset-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.15); }
+.vv-asset-card-preview { height:80px; background:#000; display:flex; align-items:center; justify-content:center; }
+.vv-asset-card-preview video { width:100%; height:100%; object-fit:cover; }
+.vv-asset-card-info { padding:6px 8px; }
+.vv-asset-card-name { font-size:10px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.vv-asset-card-meta { font-size:9px; color:var(--text-dim); margin-top:2px; }
+.vv-asset-audio-row { display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--surface2); border-radius:var(--radius-sm); margin-bottom:4px; border-left:3px solid var(--accent-purple); }
+.vv-asset-audio-info { flex:1; min-width:0; }
+.vv-asset-audio-name { font-size:11px; font-weight:600; color:var(--text); display:block; }
+.vv-asset-audio-desc { font-size:10px; color:var(--text-mid); display:block; }
+.vv-asset-audio-time { font-size:10px; color:var(--text-dim); font-family:var(--font-mono); display:block; }
+
+/* Video preview lightbox */
+.vv-lightbox { display:none; position:fixed; inset:0; z-index:10001; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; cursor:pointer; }
+.vv-lightbox-video { max-width:80%; max-height:80%; border-radius:8px; }
 /* Director detail view */
 .dr-detail-title { font-size:15px; font-weight:600; margin-bottom:4px; }
 .dr-detail-desc { font-size:12px; color:var(--text-dim); line-height:1.6; font-style:italic; margin-bottom:12px; }
 .dr-detail-meta { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+/* Reference image thumbnails */
+.ref-img-thumb { width:56px; height:56px; object-fit:cover; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; transition:opacity 0.15s; }
+.ref-img-thumb:hover { opacity:0.8; }
+.dr-entity-img { display:inline-block; vertical-align:middle; margin:2px 6px 2px 0; }
+/* Entity cards (consolidated ref image + states) */
+.dr-entity-list { margin-bottom:8px; }
+.dr-entity-card { margin-bottom:6px; }
+.dr-entity-card-row { display:flex; gap:8px; align-items:flex-start; }
+.dr-entity-card-img { width:48px; height:48px; flex-shrink:0; }
+.dr-entity-card-info { flex:1; min-width:0; }
+.dr-entity-state-row { display:flex; align-items:center; gap:4px; margin-top:2px; flex-wrap:wrap; }
+.dr-entity-state-img { width:32px; height:32px; flex-shrink:0; }
+.dr-entity-state-label { font-size:10px; color:var(--text-dim); font-weight:500; }
+.dr-entity-state-detail { font-size:9px; color:var(--text-dim); opacity:0.8; }
+/* Shot generation info */
+.dr-shot-gen-mode { display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap; }
+.dr-gen-mode-badge { font-size:10px; padding:1px 6px; border-radius:8px; background:rgba(91,141,239,0.2); color:var(--accent-blue); font-weight:500; }
+.dr-gen-model { font-size:9px; color:var(--text-dim); }
+.dr-shot-ref-images { display:flex; align-items:center; gap:4px; margin-bottom:4px; flex-wrap:wrap; }
+.dr-shot-ref-label { font-size:9px; color:var(--text-dim); flex-shrink:0; }
+.dr-shot-ref-thumb { width:36px; height:36px; }
+.dr-shot-reasoning { font-size:9px; color:var(--text-dim); margin-bottom:4px; font-style:italic; line-height:1.3; }
+/* State matrix */
+.dr-state-matrix-wrap { overflow-x:auto; margin-bottom:12px; }
+.dr-state-matrix { border-collapse:collapse; font-size:10px; min-width:100%; }
+.dr-state-matrix th, .dr-state-matrix td { padding:4px 6px; border:1px solid var(--border); text-align:center; vertical-align:middle; white-space:nowrap; }
+.dr-state-matrix th { background:var(--surface2); font-weight:600; color:var(--text-dim); position:sticky; top:0; z-index:1; }
+.dr-state-matrix th.dr-sm-entity-col { text-align:left; position:sticky; left:0; z-index:2; background:var(--surface2); min-width:80px; }
+.dr-state-matrix td.dr-sm-entity-col { text-align:left; position:sticky; left:0; z-index:1; background:var(--surface); font-weight:500; }
+.dr-state-matrix th.dr-sm-evt-col { max-width:60px; overflow:hidden; text-overflow:ellipsis; writing-mode:vertical-lr; transform:rotate(180deg); height:60px; font-size:9px; }
+.dr-state-matrix td.dr-sm-cell { padding:2px; }
+.dr-sm-cell-content { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.dr-sm-cell-img { width:28px; height:28px; object-fit:cover; border-radius:3px; border:1px solid var(--border); cursor:pointer; }
+.dr-sm-cell-label { font-size:8px; color:var(--text-dim); max-width:60px; overflow:hidden; text-overflow:ellipsis; }
+.dr-sm-empty { color:var(--border); font-size:9px; }
+.dr-sm-entity-kind { font-size:8px; color:var(--text-dim); font-weight:400; margin-left:4px; }
+/* Shot video preview */
+.dr-shot-video { width:100%; max-height:200px; border-radius:var(--radius-sm); margin:4px 0; background:#000; }
+/* Lightbox */
+.viewer-lightbox { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; cursor:pointer; }
+.viewer-lightbox.open { display:flex; }
+.viewer-lightbox img { max-width:90vw; max-height:90vh; object-fit:contain; border-radius:6px; }
 </style>
 </head>
 <body>
@@ -706,6 +835,7 @@ body {
         <div class="sidebar-tabs">
           <button class="sidebar-tab active" id="sidebar-tab-sp" onclick="sidebarSwitchTab('screenplay')">Screenplay</button>
           <button class="sidebar-tab" id="sidebar-tab-dr" onclick="sidebarSwitchTab('director')">Director</button>
+          <button class="sidebar-tab" id="sidebar-tab-vv" onclick="sidebarSwitchTab('video')">Video</button>
         </div>
         <span id="sp-sidebar-meta"></span>
         <div style="margin-left:auto;display:flex;gap:4px;align-items:center;">
@@ -718,6 +848,7 @@ body {
       <div id="sp-sidebar-body">
         <div id="sp-story-panel" class="active"></div>
         <div id="dr-story-panel"></div>
+        <div id="vv-story-panel"></div>
       </div>
     </div>
   </div>
@@ -1453,6 +1584,25 @@ function routeWire(tab, wd, agent, depth) {
           spDetectScreenplayWrite(fp);
           // Director file detection
           if (typeof drDetectWrite === 'function') drDetectWrite(fp);
+          // Video viewer: detect final video output
+          if (fp.match(/output\/video_\d+\.mp4$/)) {
+            const dir = fp.substring(0, fp.indexOf('/output/'));
+            if (dir) { vvProjectBase = dir; vvScheduleRefresh(); }
+          }
+        } catch {}
+      }
+      // VideoEdit tool: detect output_path in arguments
+      if (name === 'VideoEdit' && p.function?.arguments) {
+        try {
+          const args = typeof p.function.arguments === 'string' ? JSON.parse(p.function.arguments) : p.function.arguments;
+          const op = args.output_path || '';
+          if (op.match(/output\/video_\d+\.mp4$/)) {
+            const dir = op.substring(0, op.indexOf('/output/'));
+            if (dir) { vvProjectBase = dir; }
+            // Delay refresh to wait for tool to complete
+            clearTimeout(window._vvVideoEditTimer);
+            window._vvVideoEditTimer = setTimeout(() => { if (typeof vvScheduleRefresh === 'function') vvScheduleRefresh(); }, 5000);
+          }
         } catch {}
       }
       if (name === 'ValidateStoryGraph') {
@@ -2648,6 +2798,7 @@ function spDetectScreenplayWrite(filePath) {
 
 function drDetectWrite(filePath) {
   const basename = filePath.split('/').pop();
+  // Core director files: initialize viewer + refresh
   if (['events.json', 'states.json', 'shots.json'].includes(basename)) {
     const dir = filePath.substring(0, filePath.lastIndexOf('/'));
     if (dir) {
@@ -2657,22 +2808,51 @@ function drDetectWrite(filePath) {
       spOpenSidebar('director');
       clearTimeout(window._drRefreshTimer);
       window._drRefreshTimer = setTimeout(() => { if (typeof drLoadData === 'function') drLoadData(); }, 1500);
+      // Sync video viewer project base
+      if (basename === 'shots.json') {
+        vvProjectBase = dir;
+        vvScheduleRefresh();
+      }
+    }
+    return true;
+  }
+  // Supplementary files: only refresh if director viewer already active
+  if (['entities.json', 'generation-status.json', 'music-status.json'].includes(basename) && currentDirectorPath) {
+    clearTimeout(window._drRefreshTimer);
+    window._drRefreshTimer = setTimeout(() => { if (typeof drLoadData === 'function') drLoadData(); }, 1500);
+    // Also refresh video viewer when composition-related files change
+    // (shots.json is handled in the first if block above, not here)
+    if (['generation-status.json', 'music-status.json'].includes(basename)) {
+      vvScheduleRefresh();
     }
     return true;
   }
   return false;
 }
 
+function vvScheduleRefresh() {
+  // Sync project base from director path
+  if (!vvProjectBase && typeof currentDirectorPath !== 'undefined' && currentDirectorPath) {
+    vvProjectBase = currentDirectorPath;
+  }
+  clearTimeout(window._vvRefreshTimer);
+  window._vvRefreshTimer = setTimeout(() => { if (typeof vvLoadData === 'function') vvLoadData(); }, 2000);
+}
+
 function sidebarSwitchTab(which) {
   _activeSidebarTab = which;
   const spTab = document.getElementById('sidebar-tab-sp');
   const drTab = document.getElementById('sidebar-tab-dr');
+  const vvTab = document.getElementById('sidebar-tab-vv');
   const spPanel = document.getElementById('sp-story-panel');
   const drPanel = document.getElementById('dr-story-panel');
+  const vvPanel = document.getElementById('vv-story-panel');
   if (spTab) spTab.classList.toggle('active', which === 'screenplay');
   if (drTab) drTab.classList.toggle('active', which === 'director');
+  if (vvTab) vvTab.classList.toggle('active', which === 'video');
   if (spPanel) spPanel.classList.toggle('active', which === 'screenplay');
   if (drPanel) drPanel.classList.toggle('active', which === 'director');
+  if (vvPanel) vvPanel.classList.toggle('active', which === 'video');
   // Update nav buttons for active tab
   _sidebarUpdateNav();
   // Update meta
@@ -2683,6 +2863,17 @@ function sidebarSwitchTab(which) {
     if (metaEl) metaEl.textContent = parts.join(' · ');
   } else if (which === 'director' && typeof drGetMeta === 'function') {
     if (metaEl) metaEl.textContent = drGetMeta();
+  } else if (which === 'video') {
+    const vParts = [];
+    if (drMeta && drMeta.video_info) {
+      const vi = drMeta.video_info;
+      if (vi.aspect_ratio) vParts.push(vi.aspect_ratio);
+      if (vi.duration) vParts.push(vi.duration);
+      if (vi.language) vParts.push(vi.language);
+    }
+    if (typeof vvFinalVideos !== 'undefined' && vvFinalVideos.length) vParts.push(`${vvFinalVideos.length} videos`);
+    if (metaEl) metaEl.textContent = vParts.length ? vParts.join(' · ') : '';
+    if (typeof vvOnTabActivate === 'function') vvOnTabActivate();
   } else {
     if (metaEl) metaEl.textContent = 'No data yet';
   }
@@ -2697,12 +2888,17 @@ function _sidebarUpdateNav() {
     if (back) { back.onclick = () => spShowOutline(); back.style.display = spCurrentView === 'scene' ? '' : 'none'; }
     if (prev) { prev.onclick = () => spNavigateScene(-1); prev.style.display = spCurrentView === 'scene' ? '' : 'none'; }
     if (next) { next.onclick = () => spNavigateScene(1); next.style.display = spCurrentView === 'scene' ? '' : 'none'; }
-  } else {
+  } else if (_activeSidebarTab === 'director') {
     // Director nav
     const inDetail = typeof drCurrentView !== 'undefined' && drCurrentView === 'detail';
     if (back) { back.onclick = () => { if (typeof drShowOverview === 'function') drShowOverview(); }; back.style.display = inDetail ? '' : 'none'; }
     if (prev) { prev.onclick = () => { if (typeof drNavigateEvent === 'function') drNavigateEvent(-1); }; prev.style.display = inDetail ? '' : 'none'; }
     if (next) { next.onclick = () => { if (typeof drNavigateEvent === 'function') drNavigateEvent(1); }; next.style.display = inDetail ? '' : 'none'; }
+  } else {
+    // Video tab: no nav
+    if (back) back.style.display = 'none';
+    if (prev) prev.style.display = 'none';
+    if (next) next.style.display = 'none';
   }
 }
 
@@ -3145,6 +3341,20 @@ function fetchAndLoadOpGraph(path) {
     .then(data => renderOpGraph(data))
     .catch(err => console.warn('Failed to load operation graph:', err.message));
 }
+</script>
+<div class="viewer-lightbox" id="viewer-lightbox" onclick="closeLightbox()">
+  <img id="viewer-lightbox-img" src="" alt="reference image" onclick="event.stopPropagation()">
+</div>
+<script>
+function openLightbox(src) {
+  const lb = document.getElementById('viewer-lightbox');
+  document.getElementById('viewer-lightbox-img').src = src;
+  lb.classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('viewer-lightbox').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 </script>
 </body>
 </html>

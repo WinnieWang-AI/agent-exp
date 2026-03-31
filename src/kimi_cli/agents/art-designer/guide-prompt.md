@@ -12,7 +12,7 @@
 {style_prefix}, {subject description}, {composition}, {background/environment}, {lighting}
 ```
 
-- **style_prefix**：从 meta.json 提取，放在 prompt 最前面，确保风格一致
+- **style_prefix**：从 meta.json 提取，放在 prompt 最前面，确保风格一致。**注意**：style_prefix 应只含画风/色调/质感描述。如果其中混入了场景/环境词（如 "modern city", "forest landscape"），在角色和道具参考图中必须跳过这些词，只保留风格部分
 - **subject description**：角色/场景/道具的具体视觉描述
 - **composition**：构图指示（full body, close-up, wide shot 等）
 - **background/environment**：背景描述
@@ -36,7 +36,7 @@ hand-drawn illustration, warm color palette, a 7-year-old girl with brown curly 
 
 - **必须包含**：年龄/体型、发型发色、服装材质和颜色、标志性配饰
 - **构图固定**：full body front view, head to toe visible, centered
-- **背景固定**：pure white background
+- **背景固定**：pure white background —— 无论 style_prefix 写了什么环境词，角色参考图的背景必须是纯白，不可出现任何场景元素
 - 避免动作描述（参考图是静态展示，不是动态场景）
 - 避免表情描述（保持中性表情，后续状态图再加表情）
 
@@ -61,27 +61,25 @@ hand-drawn illustration, warm color palette, a woven rattan basket with red and 
 ```
 </example>
 
-- **构图固定**：product shot, centered, pure white background
+- **构图固定**：product shot, centered, pure white background —— 同角色图，道具背景必须纯白，跳过 style_prefix 中的任何环境词
 - 描述材质和状态细节
 - 保持与角色图同样的画风
 
 ## 状态图 Prompt 补充
 
-状态图在实体图基础上修改，prompt 需要：
+状态图在实体图基础上修改：
 - 保留实体的基础特征描述（不能丢失身份信息）
 - 添加状态变化的描述（换装、受伤、光照变化等）
-- 使用 reference_image_paths 传入实体图，确保一致性
-
-<example>
-角色状态图（受伤状态）：
-```
-hand-drawn illustration, warm color palette, a 7-year-old girl with brown curly hair wearing a torn red velvet hooded cloak, dirt on face, scratches on arms, white dress stained with mud, full body front view, head to toe visible, centered, pure white background, soft even lighting
-```
-</example>
+- **必须** 通过 `reference_image_paths` 传入对应实体基础图（`lstate_*` → `loc_*.png`，`appear_*` → `char_*.png`，`pstate_*` → `prop_*.png`），确保风格和视觉一致
 
 <example>
 场景状态图（夜晚状态）：
-```
-hand-drawn illustration, dark cool palette, a cozy wooden cottage in a forest clearing at night, warm light glowing from windows, full moon visible through bare tree branches, no people, establishing shot, moonlight and window light
-```
+- prompt: `hand-drawn illustration, dark cool palette, a cozy wooden cottage in a forest clearing at night, warm light glowing from windows, full moon visible through bare tree branches, no people, establishing shot, moonlight and window light`
+- reference_image_paths: `["{project_path}/assets/images/loc_home.png"]`
+</example>
+
+<example>
+角色状态图（受伤状态）：
+- prompt: `hand-drawn illustration, warm color palette, a 7-year-old girl with brown curly hair wearing a torn red velvet hooded cloak, dirt on face, scratches on arms, white dress stained with mud, full body front view, head to toe visible, centered, pure white background, soft even lighting`
+- reference_image_paths: `["{project_path}/assets/images/char_red.png"]`
 </example>

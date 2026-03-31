@@ -29,7 +29,7 @@
 ```
 ManageVideoProject(
   action="init",
-  project_path="{working_dir}/projects/{project_name}",
+  project_path="${SESSION_OUTPUT_DIR}/{project_name}",
   metadata={
     "session_ids": {
       "screenwriter": "screenwriter_{project_name}",
@@ -91,12 +91,11 @@ prompt: 创意简报内容（见下方）
 ```
 subagent_name: "video-screenwriter"
 session_id: "screenwriter_{project_name}"
-prompt: 用户的修改意见（不传 context_files，编剧已有记忆）
+prompt: 用户的修改意见
 ```
 
 编剧会在已有剧本基础上做局部修改，不需要从头重写。修改完成后重新汇报，再次等待用户确认。
 
 ## 错误处理
 
-- **编剧返回错误**：原样转达用户，不尝试自己创作。
 - **用户需求不明确**：回到 Step 1 补充确认。

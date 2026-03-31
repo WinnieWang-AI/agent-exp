@@ -6,6 +6,7 @@
 - `meta.json` — style_prefix、negative_prefix、aspect_ratio、language
 - `states.json` — 状态视觉描述 + active_during 映射 + reference_image 路径
 - `shots.json` — shot 列表 + shot_order（全局播放顺序）+ total_duration_seconds
+- `events.json` — 事件列表（event_id、characters、location、state_changes）
 - `assets/images/` — 参考图文件
 
 ## 步骤
@@ -21,43 +22,67 @@
 读取以下文件并建立索引：
 
 1. `{project_path}/meta.json` — 提取：
-   - `production_styles[0].style_prefix` — 风格前缀
-   - `production_styles[0].negative_prefix` — 负面提示
+   - `style.style_prefix` — 风格前缀
+   - `style.negative_prefix` — 负面提示
    - `video_info.aspect_ratio` — 画面比例
    - `video_info.language` — 对白语言
 
-2. `{project_path}/states.json` — 建立两个映射：
+2. `{project_path}/states.json` — 建立三个映射：
    - **state_id → 视觉描述**：从 character_appearances / location_states / prop_states 中提取 visual / lighting / atmosphere 等字段
-   - **state_id → reference_image 路径**：提取每个状态的 reference_image 字段（可能为空）
+   - **state_id → reference_image 路径**：从 character_appearances / location_states / prop_states 中提取 reference_image 字段（可能为空）
+   - **event → 实体状态映射**：从 active_during 反向建立 `{event_id: {entity_id: state_id}}` 索引，用于跨 event 状态对比
 
 3. `{project_path}/shots.json` — 提取：
    - `shots` 数组（全部 shot 数据）
    - `shot_order` 数组（全局播放顺序）
 
-4. 检查断点：如果 `{project_path}/generation-status.json` 已存在，读取已完成的 shot ID 列表，后续跳过这些 shot。
+4. `{project_path}/events.json` — 提取每个事件的 `state_changes`（了解哪些事件包含状态转换）
+
+5. 检查断点：如果 `{project_path}/generation-status.json` 已存在，读取每个 shot 的记录，用于断点恢复（见 Step 3 开头）。
 
 ### Step 3: 逐 Shot 决策与执行
 
-按 `shot_order` 顺序遍历每个 shot。对已完成的 shot（在 generation-status.json 中状态为 "done"），跳过。
+按 `shot_order` 顺序遍历每个 shot。根据 generation-status.json 中的记录决定处理方式：
 
-对每个 shot，依次完成以下步骤：
+- `status: "done"` → **跳过**
+- `status: "in_progress"` → 检查 `steps` 中已完成的步骤，**从未完成的步骤继续**（如 video 已完成则跳到 TTS）
+- `status: "failed"` 或无记录 → **全部重做**
 
-#### 3.1 决策：生成模式
+对每个需要处理的 shot，依次完成以下步骤：
 
-按 `guide-shot-strategy.md` 的决策流程推理。核心判断：
+#### 3.1 理解上下文
 
-1. **判断谁出镜**：从 `focus_on` 查出角色/场景/道具的状态 ID
-2. **判断是否需要尾帧接续**：
-   - 同一 event 内的非首个 shot（同 event_id，前一个 shot 已生成）→ 提取前一 shot 尾帧 → `image_to_video`
-   - 不同 event 但在 shot_order 中相邻，且有共同角色 → 可选将前一 shot 尾帧加入 reference_images
-3. **判断首帧可行性**：
-   - 所有角色开头可见 + 动作小 → 生成首帧图 → `image_to_video`
-   - 有角色中途出场 / 大幅运动 → `reference_to_video`
-   - 无参考图 → `text_to_video`
+读取当前 shot 的 `content`、`shot_type`、`angle`、`movement`、`transition_in`、`focus_on`、`event_id`。
 
-#### 3.2 尾帧提取（如需）
+读取前一 shot（shot_order 中的前一个，如有）的 `content`、`shot_type`、`angle`、`event_id`。
 
-当决策需要前一 shot 的尾帧时：
+如果跨 event（两个 shot 的 event_id 不同）：
+- 用 Step 2 建立的 event→实体状态映射，对比前后 event 中共同实体的状态
+- 记录 `unchanged_entities`（状态相同）和 `changed_entities`（状态变了）
+- 状态变了的实体用新状态参考图，状态没变的用同一参考图（见 guide-shot-strategy.md 跨 event 状态对比）
+
+#### 3.2 判断尾帧用法与生成模式
+
+按 guide-shot-strategy.md 的条件定义，依次判断：
+
+**A. 是否为时长拆分？**
+- 条件：当前 shot 与前一 shot 同 event_id，且 shot_type 和 angle 都相同
+- 是 → 提取前一 shot 尾帧，模式 = `image_to_video`，`reference_image_path` = 尾帧路径 → 跳到 3.4（选择参考图并组装 prompt）
+
+**B. 导演是否要展示转换？**（参照 guide-shot-strategy.md "判断导演是否要展示转换"）
+- content 描述从前一状态到当前状态的转换过程，或 transition_in = dissolve
+  → 提取前一 shot 尾帧，放入 reference_images（辅助参考，占一个名额）
+- transition_in = cut，且 content 描述独立场景
+  → 不用尾帧
+
+**C. 选择生成模式**（参照 guide-shot-strategy.md "生成模式判断条件"）
+- 所有角色开头可见 + 动作小 → `image_to_video`（先生成首帧）
+- 有角色中途出场 / 背对镜头 / 大幅运动 → `reference_to_video`
+- 无参考图 → `text_to_video`
+
+#### 3.3 尾帧提取（如需）
+
+当 3.2 判断需要前一 shot 的尾帧时（时长拆分或展示转换）：
 
 ```
 ExtractFrame(
@@ -67,9 +92,15 @@ ExtractFrame(
 )
 ```
 
-#### 3.3 首帧生成（如需）
+#### 3.4 选择参考图 + 首帧生成（如需）
 
-当决策选择 image_to_video 且非尾帧接续时，生成首帧图：
+**选择参考图**（参照 guide-shot-strategy.md "参考图选择规则"）：
+- 从 active_during 查当前 event 中 focus_on 各实体的状态 → 取 reference_image 路径
+- 如果跨 event 有 changed_entities → 用新状态的参考图
+- 3.2B 中的尾帧参考也占一个名额
+- 超出 provider 上限时按优先级截断：角色 > 场景 > 道具 > 尾帧参考
+
+**首帧生成**（仅当 3.2C 选择了 image_to_video 且非时长拆分时）：
 
 ```
 GenerateImage(
@@ -83,7 +114,7 @@ GenerateImage(
 
 首帧 prompt 使用 `@[role N]` 标记（不是 `<<<image_N>>>`）。
 
-#### 3.4 组装 Prompt 并生成
+#### 3.5 组装 Prompt 并生成
 
 按 `guide-prompt-video.md` 的规范组装视频 prompt，覆盖：
 - style_prefix（开头）
@@ -91,12 +122,19 @@ GenerateImage(
 - 画面内容（content）
 - 场景环境（从 focus_on 的 LocationState 查 states.json 的 lighting/atmosphere）
 - 角色外形（从 focus_on 的 CharacterAppearance 查 states.json 的 visual，从简）
-- 角色行为（从 focus_on 查 CharacterMind 的 emotion + behavior，通过 active_during 找到同 event 的 mind 状态）
+- 角色行为（从 events.json 当前事件的 interactions、mood、state_changes 推断角色的情绪和表演）
 - 对白（从 shot 的 dialogues 字段，写入 Sound: 段）
 - 音效（从 shot 的 sfx 字段，写入 Sound: 段）
 - `<<<image_N>>>` 标记（每张 reference_image 对应一个）
 
+**跨镜头 prompt 写法**（当使用了尾帧作为辅助参考时）：
+- 描述角色/场景从前一状态如何过渡到当前状态
+- 用 `"The video starts from <<<image_N>>>"` 标记尾帧为起始画面
+- 如果有状态变化（active_during 对比发现 changed_entities），prompt 中描述变化过程
+
 **Prompt 必须用英文。** 将中文描述翻译为英文自然语言。
+
+**Prompt 组装完成后，执行 guide-prompt-video.md "Prompt 生成后自检" 的 3 点检查。**
 
 ```
 GenerateVideoSync(
@@ -111,20 +149,63 @@ GenerateVideoSync(
 )
 ```
 
-#### 3.5 记录状态
+#### 3.6 对白 TTS 回退
 
-每个 shot 生成后（无论成功或失败），立即更新 `{project_path}/generation-status.json`：
+GenerateVideoSync 的返回结果中包含 `has_audio: true` 或 `has_audio: false`。如果 `has_audio: false`，**且**当前 shot 有 `dialogues`（非空），为每条对白生成 TTS 语音：
+
+```
+GenerateSpeech(
+  text=<dialogue.text>,
+  output_path="{project_path}/assets/audio/tts_{shot_id}_{index}.mp3",
+  voice_id=<按 speaker 分配的语音，见下方>,
+  language=<meta.json video_info.language>
+)
+```
+
+**语音分配**：维护一个 character_id → voice_id 的映射。角色首次说话时分配语音，后续复用。默认分配规则：从实体名称/描述推断性别，男性 → "male-qn-qingse"，女性 → "female-shaonv"，旁白(narrator) → "male-qn-qingse"。
+
+**跳过条件**：
+- GenerateVideoSync 返回 `has_audio: true`（视频已有音频）→ 跳过
+- shot 没有 dialogues → 跳过
+- GenerateSpeech 工具不可用（TTS provider 未配置）→ 跳过，记录 `steps.tts.paths: []`
+
+**TTS 失败处理**：记录 `steps.tts: {"status": "failed", "paths": []}`，继续下一个 shot。不重试。
+
+#### 3.7 记录状态
+
+**分步写入**，每完成一个关键步骤就立即更新 `{project_path}/generation-status.json`：
+
+1. **视频生成后**：立即写入记录，`status: "in_progress"`，`steps.video` 记录结果
+2. **TTS 完成后**（或确认不需要 TTS）：更新 `steps.tts`，将 `status` 改为 `"done"`
+3. 如果视频生成就失败了：直接写 `status: "failed"`
+
+`has_audio` 的值直接取 GenerateVideoSync 返回的 `has_audio` 字段。
+
+不需要 TTS 的 shot（`has_audio: true` 或没有 dialogues），视频生成后直接标 `"done"`。
 
 ```json
 {
   "shots": {
     "evt_farewell_shot_1": {
       "status": "done",
+      "steps": {
+        "video": {"status": "done", "output_path": "assets/shots/evt_farewell_shot_1.mp4", "has_audio": true}
+      },
       "mode": "reference_to_video",
       "reference_images": ["assets/images/appear_red_neat.png"],
       "prompt": "实际使用的完整 prompt",
-      "output_path": "assets/shots/evt_farewell_shot_1.mp4",
-      "reasoning": "event 首 shot，角色开头可见但有走动，选择 reference_to_video"
+      "reasoning": "content 描述独立场景，transition_in=cut，不用尾帧。角色开头可见但有走动，选择 reference_to_video"
+    },
+    "evt_wolf_encounter_shot_1": {
+      "status": "done",
+      "steps": {
+        "video": {"status": "done", "output_path": "assets/shots/evt_wolf_encounter_shot_1.mp4", "has_audio": false},
+        "tts": {"status": "done", "paths": ["assets/audio/tts_evt_wolf_encounter_shot_1_0.mp3"]}
+      },
+      "mode": "reference_to_video",
+      "reference_images": ["assets/images/appear_wolf_natural.png"],
+      "prompt": "...",
+      "reasoning": "Vidu ref2v → no audio. TTS generated for 1 dialogue line."
     },
     "evt_farewell_shot_2": {
       "status": "failed",
@@ -145,10 +226,11 @@ GenerateVideoSync(
 
 ### Step 4: 并行执行
 
-- **同 event 内的连续 shot 必须串行**：后一个 shot 可能需要前一个的尾帧
-- **不同 event 且无尾帧依赖的 shot 可以并行**：在同一个 response 中调用多个 GenerateVideoSync
+- **同 event 内 shot_type+angle 相同的连续 shot 必须串行**：后一个 shot 需要前一个的尾帧
+- **Step 3.2 决定使用尾帧参考时必须等前一 shot 完成**
+- **其他情况下不同 event 的 shot 可以并行**：在同一个 response 中调用多个 GenerateVideoSync
 - 建议每批并行 3-5 个 shot
-- 并行时，每个 shot 的决策（3.1-3.4）在调用前完成，不依赖其他并行 shot 的结果
+- 并行时，每个 shot 的决策（3.1-3.5）在调用前完成，不依赖其他并行 shot 的结果
 
 ### Step 5: 错误处理
 

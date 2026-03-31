@@ -35,15 +35,15 @@
 对每个角色：
 
 1. 找出该角色参与的所有事件（按时序排列）
-2. 扫描这些事件的 state_changes，找出所有 appearance 和 emotion 变化点
-3. 根据变化点划分阶段，每个阶段定义一个 CharacterAppearance 和一个 CharacterMind
+2. 扫描这些事件的 state_changes，找出所有 appearance 变化点
+3. 根据变化点划分阶段，每个阶段定义一个 CharacterAppearance
 4. 没有变化的连续事件共享同一个状态
 
 **状态划分原则：**
 - 外观无变化（events.json 中没有 aspect: appearance 的 state_change）→ 整个故事只需一个 CharacterAppearance，visual 基于 fixed_traits 展开
 - 外观有变化 → 变化前后各一个 CharacterAppearance。变化前的 visual 基于 fixed_traits，变化后的 visual 根据 state_change 的 detail 修改
-- 情绪变化 → 每个不同的情绪阶段一个 CharacterMind。emotion 来自事件的 state_changes 或事件的 mood 推断
 - **不发明变化**：只有 events.json 中有明确 state_change 的才创建新状态。不要因为"感觉应该变了"就增加状态
+- 角色的情绪和行为已在 events.json 中通过 interactions、state_changes、mood 描述，不需要单独建模
 
 #### 场景状态
 
@@ -68,7 +68,7 @@
 对每个状态，列出它生效的事件 ID 列表：
 
 1. 遍历每个事件
-2. 对该事件中的每个角色，确定其当前的 CharacterAppearance 和 CharacterMind
+2. 对该事件中的每个角色，确定其当前的 CharacterAppearance
 3. 对该事件的场景，确定其当前的 LocationState
 4. 对该事件中的每个道具，确定其当前的 PropState
 5. 将事件 ID 添加到对应状态的 active_during 列表中
@@ -80,7 +80,7 @@
 ### Step 6: 自检
 
 1. **覆盖完整性**：
-   - 每个事件中的每个角色都有且仅有一个 character_appearance 和一个 character_mind 覆盖
+   - 每个事件中的每个角色都有且仅有一个 character_appearance 覆盖
    - 每个事件的场景都有且仅有一个 location_state 覆盖
    - 每个事件中的每个道具都有且仅有一个 prop_state 覆盖
 2. **ID 引用正确**：所有 entity 字段引用的 ID 在 entities.json 中存在
@@ -98,4 +98,4 @@
 ## 错误处理
 
 - **events.json 中的 state_changes 描述模糊**：根据 entities.json 的基础定义和事件上下文合理推断，在该状态的 phase 中标注"推断"。
-- **角色在某些事件中缺少 state_change 线索但明显应有变化**（如场景 mood 从"欢乐"突变为"恐惧"）：仅创建 CharacterMind 变化，不创建 CharacterAppearance 变化。情绪可以从 mood 推断，外观不可以。
+- **角色在某些事件中缺少 state_change 线索但明显应有变化**（如场景 mood 从"欢乐"突变为"恐惧"）：不创建新的 CharacterAppearance。情绪和行为变化已在 events.json 的 interactions 和 state_changes 中体现，无需在 states.json 中重复建模。

@@ -308,6 +308,8 @@ class VideoEdit(CallableTool2[Params]):
 
         Each segment is trimmed to its [start, end) range in the output timeline.
         Consecutive segments are crossfaded at their overlap point.
+        acrossfade consumes crossfade_duration per transition, so non-last
+        segments are extended by that amount to keep the total duration correct.
         """
         segments = params.audio_segments
         if len(segments) < 2:
@@ -319,10 +321,12 @@ class VideoEdit(CallableTool2[Params]):
 
         for i, seg in enumerate(segments):
             inputs.extend(["-i", seg.path])
-            # Trim each segment to its target duration
             seg_duration = (seg.end - seg.start) if seg.end > 0 else 0
             if seg_duration > 0:
-                filter_parts.append(f"[{i}:a]atrim=0:{seg_duration},asetpts=PTS-STARTPTS[a{i}];")
+                # Extend non-last segments by crossfade duration to compensate
+                # for the time acrossfade consumes at each transition.
+                effective = seg_duration + cf if i < len(segments) - 1 else seg_duration
+                filter_parts.append(f"[{i}:a]atrim=0:{effective},asetpts=PTS-STARTPTS[a{i}];")
             else:
                 filter_parts.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}];")
 
@@ -337,12 +341,22 @@ class VideoEdit(CallableTool2[Params]):
         # Remove trailing semicolon
         filter_str = "".join(filter_parts).rstrip(";")
 
+        # Pick codec based on output format instead of hardcoding aac
+        ext = params.output_path.rsplit(".", 1)[-1].lower() if "." in params.output_path else ""
+        codec_args: list[str] = []
+        if ext == "mp3":
+            codec_args = ["-c:a", "libmp3lame"]
+        elif ext == "wav":
+            codec_args = ["-c:a", "pcm_s16le"]
+        else:
+            codec_args = ["-c:a", "aac"]
+
         return [
             "ffmpeg", "-y",
             *inputs,
             "-filter_complex", filter_str,
             "-map", f"[{current}]",
-            "-c:a", "aac",
+            *codec_args,
             params.output_path,
         ]
 

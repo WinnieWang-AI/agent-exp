@@ -121,6 +121,8 @@ class GenerateVideoSync(CallableTool2[Params]):
             negative_prompt=params.negative_prompt,
         )
 
+        audio_supported = provider.supports_audio(request)
+
         try:
             submission = await provider.submit_job(request)
         except Exception as e:
@@ -188,4 +190,5 @@ class GenerateVideoSync(CallableTool2[Params]):
                 brief="Download failed",
             )
 
-        return builder.ok(message=f"Video saved to {download_path}")
+        builder.write(f"has_audio: {str(audio_supported).lower()}\n")
+        return builder.ok(message=f"Video saved to {download_path}.")

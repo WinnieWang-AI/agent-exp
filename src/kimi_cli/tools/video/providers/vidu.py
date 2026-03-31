@@ -49,6 +49,18 @@ class ViduVideoProvider(VideoProvider):
     # VideoProvider interface
     # ------------------------------------------------------------------
 
+    def supports_audio(self, request: GenerationRequest) -> bool:
+        """Vidu only supports audio with Q3 models.
+
+        Ref2V hardcodes to viduq2 (no audio). Other modes use the configured
+        model (default viduq3-pro, which supports audio).
+        """
+        if request.reference_images:
+            model = "viduq2"  # Ref2V always uses viduq2
+        else:
+            model = self._model
+        return "q3" in model
+
     async def submit_job(self, request: GenerationRequest) -> VideoJobSubmission:
         # Detect mode following ace-backend-go detectVideoMode logic:
         #   1. SE2V: requires BOTH first_frame AND last_frame

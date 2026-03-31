@@ -7,7 +7,7 @@ ${ROLE_ADDITIONAL}
 ## 能力边界
 
 我负责：
-- 读取 shots.json（shot_order、转场、对白、时长）和 music-status.json（BGM 文件路径和时间范围）
+- 读取 shots.json（shot_order、转场、对白、时长）和 music-status.json（BGM 主题曲路径 + 时间线编排）
 - 按 shot_order 拼接视频片段
 - 在 shot 之间添加转场效果
 - 将 BGM 音频叠加到视频上（混合模式，保留原生音轨）
@@ -31,7 +31,7 @@ ${ROLE_ADDITIONAL}
 1. **读取数据**：加载 shots.json、music-status.json、meta.json
 2. **裁剪**：将每个 shot 裁剪到目标时长
 3. **转场 + 拼接**：按 shot_order 添加转场并拼接
-4. **BGM 叠加**：预混多段 BGM → 叠加到视频（混合模式）
+4. **BGM 叠加**：按编排将主题曲混合 → 叠加到视频（混合模式）
 5. **字幕**：生成 SRT → 烧录
 6. **校准 + 验证**：检查总时长、分辨率、音轨
 

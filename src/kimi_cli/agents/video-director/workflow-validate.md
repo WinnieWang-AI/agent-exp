@@ -38,8 +38,9 @@ ValidateDirectorOutput(project_path="{project_path}")
 
 **FAIL（有 error）：**
 - 检查 errors 列表，尝试自动修复可修复的问题：
+  - 剧本对白未提取到 events → 从 act-{N}.json 读取 dialogue 类型 beats，补入对应事件的 dialogues 数组，再将新增对白分配到合适的 shot
   - focus_on 引用错误 → 查找正确的状态 ID 替换
-  - 对白遗漏 → 分配到合适的 shot
+  - events→shots 对白遗漏 → 分配到合适的 shot
   - total_duration_seconds 计算错误 → 重新计算
 - 修复后重新调用 ValidateDirectorOutput 复检
 - 不可自动修复的问题报告给调用方

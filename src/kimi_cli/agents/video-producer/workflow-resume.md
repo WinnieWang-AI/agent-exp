@@ -13,7 +13,7 @@
 用 Glob 查找项目目录：
 
 ```
-Glob("{working_dir}/projects/*/meta.json")
+Glob("${SESSION_OUTPUT_DIR}/*/meta.json")
 ```
 
 - 只找到一个：直接使用。
@@ -31,7 +31,7 @@ Glob("{working_dir}/projects/*/meta.json")
 | 有 `shots.json`，无 `assets/images/*.png` | 制作计划已完成，参考图未开始 | 加载 workflow-production，从 Step 4（调度美术）开始 |
 | 有 `shots.json` + `assets/images/*.png`，无 `generation-status.json` | 参考图已完成 | 加载 workflow-execution，从 Step 1 开始 |
 | 有 `generation-status.json` 或 `music-status.json` | 执行进行中 | ReadFile 查看状态文件，判断哪些完成哪些未完成，恢复执行 |
-| 有 `output/attempt_*.mp4` | 已有成片 | 向用户展示最新成片，等待反馈 |
+| 有 `output/video_*.mp4` | 已有成片 | 向用户展示最新成片，等待反馈 |
 
 ### Step 3: 恢复 session
 

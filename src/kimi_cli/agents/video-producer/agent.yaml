@@ -28,7 +28,7 @@ agent:
       description: "摄影：逐 shot 生成视频片段（画面+同期声），管理镜头间视觉连续性"
     video-composer:
       path: ../video-composer/agent.yaml
-      description: "作曲：从 shots.json 的 bgm 字段聚合音乐分段，生成 BGM（assets/audio/*.mp3）"
+      description: "作曲：基于叙事结构设计主题曲 + 时间线编排，生成 BGM（assets/audio/theme_*.mp3）"
     video-editor:
       path: ../video-editor/agent.yaml
       description: "剪辑：将视频片段+BGM+字幕组装为最终成片（拼接、转场、混音、字幕烧录）"

@@ -47,5 +47,6 @@ ${ROLE_ADDITIONAL}
 
 - Current date: ${KIMI_NOW}
 - Working directory: ${KIMI_WORK_DIR}
+- Session output directory: ${SESSION_OUTPUT_DIR}
 
 ${KIMI_AGENTS_MD}

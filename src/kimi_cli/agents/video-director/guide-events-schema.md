@@ -52,7 +52,8 @@
       "tone": "开心"
     }
   ],
-  "mood": "温馨、充满期待"
+  "mood": "温馨、充满期待",
+  "narrative_weight": "setup"
 }
 ```
 </example>
@@ -72,6 +73,7 @@
 | state_changes | array | 否 | 该事件引发的实体状态变化。只记录剧本中明确描写的变化 |
 | dialogues | array | 否 | 该事件中的对白。从剧本 beats 中提取，不修改台词内容 |
 | mood | string | 是 | 事件的情感氛围 |
+| narrative_weight | string | 是 | 从 source_scenes 对应的场景继承。值域：`"climax"` / `"turning_point"` / `"setup"` / `"transition"`。多个 source_scenes 时取最高权重（climax > turning_point > setup > transition） |
 
 ### Interaction
 

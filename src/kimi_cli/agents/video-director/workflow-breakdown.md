@@ -63,6 +63,7 @@
 - `state_changes`：只记录剧本中明确描写的变化（character_states 中 appearance 不为 null、emotion 有变化、location_state 不为 null、prop_states 不为 null）。不要推测隐含的变化
 - `dialogues`：原样提取剧本中的对白 beats，不修改台词文字
 - `mood`：综合场景的 mood 和 beats 的情绪走向
+- `narrative_weight`：从 source_scenes 对应场景的 `narrative_weight` 继承。多个 source_scenes 时取最高权重（climax > turning_point > setup > transition）
 
 **处理完一幕后**，该幕的 act 文件内容就不再需要。已提取的事件列表提供后续幕的上下文。
 

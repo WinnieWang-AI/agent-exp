@@ -1,94 +1,69 @@
-# 生成模式决策树
+# 生成模式决策参考
 
-> 每个 shot 生成前，用本文件的决策流程确定生成模式和参考图选择。
+> 每个 shot 生成前，workflow-shoot.md 中的决策步骤引用本文件的条件定义和参考标准。
 
 ## 核心原则
 
-1. **每个 shot 是一次独立的 GenerateVideoSync 调用。**
-2. **模型能从输入图片里"看到"谁，就能保持谁的一致性。** 首帧/参考图里出现的角色能保持一致，没出现的无法保证。
+1. **模型能从输入图片里"看到"谁，就能保持谁的一致性。** 首帧/参考图里出现的角色能保持一致，没出现的无法保证。
+2. **尾帧用法由导演意图决定，不由"什么变了"机械决定。** content 和 transition_in 已编码了导演的转换意图。
+3. **角色一致性由参考图保证，不由尾帧保证。** 参考图是白底全身的身份锚点，尾帧是特定场景中的画面截图。
 
-## 决策总览
+## 尾帧的三种角色
 
-| 场景 | 生成方式 | 关键参数 |
-|---|---|---|
-| 同 event 内非首 shot（尾帧接续） | `image_to_video` | `reference_image_path` = 前一 shot 尾帧 |
-| 跨 event 相邻 + 共同角色 | 走 Step 3 判断 | 前一 shot 尾帧可加入 `reference_images` |
-| 所有角色开头可见 + 动作小 | `image_to_video` | `reference_image_path` = 生成的首帧图 |
-| 有角色中途出场 / 大幅运动 | `reference_to_video` | `reference_images` = 角色参考图 |
-| 无参考图 | `text_to_video` | 仅 prompt |
+| 角色 | 触发条件 | 用法 |
+|------|---------|------|
+| **接续画面** | 同 event 内时长拆分（shot_type+angle 相同） | `reference_image_path`（主输入，image_to_video） |
+| **变化起点** | content 描述从前一状态到当前状态的转换过程 | 放入 `reference_images`（辅助参考） |
+| **不使用** | transition_in=cut + content 描述独立场景 | 不提取尾帧 |
 
-## 决策流程
+## 判断导演是否要展示转换
 
-### Step 1: 判断谁出镜
+**需要展示转换**的信号：
+- content 描述一个**过程**（"从 X 变成 Y"、"角色从 A 走到 B"、"光线从明亮变为昏暗"）
+- transition_in 是 `dissolve`（渐变过渡）
 
-从 `focus_on` 和 states.json 确定：
+**不需要展示转换（硬切）**的信号：
+- transition_in 是 `cut`
+- content 描述一个**独立画面**（"小屋内，奶奶躺在床上"），不涉及从前一画面的过渡
 
-- `focus_on` 中的 CharacterAppearance ID → 哪些角色出镜
-- `focus_on` 中的 LocationState ID → 场景环境
-- `focus_on` 中的 PropState ID → 道具
-- 通过 active_during 找同 event 的 CharacterMind → 角色行为
+**同 event 内镜头切换**（shot_type 或 angle 变了）：
+- content 描述同一动作的不同视角 → 展示转换
+- content 描述独立画面（如插入道具特写） → 不展示
 
-### Step 2: 判断尾帧接续
+## 生成模式判断条件
 
-按优先级检查：
+| 条件 | 模式 |
+|------|------|
+| 所有角色在视频开头就在画面中 + 正面/侧面可辨认 + 无大幅运动 | `image_to_video`（先生成首帧） |
+| 有角色中途出场（如"从树后走出"） | `reference_to_video` |
+| 角色背对镜头或被遮挡 | `reference_to_video` |
+| 大幅运动（tracking + 奔跑/蹦跳） | `reference_to_video` |
+| 纯环境镜头，无角色参考图 | `text_to_video` |
 
-#### 2a. 同 event 内连续 shot
+## 参考图选择规则
 
-**条件**：当前 shot 与 shot_order 中前一个 shot 属于同一个 event_id，且前一个 shot 已生成。
+- 从 active_during 查当前 event 中各实体的状态，再从 states.json 查对应的 `reference_image` 路径
+- 类型：CharacterAppearance → 角色参考图，LocationState → 场景参考图，PropState → 道具参考图
+- 尾帧参考（如有）也占一个名额
+- 上限按 provider 能力（不写死），超出时按优先级截断：**角色 > 场景 > 道具 > 尾帧参考**
 
-从前一 shot 的输出提取尾帧，用 `image_to_video`。→ **跳到 Step 4**。
+## 跨 event 状态对比
 
-#### 2b. 跨 event 相邻（空间连续性）
-
-**条件**：shot_order 中相邻但不同 event_id，且两个 shot 有共同的出镜角色（focus_on 中有相同 entity 的状态）。
-
-可选将前一 shot 尾帧加入 `reference_images`（不是 `reference_image_path`，不改变生成模式）。尾帧占一个名额（上限 4 张），优先保角色参考图。→ **继续 Step 3**。
-
-| 用尾帧参考 | 不用 |
-|---|------|
-| 角色跨场景移动（森林→小屋） | 无共同角色的跳切 |
-| 场景有物理连续性（门内→门外） | 闪回、完全无关的场景 |
-
-#### 都不命中
-
-直接进 Step 3。
-
-### Step 3: 判断首帧可行性
-
-**核心问题：首帧能否包含所有出镜角色的视觉身份信息？**
-
-**适合首帧（→ `image_to_video`）**：
-- 所有角色在视频开头就在画面中，正面/侧面可辨认
-- 无大幅运动（非 tracking、非奔跑/跳跃/转身）
-
-**不适合首帧（→ `reference_to_video`）**：
-- 有角色中途出场（如"从树后走出"，开头不在画面中）
-- 角色背对镜头或被遮挡
-- 大幅运动（tracking + 奔跑/蹦跳）
-
-**无参考图（→ `text_to_video`）**：
-- 纯环境镜头，无角色参考图可用
-
-### Step 4: 选择参考图
-
-从 states.json 按 focus_on 中的状态 ID 查找 `reference_image` 路径：
-
-- CharacterAppearance → 角色参考图
-- LocationState → 场景参考图
-- PropState → 道具参考图（通常没有，可忽略）
-- 上限 4 张，超出时优先保角色
-- Step 2b 的尾帧参考也占一个名额
+当前后 shot 跨 event 时，对比 active_during 中两个 event 的实体状态映射：
+- 状态没变的实体 → 用同一张参考图（保一致性）
+- 状态变了的实体 → 用新状态的参考图（这是故事发展的一部分，不是不一致）
 
 ## 并行规则
 
-- 同 event 内的连续 shot 必须串行（后者可能需要前者尾帧）
-- 不同 event 且不使用尾帧参考的 shot 可并行
-- 2b 决定使用尾帧参考时，必须等前一 shot 完成
+- 同 event 内 shot_type+angle 相同的连续 shot 必须串行（后者需要前者尾帧）
+- 决定使用尾帧参考时，必须等前一 shot 完成
+- 其他情况下不同 event 的 shot 可并行
 
 ## 常见陷阱
 
-1. **尾帧接续只在同 event 内或有共同角色时使用。** 无关场景跳切不要强行接续。
-2. **已用首帧/尾帧时，额外参考图收益有限。** 画面身份已锚定。
-3. **运动幅度大的镜头慎用首帧。** 首帧约束起始构图，大幅运动会不自然。
-4. **每个 shot 独立决策。** 不要因为一次失败就放弃某种策略。
-5. **prompt 中不要遗漏 `<<<image_N>>>` 标记。** 缺标记 = 角色一致性丢失。
+1. **不要机械按"什么变了"分 case。** 始终读 content + transition_in 判断导演意图。
+2. **尾帧不是万能的一致性工具。** 硬切时使用尾帧反而引入前一场景的干扰。
+3. **状态变化是故事的一部分。** 当 active_during 显示角色状态变了，用新状态的参考图。
+4. **运动幅度大的镜头慎用首帧。** 首帧约束起始构图，大幅运动会不自然。
+5. **每个 shot 独立决策。** 不要因为一次失败就放弃某种策略。
+6. **prompt 中不要遗漏 `<<<image_N>>>` 标记。** 缺标记 = 角色一致性丢失。

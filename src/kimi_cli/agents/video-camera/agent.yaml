@@ -13,4 +13,5 @@ agent:
     - "kimi_cli.tools.video:GenerateVideoSync"
     - "kimi_cli.tools.video:ExtractFrame"
     - "kimi_cli.tools.video:GenerateImage"
+    - "kimi_cli.tools.audio:GenerateSpeech"
   subagents: {}

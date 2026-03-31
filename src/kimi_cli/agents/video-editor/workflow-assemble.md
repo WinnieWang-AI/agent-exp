@@ -5,14 +5,14 @@
 项目目录下已有：
 - `meta.json` — aspect_ratio、language、style_prefix
 - `shots.json` — shot_order、每个 shot 的 duration_seconds / transition_in / transition_out / dialogues
-- `music-status.json` — BGM 分段信息（output_path / duration_seconds / start_offset）
+- `music-status.json` — BGM 主题曲 + 时间线编排信息（themes / arrangement）
 - `assets/shots/{shot_id}.mp4` — 视频片段
-- `assets/audio/{segment_id}.mp3` — BGM 音频文件
+- `assets/audio/{theme_id}.mp3` — BGM 主题曲音频文件
 - `generation-status.json` — 视频生成状态（哪些 shot 成功/失败）
 
 调用方会提供：
 - 项目路径（绝对路径）
-- 输出路径（绝对路径，如 `{project_path}/output/attempt_1.mp4`）
+- 输出路径（绝对路径，如 `{project_path}/output/video_1.mp4`）
 
 ## 步骤
 
@@ -23,8 +23,8 @@
 ### Step 2: 读取项目数据
 
 1. `{project_path}/shots.json` — 提取 shot_order、每个 shot 的字段
-2. `{project_path}/generation-status.json` — 确认哪些 shot 实际生成成功
-3. `{project_path}/music-status.json` — 提取 BGM 分段信息（可能不存在，如果没有 BGM 需求）
+2. `{project_path}/generation-status.json` — 确认哪些 shot 实际生成成功（`status: "done"`）；从 `steps.video.has_audio` 和 `steps.tts.paths` 提取音频信息，供 Step 4.5 TTS 叠加使用
+3. `{project_path}/music-status.json` — 提取 BGM 主题曲和时间线编排（可能不存在，如果没有 BGM 需求）
 4. `{project_path}/meta.json` — 提取 aspect_ratio、language
 
 **素材检查**：按 shot_order 遍历，检查每个 shot 的视频文件是否存在（`assets/shots/{shot_id}.mp4`）。记录缺失列表。如果缺失率 > 30%，上报调用方，不继续组装。
@@ -71,45 +71,67 @@ VideoEdit(
 
 临时文件输出到 `{project_path}/output/tmp/`，最终组装完成后可清理。
 
+### Step 4.5: TTS 对白音轨叠加
+
+读取 `generation-status.json`，检查是否有 shot 的 `steps.video.has_audio` 为 `false` 且 `steps.tts.paths` 非空。如果没有，跳过此步。
+
+对每个需要 TTS 叠加的 shot：
+
+1. **计算时间偏移**：按 shot_order 累加前序 shot 的 `duration_seconds`，扣除转场重叠（与 Step 6 字幕计算相同的时间轴逻辑），得到该 shot 在拼接视频中的起始秒数。
+2. **叠加 TTS 音频**：对该 shot 的每个 TTS 文件：
+
+```
+VideoEdit(
+  operation="add_audio",
+  input_files=[<当前视频>],
+  audio_path=<tts_path>,
+  audio_mix=true,
+  audio_offset=<shot 起始偏移 + 对白在 shot 内的估算位置>,
+  output_path="{project_path}/output/tmp/with_tts_{N}.mp4"
+)
+```
+
+**对白在 shot 内的位置**：居中对齐（与 Step 6 字幕居中逻辑一致）。如果 shot 只有一条对白，偏移 = shot 起始时间。如果有多条对白，按顺序平均分布在 shot 时间范围内。
+
+**多个 shot 需要 TTS 时**：按 shot_order 逐个叠加，每次用上一步的输出作为输入（串行）。
+
 ### Step 5: BGM 叠加
 
-读取 `music-status.json`，只处理 status 为 "done" 的分段。
+读取 `music-status.json`，从 `themes` 中筛选 status 为 "done" 的主题曲，从 `arrangement` 中读取时间线编排。
 
-#### 5a. 单段 BGM
+#### 5a. 单主题曲 + 连续编排
 
-如果只有 1 个 BGM 分段：
+如果 arrangement 只有 1 个区间且覆盖全片，直接叠加（用 audio_loop 循环补足时长）：
 
 ```
 VideoEdit(
   operation="add_audio",
   input_files=[<Step 4 输出>],
-  audio_path="{project_path}/assets/audio/{segment_id}.mp3",
+  audio_path="{project_path}/assets/audio/{theme_id}.mp3",
   audio_mix=true,
   audio_loop=true,
   output_path="{project_path}/output/tmp/with_bgm.mp4"
 )
 ```
 
-`audio_loop=true` 让短 BGM 自动循环到视频结束。
+#### 5b. 多区间编排
 
-#### 5b. 多段 BGM
-
-先用 `mix_audio` 将多段 BGM 预混为一个音频文件：
+按 arrangement 数组构建 `mix_audio` 的 audio_segments。同一首主题曲在不同区间复用同一个音频文件：
 
 ```
 VideoEdit(
   operation="mix_audio",
   audio_segments=[
-    {"path": "assets/audio/bgm_segment_1.mp3", "start": 0, "end": 10},
-    {"path": "assets/audio/bgm_segment_2.mp3", "start": 10, "end": 28},
-    ...
+    {"path": "assets/audio/theme_warm.mp3",  "start": 0,  "end": 22},
+    {"path": "assets/audio/theme_tense.mp3", "start": 22, "end": 43},
+    {"path": "assets/audio/theme_warm.mp3",  "start": 43, "end": 62}
   ],
-  crossfade_duration=2.0,
+  crossfade_duration=<music-status.json 中的 crossfade_seconds，默认 2.0>,
   output_path="{project_path}/output/tmp/bgm_mixed.mp3"
 )
 ```
 
-`start` / `end` 从 music-status.json 的 `start_offset` 和 `duration_seconds` 计算。
+arrangement 中各区间的 `fade_in` / `fade_out` 由 mix_audio 的 crossfade 机制自动处理。首段的 `fade_in` 和末段的 `fade_out` 用 FFmpeg 的 afade 滤镜单独实现。
 
 然后叠加到视频：
 
@@ -125,7 +147,7 @@ VideoEdit(
 
 #### 5c. 无 BGM
 
-如果 music-status.json 不存在或无成功分段，跳过此步。
+如果 music-status.json 不存在或无成功主题曲，跳过此步。
 
 ### Step 6: 字幕生成与烧录
 
@@ -182,7 +204,7 @@ VideoEdit 每次操作后返回输出文件的 metadata。对最终成片核对�
 - 总时长
 - 分辨率
 - 使用的 shot 数（含跳过的缺失 shot）
-- BGM 分段数
+- BGM 主题曲数 + 编排区间数
 - 字幕条数
 - 任何 warning（如某些 shot 缺失、BGM 缺失等）
 
