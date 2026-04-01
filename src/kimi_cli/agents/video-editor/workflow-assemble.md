@@ -85,6 +85,7 @@ VideoEdit(
   operation="add_audio",
   input_files=[<当前视频>],
   audio_path=<tts_path>,
+  audio_role="dialogue",
   audio_mix=true,
   audio_offset=<shot 起始偏移 + 对白在 shot 内的估算位置>,
   output_path="{project_path}/output/tmp/with_tts_{N}.mp4"
@@ -94,6 +95,14 @@ VideoEdit(
 **对白在 shot 内的位置**：居中对齐（与 Step 6 字幕居中逻辑一致）。如果 shot 只有一条对白，偏移 = shot 起始时间。如果有多条对白，按顺序平均分布在 shot 时间范围内。
 
 **多个 shot 需要 TTS 时**：按 shot_order 逐个叠加，每次用上一步的输出作为输入（串行）。
+
+**audio_role 规范**：`add_audio` 的 `audio_role` 参数控制自动音量归一化，工具会探测音频源实际响度并调整到该角色的目标 LUFS。叠加音频时**必须指定 audio_role**：
+- `"dialogue"` — TTS 对白（-16 LUFS，最响）
+- `"voiceover"` — 旁白解说（-18 LUFS）
+- `"sfx"` — 音效（-20 LUFS）
+- `"bgm"` — 背景音乐（-28 LUFS，最轻）
+
+这确保无论原始素材音量如何、无论叠加顺序如何，最终混音中各类音频始终保持正确的响度层级。
 
 ### Step 5: BGM 叠加
 
@@ -108,6 +117,7 @@ VideoEdit(
   operation="add_audio",
   input_files=[<Step 4 输出>],
   audio_path="{project_path}/assets/audio/{theme_id}.mp3",
+  audio_role="bgm",
   audio_mix=true,
   audio_loop=true,
   output_path="{project_path}/output/tmp/with_bgm.mp4"
@@ -133,13 +143,16 @@ VideoEdit(
 
 arrangement 中各区间的 `fade_in` / `fade_out` 由 mix_audio 的 crossfade 机制自动处理。首段的 `fade_in` 和末段的 `fade_out` 用 FFmpeg 的 afade 滤镜单独实现。
 
+**时长校验**：比较 arrangement 最后一个区间的 `end` 与视频总时长（Step 3 累加的 shot 总时长）。如果 arrangement 未覆盖全片，将最后一个区间的 `end` 扩展到视频总时长，确保 mix_audio 输出与视频等长。
+
 然后叠加到视频：
 
 ```
 VideoEdit(
   operation="add_audio",
-  input_files=[<Step 4 输出>],
+  input_files=[<Step 4.5 输出或 Step 4 输出>],
   audio_path="{project_path}/output/tmp/bgm_mixed.mp3",
+  audio_role="bgm",
   audio_mix=true,
   output_path="{project_path}/output/tmp/with_bgm.mp4"
 )

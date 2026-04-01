@@ -107,14 +107,14 @@ ExtractFrame(
 ```
 GenerateImage(
   prompt=<首帧 prompt，按 guide-prompt-video.md 的首帧规范组装>,
-  reference_image_paths=<角色参考图列表>,
+  reference_image_paths=<所有选中的参考图列表（角色 + 场景 + 道具）>,
   aspect_ratio=<从 meta.json>,
   negative_prompt=<从 meta.json>,
   output_path="{project_path}/assets/frames/{shot_id}_first.png"
 )
 ```
 
-首帧 prompt 使用 `@[role N]` 标记（不是 `<<<image_N>>>`）。
+首帧 prompt 使用 `@[image N]` 标记引用所有参考图（不是 `<<<image_N>>>`），编号按 reference_image_paths 列表顺序。角色、场景、道具参考图都需要用 `@[image N]` 标记关联到 prompt 中对应的描述位置。
 
 #### 3.5 组装 Prompt 并生成
 

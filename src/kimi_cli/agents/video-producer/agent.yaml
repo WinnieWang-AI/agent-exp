@@ -32,3 +32,6 @@ agent:
     video-editor:
       path: ../video-editor/agent.yaml
       description: "剪辑：将视频片段+BGM+字幕组装为最终成片（拼接、转场、混音、字幕烧录）"
+    video-audience:
+      path: ../video-audience/agent.yaml
+      description: "观众：从观看者视角审查导演制作计划，发现叙事断裂、状态跳变、因果缺失等问题"

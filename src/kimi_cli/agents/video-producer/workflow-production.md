@@ -26,25 +26,67 @@ context_files: ["{project_path}/meta.json", "{project_path}/entities.json", "{pr
 
 导演有自己的工作流和 schema，会自主完成全部制作计划。
 
-### Step 2: 汇报制作计划
+### Step 2: 调度观众审查
 
-导演完成后，向用户简要汇报：
-- 事件数 / 镜头数 / 总时长
-- 校验结果（PASS / FAIL）
-- 如有 FAIL，列出主要错误
+导演完成后，调度 `video-audience` 从观看者视角审查制作计划：
 
-提示用户可以在界面上预览制作计划（分镜板视图）。
+```
+subagent_name: "video-audience"
+session_id: "audience_{project_name}"
+prompt: 项目路径和执行指令
+context_files: ["{project_path}/entities.json", "{project_path}/events.json", "{project_path}/states.json", "{project_path}/shots.json"]
+```
 
-### Step 3: 用户确认制作计划
+**prompt 中必须包含且仅包含：**
+- 项目路径（绝对路径）
+- 执行审查
 
-等待用户确认制作计划。用户可能：
-- **确认通过**：进入 Step 4
-- **要求修改**：使用同一 session_id 将修改意见转达给导演。修改完成后回到 Step 2 重新汇报。
-- **要求重做**：重新调度导演，仍使用同一 session_id。
+观众 agent 产出 `{project_path}/audience-review.json`。
 
-### Step 4: 调度美术
+**处理审查结果：**
+- **PASS**：继续 Step 3
+- **HAS_ISSUES 仅 warning**：继续 Step 3
+- **HAS_ISSUES 且有 error**：执行以下修复流程，然后继续 Step 3
 
-用户确认制作计划后，调度 art-designer 生成参考图：
+**修复流程（最多 1 轮）：**
+
+1. 读取 `{project_path}/audience-review.json`，提取所有 severity=error 的 issue
+2. 用同一 session_id 调度导演修复：
+
+```
+subagent_name: "video-director"
+session_id: "director_{project_name}"
+prompt: 见下方
+context_files: ["{project_path}/audience-review.json"]
+```
+
+**prompt 格式：**
+
+```
+观众审查发现以下问题，请逐个修复：
+
+{逐条列出 error，每条包含：}
+- 问题类型：{type}
+- 位置：{event_id} / {shot_id}
+- 问题：{description}
+- 细节：{detail}
+
+修复方式：
+- missing_visual_coverage → 补 shot 或在现有 shot 的 content 中补充变化过程
+- incomplete_event → 补 shot 覆盖缺失的动作
+- broken_causality → 补过渡 shot 或调整前后 shot 的 content 建立因果
+- state_jump → 补 state_changes 或调整 active_during
+- ambiguous_content → 重写 content，按空间顺序描述清楚角色位置关系
+
+修复后重新执行校验（workflow-validate.md）。
+```
+
+3. 导演修复并重新校验后，再调度一次观众审查（新 session_id：`audience_{project_name}_r2`）
+4. 第二轮无论结果如何，继续 Step 3
+
+### Step 3: 调度美术
+
+调度 art-designer 生成参考图。如果导演校验返回 FAIL，仍然继续（导演已尽力修复，剩余 warning 不阻塞流程）。
 
 ```
 subagent_name: "art-designer"
@@ -63,21 +105,11 @@ context_files: ["{project_path}/meta.json", "{project_path}/entities.json", "{pr
 
 art-designer 有自己的工作流和 prompt 规范，会从 states.json 的视觉描述自主生成。
 
-### Step 5: 汇报参考图结果
+### Step 4: 进入执行阶段
 
-美术完成后，向用户简要汇报：
-- 实体参考图：成功 / 失败数
-- 状态参考图：成功 / 跳过 / 失败数
-
-如果有失败，向用户说明情况，可选择：
-- 重试失败的图（同一 session_id）
-- 继续执行（缺失参考图的 shot 会降级为 text_to_video，视觉一致性下降）
-
-### Step 6: 进入执行阶段
-
-参考图完成（或用户选择继续）后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-execution.md`，按其中的步骤调度摄影、作曲和剪辑。
+美术完成后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-execution.md`，按其中的步骤调度摄影、作曲和剪辑。不等待用户确认参考图。
 
 ## 错误处理
 
-- **导演返回校验 FAIL**：向用户展示错误列表，由用户决定是否继续或要求修复。
-- **美术返回部分失败**：向用户说明情况，可选择重试或继续。
+- **导演返回校验 FAIL**：不阻塞，继续流程。导演已做过自动修复。
+- **美术返回部分失败**：不阻塞，继续执行。缺失参考图的 shot 会自动降级为 text_to_video。

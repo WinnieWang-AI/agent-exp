@@ -7,7 +7,32 @@
 
 ## 步骤
 
-### Step 1: 调用校验工具
+### Step 1: 语义自检
+
+在调用工具前，逐事件审查以下两项。发现问题直接修复（补 shot、调整 content、补 state_changes），不只是记录。
+
+#### A. 状态变化的视觉覆盖
+
+遍历每个 event 的 `state_changes`，对每个变化判断：
+
+- **镜头内发生**（变化过程是观众需要看到的，如：物体被打碎、角色换装、天气突变）→ 必须有 shot 表现变化过程，不能只展示变化后的结果
+- **离场发生**（变化发生在镜头外，观众能从上下文推断，如：A 让 B 去修东西，下一场 B 拿着修好的东西回来）→ 可以不展示过程，但前后 shot 的 content 要让观众能推断出发生了什么
+
+判断依据：变化的发起动作是否在当前事件的 shots 中可见。如果发起动作在镜头内（角色当场做了某事），过程就应该在镜头内；如果发起动作是指令性的（"去做 X"），过程可以离场。
+
+缺失视觉覆盖的 → 补一个过渡 shot 或在现有 shot 的 content 中补充变化过程描述。
+
+#### B. 事件覆盖完整性
+
+对每个 event，检查其 shots 是否完整表达了事件意图：
+
+- event 的核心 interactions 是否都有对应 shot 表现
+- 关键 state_changes 是否有镜头支撑（与 A 联动）
+- 相邻 event 之间的因果衔接：如果 event B 的前提是 event A 的结果，shots 中是否建立了这个因果（观众能看到 A 的结果，才能理解 B 为什么发生）
+
+缺失的 → 补 shot 或调整现有 shot 的 content。补 shot 后同步更新 `shots.json` 的 `shot_order` 和相关 `focus_on`。
+
+### Step 2: 调用校验工具
 
 使用 `ValidateDirectorOutput` 工具，传入项目路径：
 
@@ -29,7 +54,7 @@ ValidateDirectorOutput(project_path="{project_path}")
 
 工具会将校验报告写入 `{project_path}/validation-report.json`。
 
-### Step 2: 处理结果
+### Step 3: 处理结果
 
 根据工具返回的结果：
 

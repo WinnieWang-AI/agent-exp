@@ -25,8 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from kaos.path import KaosPath
 
-from kimi_cli.agentspec import VIDEO_MAKER_AGENT_FILE, VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, SCREENWRITER_AGENT_FILE, VIDEO_PRODUCER_AGENT_FILE, VIDEO_SCREENWRITER_AGENT_FILE
-from kimi_cli.tools.story_graph.view import build_story_graph_view
+from kimi_cli.agentspec import VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, VIDEO_PRODUCER_AGENT_FILE, VIDEO_SCREENWRITER_AGENT_FILE, VIDEO_CAMERA_AGENT_FILE
 from web.op_graph import parse_chat_to_op_graph
 from kimi_cli.app import KimiCLI, enable_logging
 from kimi_cli.session import Session
@@ -84,12 +83,11 @@ WEB_SESSIONS_DIR = Path.cwd() / "output" / ".sessions"
 WEB_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 AGENT_FILES = {
-    "video-maker": VIDEO_MAKER_AGENT_FILE,
     "video-auto-eval": VIDEO_AUTO_EVAL_AGENT_FILE,
     "agent-optimizer": AGENT_OPTIMIZER_AGENT_FILE,
-    "screenwriter": SCREENWRITER_AGENT_FILE,
     "video-producer": VIDEO_PRODUCER_AGENT_FILE,
     "video-screenwriter": VIDEO_SCREENWRITER_AGENT_FILE,
+    "video-camera": VIDEO_CAMERA_AGENT_FILE,
 }
 
 
@@ -147,12 +145,11 @@ async def read_json_file(file_path: str):
 
 @app.get("/api/sessions/{session_id}/story-graph-view")
 async def get_story_graph_view(session_id: str):
-    """Return the story graph view data for a session (reads story-graph.json from disk)."""
+    """Return the raw story graph JSON for a session."""
     session_output_dir = Path.cwd() / "output" / session_id
     if not session_output_dir.is_dir():
         raise HTTPException(status_code=404, detail="Session output directory not found")
 
-    # Find story-graph.json
     story_graph_path = None
     for p in session_output_dir.rglob("story-graph.json"):
         story_graph_path = p
@@ -166,25 +163,7 @@ async def get_story_graph_view(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse story-graph.json: {e}")
 
-    # Determine phase heuristically
-    phase = "skeleton"
-    all_entities = sg_data.get("characters", []) + sg_data.get("locations", []) + sg_data.get("props", [])
-    if any(e.get("reference_image") for e in all_entities):
-        phase = "references"
-
-    # Check for shot plan
-    shot_plan = None
-    shot_plan_path = story_graph_path.parent / "shot-plan.json"
-    if shot_plan_path.exists():
-        try:
-            shot_plan = json.loads(shot_plan_path.read_text(encoding="utf-8"))
-            phase = "shots"
-        except Exception:
-            pass
-
-    project_dir = str(story_graph_path.parent)
-    view_block = build_story_graph_view(sg_data, phase=phase, shot_plan=shot_plan, project_dir=project_dir)
-    return view_block.model_dump(mode="json")
+    return sg_data
 
 
 @app.get("/list-dir/{dir_path:path}")

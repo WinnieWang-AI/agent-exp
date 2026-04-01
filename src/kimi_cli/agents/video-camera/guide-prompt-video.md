@@ -52,7 +52,7 @@
 
 | 场景 | 工具 | 标记 | 前缀 |
 |------|------|------|------|
-| 首帧图 | GenerateImage | `@[role N]` | `"Reference image characters from left to right are: @[role 1], @[role 2]."` 放在 prompt 最前面 |
+| 首帧图 | GenerateImage | `@[image N]` | `"Reference images: @[image 1] is the hare, @[image 2] is the tortoise, @[image 3] is the meadow."` 放在 prompt 最前面，按 reference_image_paths 顺序编号，覆盖所有参考图（角色 + 场景 + 道具） |
 | 视频 | GenerateVideoSync | `<<<image_N>>>` | 无前缀，直接放在角色描述旁 |
 
 编号按参数中图片列表的顺序（reference_image_paths 或 reference_images）。
@@ -67,6 +67,8 @@
 - 没有动作过程
 
 与视频 prompt 的区别：首帧图只描述一个瞬间，视频 prompt 描述动作的时间推进。
+
+**首帧参考图引用规则**：reference_image_paths 包含所有选中的参考图（角色 + 场景 + 道具），每张都用 `@[image N]` 标记关联到 prompt 中对应描述的位置。前缀格式：`"Reference images: @[image 1] is the hare, @[image 2] is the tortoise, @[image 3] is the meadow starting area."` — 用简短自然语言说明每张图是什么。
 
 ## 跨镜头转换时的 Prompt 写法
 
@@ -99,11 +101,20 @@
 
 ## Prompt 生成后自检
 
-每次组装完 prompt、确定 reference_images 列表后，执行以下 3 点检查：
+### 视频 prompt 自检
+
+每次组装完视频 prompt、确定 reference_images 列表后，执行以下 3 点检查：
 
 1. **数量匹配**：reference_images 有 N 张 → prompt 中必须有 N 个 `<<<image_N>>>` 标记。少一个都不行。
-2. **角色对应**：每个 `<<<image_N>>>` 标记必须紧跟对应实体的描述。不能把角色 A 的标记放在角色 B 的描述旁。编号严格按 reference_images 列表顺序。
+2. **实体对应**：每个 `<<<image_N>>>` 标记必须紧跟对应实体的描述。不能把角色 A 的标记放在角色 B 的描述旁。编号严格按 reference_images 列表顺序。
 3. **转换描述**：如果使用了尾帧作为辅助参考（变化起点），prompt 中必须有 `"The video starts from <<<image_N>>>"` 描述转换过程。不能只描述终点状态。
+
+### 首帧 prompt 自检
+
+每次组装完首帧 prompt、确定 reference_image_paths 列表后，执行以下 2 点检查：
+
+1. **数量匹配**：reference_image_paths 有 N 张 → prompt 前缀中必须有 N 个 `@[image N]`，prompt 正文中也必须有 N 个 `@[image N]` 标记。
+2. **实体对应**：每个 `@[image N]` 标记必须紧跟对应实体（角色/场景/道具）的描述。编号严格按 reference_image_paths 列表顺序。
 
 ## 示例
 
@@ -172,7 +183,9 @@ ExtractFrame(
 单人特写，角色开头在画面中，push_in 运动幅度小 → 生成首帧 → image_to_video。
 
 首帧 prompt：
-"Reference image characters from left to right are: @[role 1]. hand-drawn illustration, warm color palette. Close-up from low angle. An elderly woman in a white nightgown @[role 1], gray hair wisps, frail pale face lit by dim fireplace flicker. She stares forward with wide frozen eyes. Cozy cottage interior with creeping unease."
+"Reference images: @[image 1] is the grandmother, @[image 2] is the cottage interior. hand-drawn illustration, warm color palette. Close-up from low angle. An elderly woman in a white nightgown @[image 1], gray hair wisps, frail pale face lit by dim fireplace flicker. She stares forward with wide frozen eyes. Cozy cottage interior @[image 2] with creeping unease."
+
+首帧 reference_image_paths: ["assets/images/appear_grandma_home.png", "assets/images/lstate_cottage_night.png"]
 
 视频 prompt：
 "hand-drawn illustration, warm color palette. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown <<<image_1>>>, her eyes widen in shock, mouth falling open, body shrinking backward as terror washes over her face. The cozy cottage shifts from warmth to oppressive claustrophobia. Sound: crackling fireplace, a sharp gasp, creaking floorboards."

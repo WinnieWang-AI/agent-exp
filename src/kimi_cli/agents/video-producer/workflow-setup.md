@@ -73,28 +73,9 @@ prompt: 创意简报内容（见下方）
 
 编剧有自己的 schema 和工作流，会自主决定故事结构。
 
-### Step 4: 汇报结果
+### Step 4: 进入制作阶段
 
-编剧完成后，向用户简要汇报：
-- 故事标题
-- 场景数 / 角色数（从编剧的回复中提取）
-- 提示用户可以在界面上预览剧本
-
-### Step 5: 进入制作阶段
-
-剧本完成且用户无修改意见后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-production.md`，按其中的步骤调度导演。
-
-## 用户要求修改剧本
-
-如果用户在 Step 4 汇报后提出修改意见，使用**同一个 session_id** 再次调度编剧：
-
-```
-subagent_name: "video-screenwriter"
-session_id: "screenwriter_{project_name}"
-prompt: 用户的修改意见
-```
-
-编剧会在已有剧本基础上做局部修改，不需要从头重写。修改完成后重新汇报，再次等待用户确认。
+编剧完成后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-production.md`，按其中的步骤调度导演。不等待用户确认剧本。
 
 ## 错误处理
 
