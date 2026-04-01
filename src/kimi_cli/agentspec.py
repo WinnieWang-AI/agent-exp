@@ -19,12 +19,9 @@ def get_agents_dir() -> Path:
 
 DEFAULT_AGENT_FILE = get_agents_dir() / "default" / "agent.yaml"
 OKABE_AGENT_FILE = get_agents_dir() / "okabe" / "agent.yaml"
-VIDEO_CREATOR_AGENT_FILE = get_agents_dir() / "video-creator" / "agent.yaml"
 VIDEO_EVALUATOR_AGENT_FILE = get_agents_dir() / "video-evaluator" / "agent.yaml"
-VIDEO_MAKER_AGENT_FILE = get_agents_dir() / "video-maker" / "agent.yaml"
 VIDEO_AUTO_EVAL_AGENT_FILE = get_agents_dir() / "video-auto-eval" / "agent.yaml"
 AGENT_OPTIMIZER_AGENT_FILE = get_agents_dir() / "agent-optimizer" / "agent.yaml"
-SCREENWRITER_AGENT_FILE = get_agents_dir() / "screenwriter" / "agent.yaml"
 VIDEO_PRODUCER_AGENT_FILE = get_agents_dir() / "video-producer" / "agent.yaml"
 VIDEO_SCREENWRITER_AGENT_FILE = get_agents_dir() / "video-screenwriter" / "agent.yaml"
 VIDEO_CAMERA_AGENT_FILE = get_agents_dir() / "video-camera" / "agent.yaml"

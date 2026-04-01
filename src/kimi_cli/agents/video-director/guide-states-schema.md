@@ -100,7 +100,7 @@
 | phase | string | 是 | 状态名称 |
 | lighting | string | 是 | 光照条件 |
 | weather | string | 否 | 天气 |
-| condition | string | 否 | 环境状态细节 |
+| condition | string | 否 | 环境状态细节。已在 PropState 中定义的道具不要在此重复描述，否则场景参考图会烘焙道具的某一时刻状态，与后续 PropState 变化冲突 |
 | atmosphere | string | 是 | 整体氛围 |
 
 ### active_during

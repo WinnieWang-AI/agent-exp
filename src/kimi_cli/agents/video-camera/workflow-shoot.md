@@ -56,6 +56,8 @@
 
 读取前一 shot（shot_order 中的前一个，如有）的 `content`、`shot_type`、`angle`、`event_id`。
 
+**构建完整场景状态表：** 从 Step 2 建立的 event→实体状态映射中，查出当前 event 的**全部 active 状态**（所有 character_appearance、prop_state、location_state），不限于 focus_on。focus_on 用于决定镜头焦点和参考图优先级，完整场景状态表用于跨 event 状态对比和 prompt 中的环境描述。
+
 如果跨 event（两个 shot 的 event_id 不同）：
 - 用 Step 2 建立的 event→实体状态映射，对比前后 event 中共同实体的状态
 - 记录 `unchanged_entities`（状态相同）和 `changed_entities`（状态变了）
@@ -175,9 +177,10 @@ GenerateSpeech(
 
 **分步写入**，每完成一个关键步骤就立即更新 `{project_path}/generation-status.json`：
 
-1. **视频生成后**：立即写入记录，`status: "in_progress"`，`steps.video` 记录结果
-2. **TTS 完成后**（或确认不需要 TTS）：更新 `steps.tts`，将 `status` 改为 `"done"`
-3. 如果视频生成就失败了：直接写 `status: "failed"`
+1. **首帧生成后**（如有）：写入 `first_frame`（路径）和 `first_frame_prompt`（GenerateImage 使用的完整 prompt）
+2. **视频生成后**：立即写入记录，`status: "in_progress"`，`steps.video` 记录结果
+3. **TTS 完成后**（或确认不需要 TTS）：更新 `steps.tts`，将 `status` 改为 `"done"`
+4. 如果视频生成就失败了：直接写 `status: "failed"`
 
 `has_audio` 的值直接取 GenerateVideoSync 返回的 `has_audio` 字段。
 
@@ -202,10 +205,12 @@ GenerateSpeech(
         "video": {"status": "done", "output_path": "assets/shots/evt_wolf_encounter_shot_1.mp4", "has_audio": false},
         "tts": {"status": "done", "paths": ["assets/audio/tts_evt_wolf_encounter_shot_1_0.mp3"]}
       },
-      "mode": "reference_to_video",
+      "mode": "image_to_video",
+      "first_frame": "assets/frames/evt_wolf_encounter_shot_1_first.png",
+      "first_frame_prompt": "GenerateImage 使用的完整首帧 prompt",
       "reference_images": ["assets/images/appear_wolf_natural.png"],
       "prompt": "...",
-      "reasoning": "Vidu ref2v → no audio. TTS generated for 1 dialogue line."
+      "reasoning": "..."
     },
     "evt_farewell_shot_2": {
       "status": "failed",

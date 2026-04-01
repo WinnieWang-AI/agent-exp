@@ -220,7 +220,7 @@ def kimi(
     ] = False,
     # Customization
     agent: Annotated[
-        Literal["default", "okabe", "agent-optimizer", "video-auto-eval", "video-creator", "video-maker", "video-evaluator"] | None,
+        Literal["default", "okabe", "agent-optimizer", "video-auto-eval", "video-evaluator"] | None,
         typer.Option(
             "--agent",
             help="Builtin agent specification to use. Default: builtin default agent.",
@@ -317,9 +317,7 @@ def kimi(
         AGENT_OPTIMIZER_AGENT_FILE,
         DEFAULT_AGENT_FILE,
         OKABE_AGENT_FILE,
-        VIDEO_CREATOR_AGENT_FILE,
         VIDEO_AUTO_EVAL_AGENT_FILE,
-        VIDEO_MAKER_AGENT_FILE,
         VIDEO_EVALUATOR_AGENT_FILE,
     )
     from kimi_cli.app import KimiCLI, enable_logging
@@ -403,10 +401,6 @@ def kimi(
                 agent_file = AGENT_OPTIMIZER_AGENT_FILE
             case "video-auto-eval":
                 agent_file = VIDEO_AUTO_EVAL_AGENT_FILE
-            case "video-creator":
-                agent_file = VIDEO_CREATOR_AGENT_FILE
-            case "video-maker":
-                agent_file = VIDEO_MAKER_AGENT_FILE
             case "video-evaluator":
                 agent_file = VIDEO_EVALUATOR_AGENT_FILE
 

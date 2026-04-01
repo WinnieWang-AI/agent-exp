@@ -35,6 +35,19 @@ class Params(BaseModel):
         default=True,
         description="If true, mix the new audio with existing audio tracks. If false, replace the audio track entirely (for add_audio).",
     )
+    audio_role: str = Field(
+        default="",
+        description='Role of the audio being added (for add_audio). '
+        'Determines target loudness for automatic volume normalization. '
+        'Values: "dialogue" (-16 LUFS, loudest), "sfx" (-20 LUFS), '
+        '"bgm" (-28 LUFS, quietest), "voiceover" (-18 LUFS). '
+        'Leave empty to skip auto-normalization and use audio_volume instead.',
+    )
+    audio_volume: float = Field(
+        default=1.0,
+        description="Manual volume multiplier for the new audio (for add_audio). "
+        "Only used when audio_role is empty. 1.0 = original volume.",
+    )
     audio_loop: bool = Field(
         default=False,
         description="If true, loop the audio to match video duration (for add_audio). Useful when BGM is shorter than the video.",
@@ -213,11 +226,21 @@ class VideoEdit(CallableTool2[Params]):
 
         if params.audio_mix and has_audio:
             # Mix new audio with existing audio, output length = video length.
+            # normalize=0: disable amix's default 1/N normalization so both tracks
+            # keep their original volume.  Without this, each serial add_audio call
+            # halves the existing audio (-6 dB per pass).
             delay_ms = int(params.audio_offset * 1000)
+            vol_filter = self._compute_volume_filter(params.audio_role, params.audio_volume, params.audio_path)
+
+            # Apply volume adjustment to the new audio before mixing.
             if delay_ms > 0:
-                af = f"[1:a]adelay={delay_ms}|{delay_ms}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+                delay_chain = f"adelay={delay_ms}|{delay_ms}" + (f",{vol_filter}" if vol_filter else "")
+                af = f"[1:a]{delay_chain}[delayed];[0:a][delayed]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
             else:
-                af = "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+                if vol_filter:
+                    af = f"[1:a]{vol_filter}[adj];[0:a][adj]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
+                else:
+                    af = "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]"
             return [
                 "ffmpeg", "-y",
                 "-i", video_input,
@@ -231,11 +254,13 @@ class VideoEdit(CallableTool2[Params]):
             # No existing audio or replace mode: add audio track to video.
             # Use apad to pad short audio with silence to match video duration,
             # and -shortest to stop when the video ends (not when audio loops forever).
+            vol_filter = self._compute_volume_filter(params.audio_role, params.audio_volume, params.audio_path)
+            vol_prefix = f"{vol_filter}," if vol_filter else ""
             delay_ms = int(params.audio_offset * 1000)
             if delay_ms > 0:
-                af = f"[1:a]adelay={delay_ms}|{delay_ms},apad[aout]"
+                af = f"[1:a]{vol_prefix}adelay={delay_ms}|{delay_ms},apad[aout]"
             else:
-                af = "[1:a]apad[aout]"
+                af = f"[1:a]{vol_prefix}apad[aout]"
             return [
                 "ffmpeg", "-y",
                 "-i", video_input,
@@ -246,6 +271,57 @@ class VideoEdit(CallableTool2[Params]):
                 "-shortest",
                 params.output_path,
             ]
+
+    # Target loudness (LUFS) per audio role.
+    # Dialogue is loudest; BGM sits well below to avoid masking speech.
+    _ROLE_TARGET_LUFS: dict[str, float] = {
+        "dialogue":  -16,
+        "voiceover": -18,
+        "sfx":       -20,
+        "bgm":       -28,
+    }
+
+    def _compute_volume_filter(self, audio_role: str, audio_volume: float, audio_path: str) -> str:
+        """Return an ffmpeg volume filter string to normalize the audio.
+
+        If audio_role is set, probe the file's loudness and compute the dB
+        adjustment needed to hit that role's target LUFS.
+        Otherwise fall back to the manual audio_volume multiplier.
+        """
+        if audio_role:
+            target = self._ROLE_TARGET_LUFS.get(audio_role)
+            if target is not None:
+                measured = self._probe_loudness(audio_path)
+                if measured is not None:
+                    adj = target - measured
+                    adj = max(-30, min(12, adj))  # clamp
+                    return f"volume={adj}dB"
+        # Manual fallback
+        if audio_volume != 1.0:
+            return f"volume={audio_volume}"
+        return ""
+
+    @staticmethod
+    def _probe_loudness(path: str) -> float | None:
+        """Measure integrated loudness (LUFS) of an audio/video file via ffmpeg loudnorm."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-i", path, "-af", "loudnorm=print_format=json", "-f", "null", "-"],
+                capture_output=True, text=True, timeout=30,
+            )
+            # loudnorm prints JSON to stderr
+            import json as _json
+            import re
+            # Find the JSON block in stderr
+            m = re.search(r'\{[^}]*"input_i"[^}]*\}', result.stderr)
+            if m:
+                info = _json.loads(m.group())
+                val = float(info["input_i"])
+                return val if val > -70 else None  # treat near-silence as no signal
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _probe_has_audio(path: str) -> bool:
