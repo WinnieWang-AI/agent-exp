@@ -10,7 +10,7 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc
 from kimi_cli.tools.video.error_log import record_error
 from kimi_cli.tools.video.providers import get_default_provider
-from kimi_cli.tools.video.providers.base import GenerationRequest
+from kimi_cli.tools.video.providers.base import GenerationRequest, Subject
 
 
 class Params(BaseModel):
@@ -32,6 +32,12 @@ class Params(BaseModel):
         description="Paths to reference images (character, environment, etc.) for multi-reference video generation. "
         "The video model uses these to maintain visual consistency. Max 4 images. "
         "In prompts, reference them as <<<image_1>>>, <<<image_2>>>, etc.",
+    )
+    subjects: list[Subject] = Field(
+        default=[],
+        description="Subjects for reference-to-video with audio (Vidu Ref2V-Audio mode). "
+        "Each subject has id, images (1-3 paths), and optional voice_id. "
+        "In prompts, reference subjects as @id. When provided, generates video with audio.",
     )
     first_frame_path: str = Field(
         default="",
@@ -93,6 +99,7 @@ class GenerateVideo(CallableTool2[Params]):
             aspect_ratio=params.aspect_ratio,
             reference_image_path=params.reference_image_path,
             reference_images=params.reference_images,
+            subjects=params.subjects,
             first_frame_path=params.first_frame_path,
             last_frame_path=params.last_frame_path,
             style=params.style,

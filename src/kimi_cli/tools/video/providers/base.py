@@ -19,6 +19,14 @@ class VideoJobState(str, Enum):
     FAILED = "failed"
 
 
+class Subject(BaseModel):
+    """A subject (character/entity) for reference-to-video with audio."""
+
+    id: str
+    images: list[str]
+    voice_id: str = ""
+
+
 class GenerationRequest(BaseModel):
     """Request to generate a video."""
 
@@ -28,6 +36,7 @@ class GenerationRequest(BaseModel):
     aspect_ratio: str = "16:9"
     reference_image_path: str = ""
     reference_images: list[str] = []
+    subjects: list[Subject] = []
     first_frame_path: str = ""
     last_frame_path: str = ""
     style: str = ""

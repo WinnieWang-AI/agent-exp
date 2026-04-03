@@ -4,7 +4,7 @@
 
 项目目录下已有：
 - `meta.json` — aspect_ratio、language、style_prefix
-- `shots.json` — shot_order、每个 shot 的 duration_seconds / transition_in / transition_out / dialogues
+- `shots.json` — shot_order、每个 shot 的 duration_seconds / transition_in / transition_out / narration
 - `music-status.json` — BGM 主题曲 + 时间线编排信息（themes / arrangement）
 - `assets/shots/{shot_id}.mp4` — 视频片段
 - `assets/audio/{theme_id}.mp3` — BGM 主题曲音频文件

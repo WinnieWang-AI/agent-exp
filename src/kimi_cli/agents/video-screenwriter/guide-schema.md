@@ -57,6 +57,7 @@
     "hair": "棕色卷发",
     "signature_look": "红色丝绒斗篷，白色连衣裙"
   },
+  "voice_description": "清脆稚嫩的童声，语速偏快，好奇时尾音上扬",
   "relationships": {
     "char_wolf": [
       {"kind": "陌生人", "until": "scene_002"},
@@ -73,6 +74,7 @@
 | name | string | 是 | 角色名 |
 | tags | string[] | 是 | 多维标签（角色类型、阵营、家族、世代等） |
 | fixed_traits | object | 是 | 角色的固定视觉特征，key-value 自由定义。必须具体且有区分度 |
+| voice_description | string | 是 | 角色音色描述（如"低沉沙哑的中年男声"），用于视频生成时的语音一致性 |
 | relationships | object | 是 | key 为目标角色 ID，value 为关系数组。每个角色必须声明与其他相关角色的关系 |
 
 **Relationship 条目：**

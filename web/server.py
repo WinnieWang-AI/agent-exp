@@ -262,6 +262,27 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
         shot_plan_path = p
         break
 
+    # Fallback: discover project from project.json if story-graph.json is absent
+    if not project_name:
+        for p in session_output_dir.rglob("project.json"):
+            try:
+                pj = json.loads(p.read_text(encoding="utf-8"))
+                if pj.get("name"):
+                    project_name = pj["name"]
+                    if pj.get("session_ids"):
+                        summary["session_ids"] = pj["session_ids"]
+                    if p.parent != session_output_dir:
+                        # Also try to locate story-graph / shot-plan inside this project dir
+                        sg = p.parent / "story-graph.json"
+                        if sg.exists():
+                            story_graph_path = sg
+                        sp = p.parent / "shot-plan.json"
+                        if sp.exists():
+                            shot_plan_path = sp
+                    break
+            except Exception:
+                continue
+
     if project_name:
         summary["project_name"] = project_name
 
@@ -391,12 +412,17 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
     op_graph = parse_chat_to_op_graph(chat_path) if chat_path.exists() else None
 
     project_name = summary.get("project_name", "unknown")
+    session_ids = summary.get("session_ids")
+    if session_ids:
+        sid_str = ", ".join(f"{k}={v}" for k, v in session_ids.items())
+    else:
+        sid_str = f"graph_{project_name}, create_{project_name}, create_audio_{project_name}"
 
     # --- Build the full execution history (written to file) ---
     detail_lines: list[str] = []
     detail_lines.append("# Resume State — Execution History")
     detail_lines.append(f"Project name: {project_name}")
-    detail_lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
+    detail_lines.append(f"Session IDs: {sid_str}")
 
     if op_graph and op_graph.get("nodes"):
         nodes = op_graph["nodes"]
@@ -483,7 +509,7 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
     # --- Build compact context pointer (this is what goes into agent context) ---
     # Include only: project name, session IDs, disk state summary, and file pointer
     compact_lines = [f"[Session resumed. Project: {project_name}]"]
-    compact_lines.append(f"Session IDs: graph_{project_name}, create_{project_name}, create_audio_{project_name}")
+    compact_lines.append(f"Session IDs: {sid_str}")
     if sg:
         compact_lines.append(f"Disk state: {sg['characters']} chars, {sg['locations']} locs, {sg['events']} events, "
                              f"camera={'Y' if sg['has_camera_directives'] else 'N'}, "

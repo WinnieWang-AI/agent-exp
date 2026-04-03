@@ -21,22 +21,16 @@
   "id": "evt_farewell_shot_1",
   "event_id": "evt_farewell",
   "order": 1,
-  "shot_type": "wide",
+  "framing": "wide",
   "angle": "eye_level",
   "movement": "static",
   "focus_on": ["appear_red_neat", "lstate_home_morning"],
-  "content": "小屋门前，妈妈弯腰将篮子递给小红帽，晨光从左侧洒入",
+  "content": "小屋门前台阶上，妈妈双手捧篮站在门口，小红帽在妈妈正对面一步外仰头看她；晨鸟在屋檐上鸣叫 → 妈妈弯腰将篮子递出，藤编篮发出轻响，小红帽伸出双手接住，两人目光对视；妈妈温柔叮嘱：「路上不要和陌生人说话。」 → 小红帽双手抱篮贴在胸前，妈妈直起身微笑注视她",
   "duration_seconds": 5,
+  "scene_continuous": false,
   "transition_in": "cut",
   "transition_out": "cut",
-  "dialogues": [
-    {
-      "speaker": "char_mother",
-      "text": "路上不要和陌生人说话",
-      "tone": "温柔叮嘱"
-    }
-  ],
-  "sfx": ["晨鸟鸣叫", "篮子提起的藤编声"]
+  "narration": ""
 }
 ```
 </example>
@@ -48,33 +42,25 @@
 | id | string | 是 | 格式 `{event_id}_shot_{N}`，全局唯一 |
 | event_id | string | 是 | 所属事件 ID，必须在 events.json 中存在 |
 | order | int | 是 | 在该事件内的顺序编号，从 1 开始 |
-| shot_type | string | 是 | 景别，见下方词表 |
+| framing | string | 是 | 景别，见下方词表 |
 | angle | string | 是 | 角度，见下方词表 |
 | movement | string | 是 | 运镜，见下方词表 |
 | focus_on | string[] | 是 | 画面聚焦的状态 ID 列表（CharacterAppearance / LocationState / PropState 的 ID），必须在 states.json 中存在 |
-| content | string | 是 | 画面内容描述。具体描写这个镜头里观众看到什么：角色动作、空间关系、光影、关键细节。必须足够具体让下游生成视频，不需要回查其他文件 |
+| content | string | 是 | 画面内容描述。按"起始状态 → 动态变化 → 最终状态"三段写，用"→"分隔。必须描述画面中**所有角色**在场景中的物理位置、动作互动、状态变化。**对话、音效也按时间顺序写在对应动作节拍中**（对话用「」标注说话者和语气，音效直接描述声源和声音）。必须足够具体让下游生成视频，不需要回查其他文件 |
+| scene_continuous | boolean | 是 | 按 shot_order 顺序，当前 shot 与前一 shot 是否在同一物理场景中。true = 同场景（Camera 需用前一 shot 尾帧保持一致性），false = 换场景。shot_order 中第一个 shot 固定为 false |
 | duration_seconds | number | 是 | 时长（秒）。最小 3 秒，最大 10 秒。超过 10 秒的镜头需要拆分 |
 | transition_in | string | 是 | 入场转场方式 |
 | transition_out | string | 是 | 出场转场方式 |
 
-**音频字段：**
+**旁白字段：**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| dialogues | array | 否 | 该 shot 中的对白列表。从 events.json 的 dialogues 中分配过来，不修改台词内容。无对白时省略 |
-| sfx | string[] | 否 | 音效提示列表。只列关键的环境音或动作音，不需要穷举所有声音 |
-
-**Dialogue（shot 内对白）：**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| speaker | string | 是 | 角色 ID 或 "narrator" |
-| text | string | 是 | 对白内容，原样保留 |
-| tone | string | 否 | 语气/情绪 |
+| narration | string | 否 | 画外旁白。不在画面中发生的解说词（如"很久很久以前……"）。无旁白时为空字符串或省略。注意：角色对话和音效不放这里，写在 content 中 |
 
 ### 词表
 
-**shot_type（景别）：**
+**framing（景别）：**
 
 | 值 | 说明 | 典型用途 |
 |----|------|----------|

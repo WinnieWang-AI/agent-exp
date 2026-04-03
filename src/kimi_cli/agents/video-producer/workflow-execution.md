@@ -1,5 +1,17 @@
 # 执行阶段：摄影 + 作曲 → 剪辑 → 交付
 
+## 前置检查
+
+进入执行阶段前，检查美术产出是否完整：
+
+1. 读取 `{project_path}/states.json`，收集所有 `character_appearances` 中的状态 id
+2. 检查每个角色状态是否有 `reference_image` 字段，且对应文件存在
+3. 汇总缺失列表
+
+**判定：**
+- 所有角色状态都有参考图 → 继续执行
+- 有缺失 → 停止，报错告知调用方哪些角色状态缺少参考图，要求先完成美术阶段
+
 ## 步骤
 
 ### Step 1: 并行调度摄影和作曲
@@ -45,14 +57,16 @@ context_files: ["{project_path}/meta.json", "{project_path}/events.json", "{proj
 
 两个任务独立执行。任一任务完成后，检查其结果：
 
-- **摄影完成**：读取 `{project_path}/generation-status.json`，记录成功/失败 shot 数
+- **摄影完成**：读取 `{project_path}/generation-status.json`，统计 done / degraded / failed shot 数
 - **作曲完成**：读取 `{project_path}/music-status.json`，记录成功/失败主题曲数
 
 两个任务都完成后，汇总结果：
-- 视频生成：成功 N / 失败 M / 总 T
+- 视频生成：done N / degraded D / failed M / 总 T
 - BGM 生成：成功 N / 失败 M / 总 T
 
-如果视频生成成功率 < 70%，上报用户，等待指示（可选重试失败的 shot 或继续组装）。
+**需要上报用户的情况**（等待用户指示后再继续剪辑）：
+- 视频生成成功率（done + degraded）< 70%
+- 有 degraded 的 shot：向用户展示每个 degraded shot 的偏离原因和影响，由用户决定接受或重试
 
 ### Step 3: 调度剪辑（video-editor）
 

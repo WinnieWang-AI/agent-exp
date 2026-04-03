@@ -1,4 +1,5 @@
 import asyncio
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -11,7 +12,7 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder, load_desc, warn_if_relative_path
 from kimi_cli.tools.video.error_log import record_error
 from kimi_cli.tools.video.providers import get_default_provider
-from kimi_cli.tools.video.providers.base import GenerationRequest, VideoJobState
+from kimi_cli.tools.video.providers.base import GenerationRequest, Subject, VideoJobState
 
 
 class Params(BaseModel):
@@ -32,6 +33,12 @@ class Params(BaseModel):
         default=[],
         description="Paths to reference images for multi-reference video generation. Max 4 images. "
         "In prompts, reference them as <<<image_1>>>, <<<image_2>>>, etc.",
+    )
+    subjects: list[Subject] = Field(
+        default=[],
+        description="Subjects for reference-to-video with audio (Vidu Ref2V-Audio mode). "
+        "Each subject has id, images (1-3 paths), and optional voice_id. "
+        "In prompts, reference subjects as @id. When provided, generates video with audio.",
     )
     first_frame_path: str = Field(
         default="",
@@ -90,6 +97,25 @@ class GenerateVideoSync(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Video generation rejected by user.", brief="Rejected")
 
+        # --- Validate image marker consistency ---
+        if params.reference_images:
+            markers = set(int(m) for m in re.findall(r"<<<image_(\d+)>>>", params.prompt))
+            n_refs = len(params.reference_images)
+            expected = set(range(1, n_refs + 1))
+            if markers != expected:
+                missing = expected - markers
+                extra = markers - expected
+                parts = []
+                if missing:
+                    parts.append(f"missing markers: {sorted(missing)}")
+                if extra:
+                    parts.append(f"invalid markers: {sorted(extra)} (only {n_refs} images provided)")
+                return builder.error(
+                    message=f"Prompt <<<image_N>>> markers don't match reference_images ({n_refs} images). {'; '.join(parts)}. "
+                            f"Each reference image must have exactly one <<<image_N>>> marker (N=1..{n_refs}).",
+                    brief="Marker mismatch",
+                )
+
         # --- Resolve provider ---
         available = list(self._config.video_providers.keys())
         tos_config = self._config.tos if self._config.tos.is_configured else None
@@ -115,6 +141,7 @@ class GenerateVideoSync(CallableTool2[Params]):
             aspect_ratio=params.aspect_ratio,
             reference_image_path=params.reference_image_path,
             reference_images=params.reference_images,
+            subjects=params.subjects,
             first_frame_path=params.first_frame_path,
             last_frame_path=params.last_frame_path,
             style=params.style,
@@ -144,15 +171,20 @@ class GenerateVideoSync(CallableTool2[Params]):
         while True:
             await asyncio.sleep(poll)
 
-            try:
-                status = await provider.check_job(job_id)
-            except Exception as e:
-                record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
-                             job_id=job_id, error=str(e))
-                return builder.error(
-                    message=f"Failed to check job status.\n  job_id: {job_id}\n  error: {e}\n  available_providers: {available}",
-                    brief="Check failed",
-                )
+            max_check_retries = 3
+            for _check_attempt in range(max_check_retries):
+                try:
+                    status = await provider.check_job(job_id)
+                    break
+                except Exception as e:
+                    if _check_attempt == max_check_retries - 1:
+                        record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,
+                                     job_id=job_id, error=str(e))
+                        return builder.error(
+                            message=f"Failed to check job status.\n  job_id: {job_id}\n  error: {e}\n  available_providers: {available}",
+                            brief="Check failed",
+                        )
+                    await asyncio.sleep(poll)
 
             if status.state == VideoJobState.FAILED:
                 record_error(tool="GenerateVideoSync", provider=provider_name, model=model_name,

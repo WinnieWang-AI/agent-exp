@@ -731,11 +731,13 @@ def _merge_statsig_configs(config: Config) -> None:
                 if shengshu:
                     api_key = shengshu.get("api_key", "")
                     base_url = shengshu.get("base_url", "https://api.vidu.com")
+                    model_name = shengshu.get("model_name", "")
                     if api_key:
                         config.video_providers["vidu"] = VideoProviderConfig(
                             type="vidu",
                             api_key=SecretStr(api_key),
                             base_url=base_url,
+                            model_name=model_name,
                         )
                         logger.debug("Statsig: merged shengshu into video_providers['vidu']")
         finally:

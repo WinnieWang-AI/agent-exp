@@ -14,13 +14,14 @@
 | 负面提示 | `meta.json` → `style.negative_prefix` | 通过 `negative_prompt` 参数传入 |
 | 画面比例 | `meta.json` → `video_info.aspect_ratio` | 通过 `aspect_ratio` 参数传入 |
 | 对白语言 | `meta.json` → `video_info.language` | 对白文本保持原语言 |
-| 镜头语言 | `shots.json` → shot 的 `shot_type` / `angle` / `movement` | 翻译为英文描述 |
+| 镜头语言 | `shots.json` → shot 的 `framing` / `angle` / `movement` | 翻译为英文描述 |
 | 画面内容 | `shots.json` → shot 的 `content` | 翻译为英文，保留空间关系描述 |
 | 场景环境 | `states.json` → focus_on 的 LocationState → `lighting` / `weather` / `atmosphere` | 编织进场景描述 |
 | 角色外形 | `states.json` → focus_on 的 CharacterAppearance → `visual` | 从简，抓关键特征 |
 | 角色行为 | `events.json` → 当前事件的 `interactions` / `mood` / `state_changes` | 视频核心 |
-| 对白 | `shots.json` → shot 的 `dialogues` | 写入 Sound: 段 |
-| 音效 | `shots.json` → shot 的 `sfx` | 写入 Sound: 段 |
+| 对白 | `shots.json` → shot 的 `content`（对白已按时间顺序写在动作节拍中）+ `entities.json` → 角色的 `voice_description` | 翻译时保留对白在动作流程中的位置，附带音色描述 |
+| 旁白 | `shots.json` → shot 的 `narration` | 画外旁白，如有则写入 |
+| 音效 | `shots.json` → shot 的 `content`（音效已写在对应动作节拍中） | 写入 Sound: 段 |
 | 参考图 | `states.json` → 各状态的 `reference_image` 字段 | 通过 reference_images 参数传入 |
 
 ## 视频 Prompt 结构
@@ -35,16 +36,24 @@
 6. **角色表演**：events.json 当前事件的 interactions / mood / state_changes 推断角色的情绪和表演 — 这是视频的核心
 7. **道具**：只在画面中有重要作用时提及
 8. **参考图关联标记**：`<<<image_N>>>`，放在角色/场景首次出现的描述旁
-9. **声音描述**：以 "Sound:" 开头，放在 prompt 末尾
+9. **角色对白**：content 中已按时间顺序标注，翻译时保留对白在动作流程中的位置，附带音色描述
+10. **旁白**：narration 字段，如有则写入
+11. **Sound 段**：放在 prompt 末尾，只写环境音和音效
 
-### 声音描述（Sound）
+### 声音描述
 
-视频模型同时生成画面和声音。在 prompt 末尾用 "Sound:" 描述该镜头的声音：
+视频模型同时生成画面和声音。声音分两部分写入 prompt：
 
+**角色对白 — 嵌入动作叙事中：**
+- 对白跟着角色动作写，不要堆在末尾。让模型知道谁在什么时候说话
+- 结合 entities.json 中该角色的 `voice_description` 描述音色
+- 格式：`...the hare <<<image_1>>> turns to the tortoise with a smirk and says in a sharp cocky voice "慢吞吞的"... the tortoise <<<image_2>>> glances back calmly and replies in a slow deep voice "一步一步来"...`
+- 保持对白原语言
+
+**Sound 段 — 放在 prompt 末尾，只写环境音和音效：**
 - **环境音**：从场景推断（森林→鸟鸣风声，室内→壁炉声）
-- **动作音效**：从 sfx 字段和角色行为推断（奔跑→急促脚步，开门→门轴吱呀）
-- **角色对白**：从 dialogues 字段提取，格式 `the girl says "奶奶我来看你了"`，保持原语言
-- **禁止 BGM** — 始终在 Sound 段末尾加 `"No background music."` BGM 由作曲 agent 独立生成，视频模型不应产出任何音乐
+- **动作音效**：从 content 中描述的声音和角色行为推断（奔跑→急促脚步，开门→门轴吱呀）
+- **禁止 BGM** — 始终在 Sound 段末尾加 `"No background music."`
 
 ### 参考图关联标记
 
@@ -55,9 +64,11 @@
 | 首帧图 | GenerateImage | `@[image N]` | `"Reference images: @[image 1] is the hare, @[image 2] is the tortoise, @[image 3] is the meadow."` 放在 prompt 最前面，按 reference_image_paths 顺序编号，覆盖所有参考图（角色 + 场景 + 道具） |
 | 视频 | GenerateVideoSync | `<<<image_N>>>` | 无前缀，直接放在角色描述旁 |
 
-编号按参数中图片列表的顺序（reference_image_paths 或 reference_images）。
+编号 = 图片在参数数组中的位置（1-indexed）。**必须先确定数组顺序，再写 prompt。不要先写 prompt 再凑数组。**
 
-**自查**：reference_images 有几张，prompt 中就必须有几个 `<<<image_N>>>` 标记。
+**自检**：
+1. reference_images 有 K 张 → prompt 中必须恰好有 K 个不同的 `<<<image_N>>>` 标记（N 从 1 到 K）
+2. 每个 `<<<image_N>>>` 旁边描述的对象必须与 reference_images[N-1] 的实际内容一致（尾帧就是尾帧，角色就是角色，不能张冠李戴）
 
 ## 首帧图 Prompt
 
@@ -72,7 +83,7 @@
 
 ## 跨镜头转换时的 Prompt 写法
 
-当 Step 2b 决定使用尾帧作为"变化起点"的辅助参考时，prompt 必须交代转换过程：
+当 Step 3.2 决定使用尾帧作为"变化起点"的辅助参考时，prompt 必须交代转换过程：
 
 **场景转换**（角色状态不变 + 场景变了）：
 - 描述角色如何从前一个空间移动到当前空间
@@ -126,13 +137,12 @@ shots.json 数据：
 {
   "id": "evt_wolf_encounter_shot_1",
   "event_id": "evt_wolf_encounter",
-  "shot_type": "medium",
+  "framing": "medium",
   "angle": "eye_level",
   "movement": "static",
-  "content": "林间小路上，小红帽停步，大灰狼从右侧树后探出，两者相距约3米",
+  "content": "林间小路上，小红帽停步；右侧树后传来树枝折断声，大灰狼从树后探出，两者相距约3米 → 大灰狼弓身缓步靠近，伪装友善地说：「你好啊小姑娘，你要去哪里呀？」",
   "focus_on": ["appear_red_neat", "appear_wolf_natural", "lstate_forest_bright"],
-  "dialogues": [{"speaker": "char_wolf", "text": "你好啊小姑娘，你要去哪里呀？", "tone": "伪装友善"}],
-  "sfx": ["树枝折断声"]
+  "narration": ""
 }
 ```
 
@@ -143,7 +153,7 @@ states.json 中查到：
 - 同 event 的 interactions / state_changes: char_red → "停下脚步，侧头倾听"; char_wolf → "缓缓走出，弓着身体"
 
 视频 prompt：
-"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. On the left side of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the forest path, tilting her head with wide curious eyes and a hint of unease. About three meters away on the right, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low to appear smaller. Sunlit forest clearing <<<image_3>>> with god rays and scattered wildflowers. Sound: a twig snapping, gentle breeze, the wolf says in a warm friendly tone '你好啊小姑娘，你要去哪里呀？'"
+"hand-drawn illustration, warm color palette, children's storybook style. Medium shot, eye level, static camera. On the left side of the frame, a little girl in a red velvet cloak <<<image_1>>> stops on the forest path, tilting her head with wide curious eyes and a hint of unease. About three meters away on the right, from behind a large oak tree, a tall gray-brown wolf <<<image_2>>> slowly emerges, crouching low to appear smaller, and says in a deep warm friendly voice '你好啊小姑娘，你要去哪里呀？'. Sunlit forest clearing <<<image_3>>> with god rays and scattered wildflowers. Sound: a twig snapping, gentle breeze. No background music."
 
 参数：
 - mode: "reference_to_video"（狼中途出场，不适合首帧）
@@ -168,12 +178,12 @@ ExtractFrame(
 ```
 
 视频 prompt：
-"hand-drawn illustration, warm color palette. Close-up, eye level, static camera. The mother <<<image_1>>> leans forward and places a gentle kiss on the girl's forehead, her eyes glistening with worry. Morning sunlight warms the doorway. Sound: soft rustling of fabric, a quiet sigh from the mother."
+"hand-drawn illustration, warm color palette. Close-up, eye level, static camera. The mother leans forward and places a gentle kiss on the girl's forehead, her eyes glistening with worry. Morning sunlight warms the doorway. Sound: soft rustling of fabric, a quiet sigh from the mother. No background music."
 
 参数：
 - mode: "image_to_video"
 - reference_image_path: "assets/frames/evt_farewell_shot_2_tail.png"
-- reference_images: ["assets/images/appear_mother_home.png"]
+- reference_images: []（i2v 以尾帧为起始画面，尾帧已包含角色，无需额外参考图）
 - duration_seconds: 4
 </example>
 
@@ -188,10 +198,10 @@ ExtractFrame(
 首帧 reference_image_paths: ["assets/images/appear_grandma_home.png", "assets/images/lstate_cottage_night.png"]
 
 视频 prompt：
-"hand-drawn illustration, warm color palette. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown <<<image_1>>>, her eyes widen in shock, mouth falling open, body shrinking backward as terror washes over her face. The cozy cottage shifts from warmth to oppressive claustrophobia. Sound: crackling fireplace, a sharp gasp, creaking floorboards."
+"hand-drawn illustration, warm color palette. Close-up from low angle, camera slowly pushing in. An elderly woman in a white nightgown, her eyes widen in shock, mouth falling open, body shrinking backward as terror washes over her face. The cozy cottage shifts from warmth to oppressive claustrophobia. Sound: crackling fireplace, a sharp gasp, creaking floorboards. No background music."
 
 参数：
 - mode: "image_to_video"
 - reference_image_path: "assets/frames/evt_grandma_door_shot_1_first.png"
-- reference_images: ["assets/images/appear_grandma_home.png"]
+- reference_images: []（i2v 以首帧为起始画面，角色一致性已由首帧保证）
 </example>

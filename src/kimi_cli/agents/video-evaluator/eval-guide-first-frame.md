@@ -10,7 +10,7 @@
 
 ## 评估流程
 
-1. 调用方会提供：首帧图路径、shot 信息（shot_type / angle / movement / content）、出镜角色及其参考图、场景描述。
+1. 调用方会提供：首帧图路径、shot 信息（framing / angle / movement / content）、出镜角色及其参考图、场景描述。
 2. 用 **AnalyzeImage** 查看首帧图。images 中同时传入**首帧图**和**出镜角色的参考图**（各自标注 label），prompt 要求 VLM 按下方 checklist 检查各项，并对比角色参考图判断角色是否可辨认。
 3. 按下方 checklist 逐项检查。
 4. 输出结构化报告。
@@ -23,7 +23,7 @@
 |--------|----------|---------------|
 | **画面比例** | 图片比例与要求的 aspect_ratio 一致（如 9:16 应为竖图，16:9 应为横图） | 要求 9:16 竖屏但生成了 1:1 正方形图 |
 | **角色可辨认** | 出镜角色与参考图中的角色在外貌、服装上一致，可以被识别 | 角色面部/体型/服装与参考图明显不符 |
-| **角色完整** | 根据 shot_type 判断：wide/full 需要全身；medium 至少半身以上；close_up 允许局部 | wide shot 但角色被截断 |
+| **角色完整** | 根据 framing 判断：wide/full 需要全身；medium 至少半身以上；close_up 允许局部 | wide shot 但角色被截断 |
 | **站位/构图合理** | 角色位置符合 shot content 描述（如"两人对峙"应两人面对面） | 角色位置不合理（该面对面的却背对背） |
 | **镜头角度匹配** | 画面视角与 angle 一致（eye_level / low_angle / high_angle / bird_eye） | 要求 low_angle 但实际是平视 |
 | **场景氛围匹配** | 背景环境与 location state 描述一致（森林/室内/天气/光照） | 场景类型或氛围完全不符 |
@@ -77,7 +77,7 @@
 
 #### {shot_id} 首帧
 - 路径: {path}
-- Shot 信息: {shot_type}, {angle}, {movement}
+- Shot 信息: {framing}, {angle}, {movement}
 - Content: {content}
 - 出镜角色: {角色列表}
 - 画面比例: PASS / FAIL — {实际比例 vs 要求比例}

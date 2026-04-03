@@ -4,31 +4,27 @@
 
 ## 核心原则
 
-1. **模型能从输入图片里"看到"谁，就能保持谁的一致性。** 首帧/参考图里出现的角色能保持一致，没出现的无法保证。
-2. **尾帧用法由导演意图决定，不由"什么变了"机械决定。** content 和 transition_in 已编码了导演的转换意图。
-3. **角色一致性由参考图保证，不由尾帧保证。** 参考图是白底全身的身份锚点，尾帧是特定场景中的画面截图。
+1. **每个 shot 都必须携带参考图。** 角色 shot 携带角色参考图 + 场景参考图，纯环境 shot 携带场景参考图。参考图是视觉一致性的唯一保证。
+2. **模型能从输入图片里"看到"谁，就能保持谁的一致性。** 首帧/参考图里出现的角色能保持一致，没出现的无法保证。
+3. **尾帧用法由导演标注决定。** `scene_continuous` 和 `transition_in` 已编码了导演的场景连续性意图。
+4. **角色一致性由参考图保证，不由尾帧保证。** 参考图是白底全身的身份锚点，尾帧是特定场景中的画面截图。
 
-## 尾帧的三种角色
+## 尾帧判断
 
-| 角色 | 触发条件 | 用法 |
-|------|---------|------|
-| **接续画面** | 同 event 内时长拆分（shot_type+angle 相同） | `reference_image_path`（主输入，image_to_video） |
-| **变化起点** | content 描述从前一状态到当前状态的转换过程 | 放入 `reference_images`（辅助参考） |
-| **不使用** | transition_in=cut + content 描述独立场景 | 不提取尾帧 |
+**是否使用尾帧**（由导演通过 `scene_continuous` 字段标注）：
 
-## 判断导演是否要展示转换
+| 条件 | 是否使用尾帧 |
+|------|-------------|
+| `scene_continuous = true` | 使用 |
+| `scene_continuous = false` + `transition_in = dissolve` | 使用 |
+| `scene_continuous = false` + `transition_in = cut` | 不使用 |
 
-**需要展示转换**的信号：
-- content 描述一个**过程**（"从 X 变成 Y"、"角色从 A 走到 B"、"光线从明亮变为昏暗"）
-- transition_in 是 `dissolve`（渐变过渡）
+**尾帧用法**（由 Camera 判断画面能否从尾帧自然延续）：
 
-**不需要展示转换（硬切）**的信号：
-- transition_in 是 `cut`
-- content 描述一个**独立画面**（"小屋内，奶奶躺在床上"），不涉及从前一画面的过渡
-
-**同 event 内镜头切换**（shot_type 或 angle 变了）：
-- content 描述同一动作的不同视角 → 展示转换
-- content 描述独立画面（如插入道具特写） → 不展示
+| 条件 | 用法 |
+|------|------|
+| 构图没变（景别、角度一致）且无新角色出场 | 从尾帧画面开始（`reference_image_path`，image_to_video） |
+| 构图变了，或有新角色出场 | 尾帧做一致性参考（放入 `reference_images`），模式 = `reference_to_video` |
 
 ## 生成模式判断条件
 
@@ -38,7 +34,7 @@
 | 有角色中途出场（如"从树后走出"） | `reference_to_video` |
 | 角色背对镜头或被遮挡 | `reference_to_video` |
 | 大幅运动（tracking + 奔跑/蹦跳） | `reference_to_video` |
-| 纯环境镜头，无角色参考图 | `text_to_video` |
+| 纯环境镜头 | `image_to_video`（用场景参考图生成首帧）或 `reference_to_video`（场景参考图做 reference） |
 
 ## 参考图选择规则
 
@@ -55,13 +51,13 @@
 
 ## 并行规则
 
-- 同 event 内 shot_type+angle 相同的连续 shot 必须串行（后者需要前者尾帧）
-- 决定使用尾帧参考时，必须等前一 shot 完成
-- 其他情况下不同 event 的 shot 可并行
+- `scene_continuous = true` 的连续 shot 必须串行（后者需要前者尾帧）
+- `transition_in = dissolve` 的 shot 必须等前一 shot 完成
+- 其他情况下 shot 可并行
 
 ## 常见陷阱
 
-1. **不要机械按"什么变了"分 case。** 始终读 content + transition_in 判断导演意图。
+1. **不要自己推断场景连续性。** 读 `scene_continuous` 字段，这是导演的标注。
 2. **尾帧不是万能的一致性工具。** 硬切时使用尾帧反而引入前一场景的干扰。
 3. **状态变化是故事的一部分。** 当 active_during 显示角色状态变了，用新状态的参考图。
 4. **运动幅度大的镜头慎用首帧。** 首帧约束起始构图，大幅运动会不自然。

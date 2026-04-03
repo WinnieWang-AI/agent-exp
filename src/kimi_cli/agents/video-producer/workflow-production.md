@@ -1,5 +1,13 @@
 # 制作执行
 
+## 输入
+
+项目目录下已有编剧产出：
+- `meta.json` — 标题、视频规格、风格
+- `entities.json` — 角色/地点/道具设定
+- `outline.json` — 大纲
+- `act-*.json` — 分幕剧本（含 beat 级对白）
+
 ## 步骤
 
 ### Step 1: 调度导演
@@ -34,7 +42,7 @@ context_files: ["{project_path}/meta.json", "{project_path}/entities.json", "{pr
 subagent_name: "video-audience"
 session_id: "audience_{project_name}"
 prompt: 项目路径和执行指令
-context_files: ["{project_path}/entities.json", "{project_path}/events.json", "{project_path}/states.json", "{project_path}/shots.json"]
+context_files: ["{project_path}/entities.json", "{project_path}/events.json", "{project_path}/states.json", "{project_path}/shots.json", "{project_path}/content-quiz.json"]
 ```
 
 **prompt 中必须包含且仅包含：**
@@ -45,40 +53,30 @@ context_files: ["{project_path}/entities.json", "{project_path}/events.json", "{
 
 **处理审查结果：**
 - **PASS**：继续 Step 3
-- **HAS_ISSUES 仅 warning**：继续 Step 3
-- **HAS_ISSUES 且有 error**：执行以下修复流程，然后继续 Step 3
+- **HAS_ISSUES**：执行以下修复流程，然后继续 Step 3
 
 **修复流程（最多 1 轮）：**
 
-1. 读取 `{project_path}/audience-review.json`，提取所有 severity=error 的 issue
+1. 读取 `{project_path}/audience-review.json`，提取所有 issue（error 和 warning）
 2. 用同一 session_id 调度导演修复：
 
 ```
 subagent_name: "video-director"
 session_id: "director_{project_name}"
 prompt: 见下方
-context_files: ["{project_path}/audience-review.json"]
+context_files: ["{project_path}/audience-review.json", "{project_path}/content-quiz.json"]
 ```
 
 **prompt 格式：**
 
 ```
-观众审查发现以下问题，请逐个修复：
+观众审查发现以下问题，请读取 guide-fix-audience-issues.md 逐个修复：
 
-{逐条列出 error，每条包含：}
+{逐条列出 issue，每条包含：}
 - 问题类型：{type}
 - 位置：{event_id} / {shot_id}
 - 问题：{description}
 - 细节：{detail}
-
-修复方式：
-- missing_visual_coverage → 补 shot 或在现有 shot 的 content 中补充变化过程
-- incomplete_event → 补 shot 覆盖缺失的动作
-- broken_causality → 补过渡 shot 或调整前后 shot 的 content 建立因果
-- state_jump → 补 state_changes 或调整 active_during
-- ambiguous_content → 重写 content，按空间顺序描述清楚角色位置关系
-
-修复后重新执行校验（workflow-validate.md）。
 ```
 
 3. 导演修复并重新校验后，再调度一次观众审查（新 session_id：`audience_{project_name}_r2`）
@@ -108,6 +106,19 @@ art-designer 有自己的工作流和 prompt 规范，会从 states.json 的视�
 ### Step 4: 进入执行阶段
 
 美术完成后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-execution.md`，按其中的步骤调度摄影、作曲和剪辑。不等待用户确认参考图。
+
+## 输出
+
+本阶段结束时，项目目录下应有以下文件（由各 subagent 产出）：
+- `events.json` — 事件列表（导演）
+- `states.json` — 实体状态与参考图路径（导演 + 美术）
+- `shots.json` — 镜头列表与播放顺序（导演）
+- `content-quiz.json` — content 可读性测试题（导演）
+- `audience-review.json` — 观众审查报告（观众）
+- `validation-report.json` — 导演校验报告（导演）
+- `assets/images/` — 参考图文件（美术）
+
+进入下一阶段前，检查以上文件是否都已存在。缺少任何一项说明有步骤被跳过。
 
 ## 错误处理
 

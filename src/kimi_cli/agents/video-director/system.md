@@ -30,7 +30,7 @@ ${ROLE_ADDITIONAL}
 
 1. **事件拆解**：读取剧本，将场景/beats 拆解为事件序列
 2. **实体状态规划**：为每个实体规划跨事件的视觉状态变化
-3. **镜头设计**：为每个事件设计 shots（画面 + 音频 + 时长）
+3. **镜头设计**：为每个事件设计 shots（画面 + 音频 + 时长）+ 生成 content 可读性测试题
 4. **校验**：跨文件一致性检查，生成校验报告
 
 本 agent 的 L1/L2 文件：
@@ -41,6 +41,7 @@ ${ROLE_ADDITIONAL}
 - `${AGENT_DIR}/guide-events-schema.md` — 事件列表数据格式定义
 - `${AGENT_DIR}/guide-states-schema.md` — 实体状态数据格式定义
 - `${AGENT_DIR}/guide-shots-schema.md` — 镜头数据格式定义
+- `${AGENT_DIR}/guide-fix-audience-issues.md` — 观众审查问题修复参考
 
 ## 核心规则
 

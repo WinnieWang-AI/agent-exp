@@ -10,6 +10,7 @@ from kimi_cli.config import VideoProviderConfig
 from kimi_cli.config import TOSConfig
 from kimi_cli.tools.video.providers.base import (
     GenerationRequest,
+    Subject,
     VideoJobState,
     VideoJobStatus,
     VideoJobSubmission,
@@ -50,58 +51,66 @@ class ViduVideoProvider(VideoProvider):
     # ------------------------------------------------------------------
 
     def supports_audio(self, request: GenerationRequest) -> bool:
-        """Vidu only supports audio with Q3 models.
+        """Vidu supports audio with Q3 models, and Ref2V-Audio mode (subjects).
 
-        Ref2V hardcodes to viduq2 (no audio). Other modes use the configured
-        model (default viduq3-pro, which supports audio).
+        Ref2V-Audio (subjects) always has audio.
+        Ref2V pure: Q3 supports audio, Q2 does not.
         """
+        if request.subjects:
+            return True
         if request.reference_images:
-            model = "viduq2"  # Ref2V always uses viduq2
-        else:
-            model = self._model
-        return "q3" in model
+            return self._model.startswith("viduq3")
+        return "q3" in self._model
 
     async def submit_job(self, request: GenerationRequest) -> VideoJobSubmission:
         # Detect mode following ace-backend-go detectVideoMode logic:
         #   1. SE2V: requires BOTH first_frame AND last_frame
-        #   2. Ref2V: has reference_images (character consistency)
-        #   3. I2V: has a single source image (reference_image_path or first_frame_path)
-        #   4. T2V: text only
+        #   2. Ref2V-Audio: has subjects (character consistency + audio)
+        #   3. Ref2V: has reference_images (character consistency, pure video)
+        #   4. I2V: has a single source image (reference_image_path or first_frame_path)
+        #   5. T2V: text only
         has_both_frames = bool(request.first_frame_path and request.last_frame_path)
+        has_subjects = bool(request.subjects)
         has_refs = bool(request.reference_images)
-        # I2V source: explicit reference_image_path, or first_frame_path as fallback
-        # (matches Go: only first_frame without last_frame → treated as I2V source)
         i2v_source = request.reference_image_path or request.first_frame_path
 
-        if has_refs:
-            endpoint = "/ent/v2/reference2video"
+        if has_subjects:
+            mode = "reference2video-audio"
+        elif has_refs:
+            mode = "reference2video"
         elif has_both_frames:
-            endpoint = "/ent/v2/start-end2video"
+            mode = "start-end2video"
         elif i2v_source:
-            endpoint = "/ent/v2/img2video"
+            mode = "img2video"
         else:
-            endpoint = "/ent/v2/text2video"
+            mode = "text2video"
 
-        # Ref2V hardcodes model to "viduq2" (Go: submitRef2VTask line 288).
-        # SE2V: "viduq2" base not supported, upgrade to "viduq2-pro".
-        if endpoint == "/ent/v2/reference2video":
+        # Model selection per mode.
+        model = self._model
+        is_q3 = model.startswith("viduq3")
+        if mode == "reference2video-audio":
+            # Ref2V-Audio still locked to viduq2 per Vidu API constraint.
             model = "viduq2"
-        elif endpoint == "/ent/v2/start-end2video" and self._model == "viduq2":
+        elif mode == "reference2video":
+            # Ref2V: viduq3-pro not supported, use viduq3 (higher quality than turbo); Q2 falls back to viduq2.
+            if is_q3:
+                model = "viduq3"
+            else:
+                model = "viduq2"
+        elif mode == "start-end2video" and model == "viduq2":
             model = "viduq2-pro"
-        else:
-            model = self._model
+
+        endpoint = f"/ent/v2/{mode if mode != 'reference2video-audio' else 'reference2video'}"
 
         body: dict = {
             "model": model,
             "prompt": request.prompt,
             "duration": int(request.duration_seconds),
-            "resolution": "720p",
+            "resolution": "1080p",
         }
 
-        # aspect_ratio is only supported by T2V and Ref2V.
-        # I2V and SE2V derive aspect ratio from input images (no AspectRatio field
-        # in ViduI2VRequest / ViduSE2VRequest structs).
-        if endpoint in ("/ent/v2/text2video", "/ent/v2/reference2video"):
+        # aspect_ratio is supported by T2V, Ref2V, and Ref2V-Audio.
+        if mode in ("text2video", "reference2video", "reference2video-audio"):
             aspect_ratio = request.aspect_ratio if request.aspect_ratio in _VALID_ASPECT_RATIOS else "16:9"
             body["aspect_ratio"] = aspect_ratio
 
@@ -110,20 +119,24 @@ class ViduVideoProvider(VideoProvider):
             body["audio"] = True
             body["moderation"] = "disabled"
 
-        # Build the "images" field based on the selected endpoint.
-        if endpoint == "/ent/v2/reference2video":
+        # Ref2V-Audio: use subjects structure (with audio always on).
+        if mode == "reference2video-audio":
+            body["audio"] = True
+            body["subjects"] = [
+                self._build_subject(subj) for subj in request.subjects
+            ]
+        elif mode == "reference2video":
             refs = request.reference_images[:7]
             body["images"] = [
                 resolve_image_to_url(img, self._tos_config)
                 for img in refs
             ]
-        elif endpoint == "/ent/v2/start-end2video":
-            # SE2V requires exactly 2 images: [start_frame_url, end_frame_url]
+        elif mode == "start-end2video":
             body["images"] = [
                 resolve_image_to_url(request.first_frame_path, self._tos_config),
                 resolve_image_to_url(request.last_frame_path, self._tos_config),
             ]
-        elif endpoint == "/ent/v2/img2video":
+        elif mode == "img2video":
             body["images"] = [resolve_image_to_url(i2v_source, self._tos_config)]
 
         async with self._client() as client:
@@ -140,6 +153,19 @@ class ViduVideoProvider(VideoProvider):
             provider="vidu",
             estimated_seconds=max(request.duration_seconds * 15, 30),
         )
+
+    def _build_subject(self, subj: Subject) -> dict:
+        """Build a subject dict for the Ref2V-Audio API."""
+        result: dict = {
+            "id": subj.id,
+            "images": [
+                resolve_image_to_url(img, self._tos_config)
+                for img in subj.images[:3]
+            ],
+        }
+        if subj.voice_id:
+            result["voice_id"] = subj.voice_id
+        return result
 
     async def check_job(self, job_id: str) -> VideoJobStatus:
         async with self._client() as client:

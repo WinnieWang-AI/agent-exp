@@ -80,9 +80,9 @@
 ### Step 6: 自检
 
 1. **覆盖完整性**：
-   - 每个事件中的每个角色都有且仅有一个 character_appearance 覆盖
-   - 每个事件的场景都有且仅有一个 location_state 覆盖
-   - 每个事件中的每个道具都有且仅有一个 prop_state 覆盖
+   - 每个事件中的每个角色都有 character_appearance 覆盖
+   - 每个事件的场景都有 location_state 覆盖
+   - 每个事件中的每个道具都有 prop_state 覆盖
 2. **ID 引用正确**：所有 entity 字段引用的 ID 在 entities.json 中存在
 3. **事件引用正确**：active_during 中的事件 ID 在 events.json 中存在
 4. **visual 描述具体**：CharacterAppearance 的 visual 描述不能是空泛的（如"穿着衣服"），必须具体到可以生成参考图

@@ -36,8 +36,6 @@ _RESOURCE_TOOLS = {
     "VideoEdit": {"produces": ["output_path"], "consumes": ["input_path"]},
     "GenerateMusic": {"produces": ["output_path"]},
     "GenerateSpeech": {"produces": ["output_path"]},
-    "ValidateStoryGraph": {"consumes": ["path", "file_path"]},
-    "LinearizeStoryGraph": {"consumes": ["story_graph_path"], "produces": ["output_path"]},
     "ManageVideoProject": {},
     "ReadMediaFile": {"consumes": ["path", "file_path"]},
     "AnalyzeImage": {"consumes": ["image_path"]},

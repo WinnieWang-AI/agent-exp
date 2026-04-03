@@ -90,27 +90,29 @@
    - LocationState 必须包含（它决定了背景）
 
    **画面内容（content）：**
-   - 具体描写观众看到什么，不要写抽象情绪
-   - 按空间顺序描写：先场景，再以一个角色为锚点定位，其他角色相对于锚点描写
-   - 包含关键的光影和环境细节
-   - 如果有对白，描写角色在说话的动作/表情（具体台词写在 dialogues 字段中）
-   - **跨事件衔接**：transition_in 为 dissolve/fade 时，content 须描写从前一场景过渡到当前场景的过程，不能只描写目标画面；transition_in 为 cut 时描写独立画面即可
 
-   **对白（dialogues）：**
-   - 将事件的 dialogues 分配到具体 shot 中
-   - 每段对白只出现在一个 shot 里，不重复
-   - 对白所在 shot 的时长要足够容纳对白的自然语速
-   - 对白内容原样保留，不修改台词
+   按"起始状态 → 动态变化 → 最终状态"的顺序写，用"→"分隔三段：
 
-   **音效（sfx）：**
-   - 只列关键的、影响观感的声音（不需要穷举所有环境音）
-   - 与画面动作对应（门关上 → "木门关闭声"，脚踩落叶 → "落叶沙沙声"）
-   - 纯环境氛围音也可以列（"远处雷声"、"溪流声"）
+   - **起始状态**：镜头开始时，角色在场景中的物理位置（用场景内参照物如"起跑线左端""树根旁"，不用"画面左侧""前景"等构图语言）、角色之间的相对位置和朝向、姿态表情
+   - **动态变化**：这段时间里发生的动作、互动、状态变化。从当前 event 的 interactions 和 state_changes 推导具体动作。多角色时写角色之间的互动和反应。**对话和音效按时间顺序写在对应动作节拍中**（对话用「」标注说话者和语气，音效直接描述声源和声音）
+   - **最终状态**：镜头结束时角色的位置、姿态、表情
+
+   示例：`起跑线左端，狐狸裁判举旗站立，兔子在起跑线中央弓身热身，乌龟在兔子右侧一步外静立低头 → 兔子转向乌龟，拍着自己胸口大笑，用脚尖点地炫耀速度；乌龟抬头看兔子一眼，不回应，低头继续盯着赛道前方 → 兔子双手叉腰面朝乌龟站定，乌龟目视前方不为所动`
+
+   其他要求：
+   - 不写抽象情绪，只写可见的具体内容
+   - 环境/光影描写最多一句，篇幅留给角色动作
+   - **跨事件衔接**：transition_in 为 dissolve/fade 时，起始状态须描写从前一场景过渡到当前场景的过程；transition_in 为 cut 时直接描写当前场景
+
+   **旁白（narration）：**
+   - 画外旁白（不在画面中发生的解说词），如"很久很久以前……"
+   - 无旁白时为空字符串或省略
+   - 角色对话和音效不放这里，写在 content 中
 
    **时长（duration_seconds）：**
 
    估算流程：
-   1. **台词下限**：有对白的 shot，根据对白文本和 meta.json 的 language 估算朗读时间，加上每句间 0.5-1 秒的轮换停顿。这是该 shot 的最短时长，不可压缩。
+   1. **台词下限**：content 中有对白的 shot，根据对白文本和 meta.json 的 language 估算朗读时间，加上每句间 0.5-1 秒的轮换停顿。这是该 shot 的最短时长，不可压缩。
    2. **自然时长**：在台词下限之上，综合考虑：
       - 动作复杂度：多步动作序列 > 单一动作 > 静止画面
       - 镜头运动：tracking / pan 需要执行时间 > static
@@ -119,6 +121,13 @@
       - dissolve 转场比 cut 多消耗 0.5-1 秒重叠时间
    3. **总时长调配**：所有 shot 自然时长求和，与目标总时长对比。超出则压缩弹性 shot（无台词、static、非关键），不足则延长抒情/环境镜头。台词下限不可压缩。
    4. 单个 shot 范围：3-10 秒（AI 视频生成限制）
+
+   **场景连续性（scene_continuous）：**
+   按 shot_order 顺序，标注当前 shot 与前一 shot 是否在同一物理场景中：
+   - 同一事件内的 shot：true
+   - 相邻事件，active_during 中 LocationState 相同：true
+   - 相邻事件，active_during 中 LocationState 不同：false
+   - shot_order 中第一个 shot：false
 
    **转场：**
    - 同一事件内的 shot 之间：cut
@@ -167,16 +176,58 @@
 7. **总时长匹配**：total_duration_seconds 与目标时长偏差 ≤ 10%
 8. **转场连贯**：前一个 shot 的 transition_out 与后一个 shot 的 transition_in 逻辑匹配（不会 fade_out 接 fade_in）
 9. **content 具体**：抽查几个 shot 的 content，确认描述具体可执行，不是空泛的情绪词
-10. **对白完整分配**：events.json 中每个事件的每段对白都被分配到某个 shot 的 dialogues 中，无遗漏、无重复
-11. **对白时长匹配**：含对白的 shot 时长不低于台词朗读时间（根据对白文本和 language 估算）
+10. **对白完整分配**：events.json 中每个事件的每段对白都被写入某个 shot 的 content 中，无遗漏、无重复
+11. **对白时长匹配**：content 中含对白的 shot 时长不低于台词朗读时间（根据对白文本和 language 估算）
 12. **shot_order 完整**：shot_order 包含所有 shot ID，无遗漏、无重复，同 event 内 shot 的相对顺序与 order 字段一致
+13. **细碎度检查**：审视整体 shot 时长分布。如果大部分 shot 都集中在最短时长（3-4秒），整片节奏会显得细碎急促，观众来不及消化画面内容。检查 shot 时长是否有高低变化，是否体现了 narrative_weight 的差异——climax / turning_point 的核心 shot 应比 transition 的过渡 shot 有更充分的时长
+14. **连贯性检查**：按 shot_order 审视相邻 shot 的衔接。连续多个短 shot 硬切（尤其跨场景时）会破坏视觉连贯性。每次换场景（scene_continuous = false）的第一个 shot 需要足够时长让观众建立新的空间认知，不应是最短时长
 
 发现问题直接修复并重新写入 shots.json。
+
+### Step 9: 生成 content 可读性测试
+
+为下游观众审查生成测试题，用于验证 shot content 是否准确表达了空间关系。
+
+**出题规则（机械生成，不需要构思）：**
+
+遍历每个 shot 的 `focus_on` 字段，提取其中的角色状态 ID（CharacterAppearance），对照 entities.json 得到角色名称和场景名称：
+
+- **每个角色** → 生成一题：`"{角色名}在{场景名}中的什么位置？"`
+- **每对角色**（shot 中有 2 个及以上角色时）→ 生成一题：`"{角色A}和{角色B}的相对位置是什么？"`
+
+**标准答案：**
+- 基于你的创作意图作答，简洁明确，一句话
+- 不回看 content，从 events 的 interactions 和你对空间布局的设计意图推导
+
+**自检：** 生成前先计算预期题目数。对每个 shot，统计 focus_on 中的角色数 N（仅 CharacterAppearance，不含 LocationState/PropState），该 shot 应生成 N + N*(N-1)/2 题。所有 shot 求和即为总题数。生成后核对实际题数是否等于预期，不等则补齐。
+
+用 WriteFile 将测试题写入 `{project_path}/content-quiz.json`：
+
+```json
+{
+  "expected_count": 14,
+  "questions": [
+    {
+      "id": "q_001",
+      "shot_id": "evt_001_shot_1",
+      "question": "小明在客厅中的什么位置？",
+      "answer": "靠近窗户，面朝门口"
+    },
+    {
+      "id": "q_002",
+      "shot_id": "evt_001_shot_1",
+      "question": "小明和小红的相对位置是什么？",
+      "answer": "小明在左侧靠窗，小红在右侧门口处，两人面对面"
+    }
+  ]
+}
+```
 
 ## 输出
 
 在项目路径下生成：
 - `shots.json` — 逐事件的镜头列表 + 播放顺序（shot_order）+ 总时长
+- `content-quiz.json` — content 可读性测试题（供观众审查使用）
 
 ## 错误处理
 

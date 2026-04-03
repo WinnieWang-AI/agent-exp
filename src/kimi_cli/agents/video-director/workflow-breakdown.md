@@ -61,7 +61,7 @@
 - `description`：用自己的语言重新描述事件内容，要包含关键的视觉动作和空间关系。不要照抄 beats 原文拼接，要写成一段连贯的场景描写
 - `interactions`：提取角色间有明确肢体/空间/对话互动的部分，描述互动的视觉形态
 - `state_changes`：只记录剧本中明确描写的变化（character_states 中 appearance 不为 null、emotion 有变化、location_state 不为 null、prop_states 不为 null）。不要推测隐含的变化
-- `dialogues`：原样提取剧本中的对白 beats，不修改台词文字
+- `dialogues`：原样提取剧本中的对白 beats，不修改台词文字。这些对白在后续 shots 阶段会被写入 shot 的 content 中
 - `mood`：综合场景的 mood 和 beats 的情绪走向
 - `narrative_weight`：从 source_scenes 对应场景的 `narrative_weight` 继承。多个 source_scenes 时取最高权重（climax > turning_point > setup > transition）
 

@@ -4,14 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Video Agent Studio</title>
-<link rel="stylesheet" href="/static/story-graph.css">
 <link rel="stylesheet" href="/static/operation-graph.css">
 <link rel="stylesheet" href="/static/agent-graph.css">
 <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
 <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 <script src="https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
-<script src="/static/story-graph.js?v=20260317" defer></script>
 <script src="/static/operation-graph.js" defer></script>
 <script src="/static/session-op-graph.js" defer></script>
 <script src="/static/agent-graph.js" defer></script>
@@ -355,122 +353,6 @@ body {
   width: 8px; height: 8px; border-radius: 50;
 }
 
-/* ---- Story Graph Preview Card ---- */
-.sg-preview-card {
-  align-self: flex-start;
-  max-width: 90%;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin: 4px 0;
-}
-.sg-preview-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px;
-  background: var(--surface3);
-  border-bottom: 1px solid var(--border);
-}
-.sg-preview-icon { font-size: 16px; }
-.sg-preview-title {
-  font-size: 13px; font-weight: 600; color: var(--text);
-  flex: 1;
-}
-.sg-preview-toggle {
-  background: none; border: none; color: var(--text-dim);
-  cursor: pointer; font-size: 12px; padding: 2px 6px;
-  border-radius: 4px; transition: background 0.15s;
-}
-.sg-preview-toggle:hover { background: var(--surface2); color: var(--text); }
-.sg-preview-body {
-  padding: 12px 14px;
-}
-.sg-preview-info {
-  font-size: 12px; color: var(--text-mid);
-  margin-bottom: 8px;
-}
-.sg-preview-cy {
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-}
-.sg-preview-card .sg-btn {
-  background: var(--surface3); border: 1px solid var(--border);
-  color: var(--text-mid); font-size: 12px;
-  padding: 5px 12px; border-radius: var(--radius-sm);
-  cursor: pointer; transition: all 0.15s;
-}
-.sg-preview-card .sg-btn:hover {
-  background: var(--accent-blue); color: #fff; border-color: var(--accent-blue);
-}
-
-/* ---- Story Graph Full-screen Overlay ---- */
-#sg-overlay {
-  display: none; flex-direction: column;
-  flex: 1.2; min-width: 350px;
-  background: var(--bg);
-  border-left: 2px solid var(--border);
-  position: relative;
-}
-.sg-overlay-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 14px; border-bottom: 1px solid var(--border);
-  background: var(--surface); color: var(--text);
-}
-.sg-overlay-header .sg-btn {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text-mid); font-size: 12px; padding: 5px 12px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
-}
-.sg-overlay-header .sg-btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-.sg-overlay-filter {
-  display: flex; align-items: center; gap: 4px; padding: 5px 14px;
-  border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap;
-}
-.sg-overlay-filter .sg-toggle {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text-dim); font-size: 11px; padding: 3px 8px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
-}
-.sg-overlay-filter .sg-toggle.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
-#sog-live-btn.active { background: #064e3b; color: #34d399; border-color: #10b981; animation: sog-pulse 1.5s ease-in-out infinite; }
-@keyframes sog-pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
-.sg-overlay-body {
-  flex: 1; display: flex; position: relative; overflow: hidden;
-}
-#sg-overlay-cy { flex: 1; }
-.sg-overlay-detail {
-  position: absolute; right: 0; top: 0; bottom: 0; width: 280px;
-  background: var(--surface); border-left: 1px solid var(--border);
-  overflow-y: auto; transform: translateX(100%); transition: transform 0.2s;
-}
-.sg-overlay-detail.open { transform: translateX(0); }
-.sg-overlay-loading {
-  display: flex; align-items: center; justify-content: center;
-  position: absolute; inset: 0; color: var(--text-dim); font-size: 14px;
-  pointer-events: none;
-}
-
-/* ---- Sticky Story Graph Bar ---- */
-.sg-sticky-bar {
-  display: none; align-items: center; gap: 8px;
-  padding: 6px 16px;
-  background: linear-gradient(90deg, rgba(59,130,246,0.1), rgba(16,185,129,0.1), rgba(245,158,11,0.1));
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.sg-sticky-bar .sg-sticky-icon { font-size: 14px; }
-.sg-sticky-bar .sg-sticky-label {
-  flex: 1; font-size: 12px; color: var(--text-mid);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.sg-sticky-bar .sg-sticky-btn {
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); font-size: 11px; padding: 3px 10px;
-  border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
-  white-space: nowrap;
-}
-.sg-sticky-bar .sg-sticky-btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
 /* ---- Todo sticky panel ---- */
 
 /* Optimizer right sidebar */
@@ -869,11 +751,6 @@ body {
   </div>
 
   <div class="panel" id="panel-maker">
-    <div class="sg-sticky-bar" id="sg-sticky-maker">
-      <span class="sg-sticky-icon">&#128205;</span>
-      <span class="sg-sticky-label" id="sg-sticky-label-maker">Story Graph</span>
-      <button class="sg-sticky-btn" onclick="toggleStoryGraphPanel()">Show Graph</button>
-    </div>
     <div class="messages" id="messages-maker">
       <div class="empty-state">
         <div class="e-icon">&#127916;</div>
@@ -900,11 +777,6 @@ body {
   </div>
 
   <div class="auto-panel" id="panel-auto">
-    <div class="sg-sticky-bar" id="sg-sticky-auto">
-      <span class="sg-sticky-icon">&#128205;</span>
-      <span class="sg-sticky-label" id="sg-sticky-label-auto">Story Graph</span>
-      <button class="sg-sticky-btn" onclick="toggleStoryGraphPanel()">Show Graph</button>
-    </div>
     <div style="flex:1;display:flex;overflow:hidden;">
       <div class="agent-lane">
         <div class="lane-header">
@@ -1172,9 +1044,7 @@ const S = {
 const AGENTS = { maker: 'video-maker', eval: 'video-auto-eval', optimizer: 'agent-optimizer', producer: 'video-producer' };
 const curAst = {};   // current assistant element per container
 const curTool = {};   // current pending tool activity element per container
-let currentStoryGraphPath = null;  // latest known story graph path
 let currentOpGraphPath = null;     // (legacy, kept for compatibility)
-// Views merged — unified graph (narrative + assets)
 
 // ==== Tabs (multi-select) ====
 const activeTabs = new Set(['producer']);
@@ -1203,7 +1073,6 @@ function applyTabs() {
   document.querySelectorAll('.panel').forEach(e => e.classList.remove('active'));
   document.querySelector('.auto-panel').classList.remove('active');
   document.querySelector('.room-panel').classList.remove('active');
-  document.querySelectorAll('.story-graph-panel').forEach(e => e.classList.remove('active'));
   // Remove old dividers
   document.querySelectorAll('.panel-divider').forEach(e => e.remove());
 
@@ -1345,6 +1214,8 @@ function todoToggleDetail(idx) {
 // ==== WebSocket ====
 // Pending session_id to send on first message (for resume)
 let pendingResumeSessionId = null;
+// Pending message to send once WebSocket is ready
+let pendingMessage = null;
 
 function ensureWs(t) {
   if (S.ws[t] && S.ws[t].readyState <= 1) return;
@@ -1363,6 +1234,12 @@ function ensureWs(t) {
     if (resumeId) {
       ws.send(JSON.stringify({ type: 'message', content: '', session_id: resumeId }));
       pendingResumeSessionId = null;
+    }
+    // Flush pending message queued before connection was ready
+    if (pendingMessage && pendingMessage.tab === t) {
+      const pm = pendingMessage;
+      pendingMessage = null;
+      send(pm.tab);
     }
   };
   ws.onclose = (ev) => {
@@ -1421,7 +1298,7 @@ function send(t) {
   const txt = inp.value.trim();
   if (!txt) return;
   const ws = S.ws[t];
-  if (!ws || ws.readyState !== 1) { ensureWs(t); return; }
+  if (!ws || ws.readyState !== 1) { pendingMessage = { tab: t }; ensureWs(t); return; }
   if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
   const cid = t === 'auto' ? 'messages-auto-eval' : (t === 'room' ? 'messages-room' : `messages-${t}`);
   if (t === 'room') addUserRoom(cid, txt);
@@ -1620,10 +1497,6 @@ function routeWire(tab, wd, agent, depth) {
           }
         } catch {}
       }
-      if (name === 'ValidateStoryGraph') {
-        // Mark that next ToolResult should trigger preview
-        window._sgPendingValidation = currentStoryGraphPath;
-      }
       // Track GenerateImage calls to show generating status on graph nodes
       if (name === 'GenerateImage' && p.function?.arguments) {
         try {
@@ -1716,17 +1589,6 @@ function routeWire(tab, wd, agent, depth) {
       }
       // Auto-load story graph detection
       {
-        // Check if this ToolResult is from a ValidateStoryGraph that we tracked in ToolCall
-        if (!rv.is_error && window._sgPendingValidation) {
-          const sgPath = window._sgPendingValidation;
-          window._sgPendingValidation = null;
-          console.log('[SG-detect] ValidateStoryGraph succeeded, rendering preview:', sgPath);
-          currentStoryGraphPath = sgPath;
-          showStickyBar(c, sgPath);
-          addStoryGraphPreview(c, sgPath);
-          fetchAndLoadStoryGraph(sgPath);
-        }
-
         // Also check toolInfo (works for direct tool calls, may not work for subagent)
         if (toolInfo && !rv.is_error) {
           const toolName = toolInfo.name || '';
@@ -1736,10 +1598,6 @@ function routeWire(tab, wd, agent, depth) {
             showStickyBar(c, filePath);
             // Auto-refresh graph when story-graph.json is updated (e.g. reference_image paths added)
             refreshStoryGraphPanel();
-          }
-          if (toolName === 'ValidateStoryGraph' && currentStoryGraphPath) {
-            showStickyBar(c, currentStoryGraphPath);
-            addStoryGraphPreview(c, currentStoryGraphPath);
           }
         }
 
@@ -1986,7 +1844,6 @@ function addToolActivity(c, name, argsStr, status) {
     'AskUserQuestion': 'Asking question',
     'SetTodoList': 'Updating tasks',
     'ReadMediaFile': 'Reading media',
-    'ValidateStoryGraph': 'Validating story graph',
     'LinearizeStoryGraph': 'Linearizing story graph',
     'ExtractFrame': 'Extracting frame',
     'GenerateMusic': 'Generating music',
@@ -2313,480 +2170,17 @@ function toMediaUrl(src) {
   return `/files/${cleaned}`;
 }
 
-function showStickyBar(container, filePath) {
-  // Find which tab this container belongs to and show its sticky bar
-  const tab = tabForContainer(container);
-  const bar = document.getElementById(`sg-sticky-${tab}`);
-  if (!bar) return; // no sticky bar for this tab
-  // Extract project name from path: .../project_name/story-graph.json
-  const parts = filePath.replace(/\\/g, '/').split('/');
-  const projIdx = parts.length >= 2 ? parts.length - 2 : 0;
-  const projName = parts[projIdx] || 'story graph';
-  const label = bar.querySelector('.sg-sticky-label');
-  if (label) label.textContent = `Story Graph: ${projName}`;
-  bar.style.display = 'flex';
-}
-
-function storyGraphUrl(filePath) {
-  return '/read-json/' + encodeURI(filePath.replace(/^\.\//, '').replace(/^\/+/, ''));
-}
-
-function addStoryGraphPreview(c, filePath) {
-  const t = tabForContainer(c);
-  if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
-  curAst[c] = null;
-
-  // Remove any existing preview card in this container to avoid duplicates
-  const container = $(c);
-  if (container) {
-    container.querySelectorAll('.sg-preview-card').forEach(el => el.remove());
-  }
-
-  const card = document.createElement('div');
-  card.className = 'sg-preview-card';
-  card.innerHTML = `
-    <div class="sg-preview-header">
-      <span class="sg-preview-icon">&#128205;</span>
-      <span class="sg-preview-title">Story Graph Generated</span>
-      <button class="sg-btn" style="margin-left:auto;font-size:11px;padding:3px 10px;" onclick="toggleStoryGraphPanel()">Show Graph</button>
-    </div>
-    <div class="sg-preview-body">
-      <div class="sg-preview-info">Loading...</div>
-      <div class="sg-preview-cy" style="height:300px;"></div>
-    </div>
-  `;
-  $(c).appendChild(card);
-  scrollBot(c);
-
-  // Fetch and render mini graph
-  // Ensure storyGraphDir is set so reference_image paths resolve correctly
-  if (typeof extractStoryGraphDir === 'function') {
-    storyGraphDir = extractStoryGraphDir(filePath);
-  }
-  const url = storyGraphUrl(filePath);
-  // Also load shot-plan.json for prompt display in shot node details
-  const spUrl = storyGraphUrl(filePath.replace(/story-graph\.json$/, 'shot-plan.json'));
-  fetch(spUrl).then(r => r.ok ? r.json() : null).then(sp => { if (sp) window._shotPlanData = sp; }).catch(() => {});
-
-  console.log('[SG-preview] fetching:', url, 'from filePath:', filePath);
-  fetch(url).then(r => {
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);
-    return r.json();
-  }).then(data => {
-    const info = card.querySelector('.sg-preview-info');
-    const chars = (data.characters || []).length;
-    const evts = (data.events || []).length;
-    const appears = (data.character_appearances || []).length;
-    info.textContent = chars + ' characters · ' + evts + ' events · ' + appears + ' appearances';
-
-    // Render mini cytoscape in the preview
-    const cyEl = card.querySelector('.sg-preview-cy');
-    if (typeof cytoscape !== 'undefined' && typeof convertToElements === 'function') {
-      const elements = convertToElements(data);
-      const miniCy = cytoscape({
-        container: cyEl,
-        elements: elements,
-        style: typeof buildStylesheet === 'function' ? buildStylesheet() : [],
-        layout: { name: 'preset' },
-        userZoomingEnabled: true,
-        userPanningEnabled: true,
-        boxSelectionEnabled: false,
-        autoungrabify: true,
-      });
-      if (typeof computePositions === 'function') {
-        const pos = computePositions(data);
-        miniCy.nodes().forEach(n => { if (pos[n.id()]) n.position(pos[n.id()]); });
-        miniCy.fit(undefined, 20);
-      }
-      applyImageStatusClasses(miniCy);
-    } else {
-      cyEl.style.display = 'none';
-    }
-  }).catch(err => {
-    console.error('[SG-preview] failed:', err);
-    card.querySelector('.sg-preview-info').textContent = 'Failed to load preview: ' + err.message;
-  });
-
-  // If the graph side panel is already open, refresh it with updated data
-  refreshStoryGraphPanel();
-}
-
-function refreshStoryGraphPanel() {
-  const overlay = document.getElementById('sg-overlay');
-  if (!overlay || overlay.style.display === 'none' || !currentStoryGraphPath) return;
-  console.log('[SG-panel] Refreshing graph panel with:', currentStoryGraphPath);
-  // Ensure storyGraphDir is set for reference_image resolution
-  if (typeof extractStoryGraphDir === 'function') {
-    storyGraphDir = extractStoryGraphDir(currentStoryGraphPath);
-  }
-  const url = storyGraphUrl(currentStoryGraphPath);
-  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-  .then(data => {
-    sgOverlayData = data;
-    const cyEl = document.getElementById('sg-overlay-cy');
-    const elements = convertToElements(data);
-    if (sgOverlayCy) sgOverlayCy.destroy();
-    sgOverlayCy = cytoscape({
-      container: cyEl, elements: elements,
-      style: buildStylesheet(), layout: { name: 'preset' },
-      minZoom: 0.1, maxZoom: 4, wheelSensitivity: 0.3,
-    });
-    const positions = computePositions(data);
-    sgOverlayCy.nodes().forEach(n => { const p = positions[n.id()]; if (p) n.position(p); });
-    if (window.sgOverlayVisibleTypes) {
-      applyOverlayFilters();
-    }
-    sgOverlayCy.fit(undefined, 50);
-    applyImageStatusClasses(sgOverlayCy);
-    checkRefImageStatus(sgOverlayCy);
-    checkShotClipStatus(sgOverlayCy);
-
-    checkExecutionClipStatus(sgOverlayCy);
-    buildEventOrder(data);
-    sgOverlayCy.on('tap', 'node', function(evt) {
-      const node = evt.target;
-      console.log('[SG-overlay-refresh tap] node:', node.id(), 'type:', node.data('nodeType'));
-      // Show detail panel
-      const panel = document.getElementById('sg-overlay-detail');
-      const title = document.getElementById('sg-overlay-detail-title');
-      const body = document.getElementById('sg-overlay-detail-body');
-      title.textContent = node.data('fullLabel') || node.id();
-      body.innerHTML = `<div class="sg-detail-section">
-        <span class="sg-detail-badge sg-type-${node.data('nodeType')}">${node.data('nodeType')}</span>
-        <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">${node.id()}</span>
-      </div>` + renderRawFields(node.data('raw') || {}, node.data('nodeType'));
-      panel.classList.add('open');
-      // Highlight neighbors (temporarily swap cy to overlay instance)
-      const _cy = cy; cy = sgOverlayCy;
-      highlightNeighbors(node);
-      if (node.data('nodeType') === 'event') showRelationships(node.id());
-      else clearRelationships();
-      cy = _cy;
-    });
-    sgOverlayCy.on('tap', function(evt) {
-      if (evt.target === sgOverlayCy) {
-        document.getElementById('sg-overlay-detail').classList.remove('open');
-        sgOverlayCy.batch(() => {
-          sgOverlayCy.nodes().removeClass('highlighted dimmed');
-          sgOverlayCy.edges().removeClass('highlighted dimmed');
-        });
-        const _cy = cy; cy = sgOverlayCy; clearRelationships(); cy = _cy;
-      }
-    });
-  }).catch(err => console.warn('[SG-panel] Refresh failed:', err.message));
-}
-
-// ---- Story Graph side panel ----
-let sgOverlayData = null;
-let sgOverlayCy = null;
-let _sgOverlayRefreshTimer = null;
-let _sgOverlayLastModified = null;  // tracks story-graph.json last-modified to detect rewrites
-let _sgOverlayRefreshing = false;   // guard against overlapping refresh cycles
-
-function openStoryGraphOverlay() {
-  if (!currentStoryGraphPath) return;
-  let overlay = document.getElementById('sg-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'sg-overlay';
-    overlay.innerHTML = `
-      <div class="sg-overlay-header">
-        <div class="og-view-switcher">
-          <button class="og-view-btn active" data-view="story">Story Graph</button>
-        </div>
-        <div class="sg-img-legend" id="sg-overlay-legend">
-          <span class="sg-img-legend-item"><span class="sg-img-legend-dot pending"></span> 待生成</span>
-          <span class="sg-img-legend-item"><span class="sg-img-legend-dot generating"></span> 生成中</span>
-          <span class="sg-img-legend-item"><span class="sg-img-legend-dot generated"></span> 已生成</span>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="sg-btn" onclick="fitOverlayGraph()">Fit</button>
-          <button class="sg-btn" onclick="closeStoryGraphOverlay()">&times; Close</button>
-        </div>
-      </div>
-      <div class="sg-overlay-filter" id="sg-overlay-filter"></div>
-      <div class="sg-overlay-body">
-        <div id="sg-overlay-cy" style="flex:1;"></div>
-        <div class="sg-detail sg-overlay-detail" id="sg-overlay-detail">
-          <div class="sg-detail-header">
-            <h3 id="sg-overlay-detail-title">Node</h3>
-            <button class="sg-detail-close" onclick="document.getElementById('sg-overlay-detail').classList.remove('open')">&times;</button>
-          </div>
-          <div class="sg-detail-body" id="sg-overlay-detail-body"></div>
-        </div>
-      </div>
-      <div class="sg-overlay-loading" id="sg-overlay-loading">Loading...</div>
-    `;
-    // Insert before Op Graph reopen tab so layout is: chat | story graph | [reopen tab] | op graph
-    const _main = document.querySelector('.main');
-    const _sogTab = document.getElementById('sog-reopen-tab');
-    if (_sogTab) _main.insertBefore(overlay, _sogTab);
-    else _main.appendChild(overlay);
-    // Close on Escape
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('sg-overlay')?.style.display !== 'none') closeStoryGraphOverlay(); });
-  }
-  overlay.style.display = 'flex';
-  // Scroll active chat to bottom so latest messages remain visible
-  const activeMessages = document.querySelector('.panel.active .messages, .auto-panel.active .messages');
-  if (activeMessages) setTimeout(() => { activeMessages.scrollTop = activeMessages.scrollHeight; }, 50);
-  document.getElementById('sg-overlay-loading').style.display = 'flex';
-  document.getElementById('sg-overlay-cy').style.display = 'none';
-
-  // Build filter toggles
-  const filterEl = document.getElementById('sg-overlay-filter');
-  const overlayVisibleTypes = new Set([
-    'story_detail',
-    'event', 'character', 'character_appearance',
-    'prop', 'prop_state', 'location', 'location_state', 'timeline',
-    'shot', 'production_style', 'production_ratio', 'production_duration', 'production_language',
-    'asset_first_frame', 'asset_tail_frame', 'asset_output',
-    'audio_bgm', 'audio_dialogue',
-  ]);
-  const allTypes = [
-    ['story_detail','Synopsis'],
-    ['event','Event'], ['character','Character'], ['character_appearance','Appearance'],
-    ['prop','Prop'], ['prop_state','Prop State'],
-    ['location','Location'], ['location_state','Loc State'], ['timeline','TimeLine'],
-    ['shot','Shot'], ['audio_bgm','BGM'], ['audio_dialogue','Dialogue'],
-    ['asset_first_frame','StartFrame'], ['asset_tail_frame','TailFrame'], ['asset_output','Output'],
-  ];
-  filterEl.innerHTML = '<span class="sg-toolbar-label">Filter</span>' +
-    `<button class="sg-toggle active" onclick="sgOverlayToggleProduction(this)">VideoInfo</button>` +
-    allTypes.map(([k,v]) =>
-    `<button class="sg-toggle ${overlayVisibleTypes.has(k)?'active':''}" onclick="this.classList.toggle('active');sgOverlayToggle('${k}',this)">${v}</button>`
-  ).join('');
-
-  // Toggle all three production node types together
-  window.sgOverlayToggleProduction = function(btn) {
-    const types = ['production_style', 'production_ratio', 'production_duration', 'production_language'];
-    const allVisible = types.every(t => overlayVisibleTypes.has(t));
-    for (const t of types) {
-      if (allVisible) overlayVisibleTypes.delete(t);
-      else overlayVisibleTypes.add(t);
-    }
-    if (allVisible) btn.classList.remove('active');
-    else btn.classList.add('active');
-    applyOverlayFilters();
-  };
-
-  // Expose toggle function
-  window.sgOverlayVisibleTypes = overlayVisibleTypes;
-  window.sgOverlayToggle = function(type, btn) {
-    if (overlayVisibleTypes.has(type)) overlayVisibleTypes.delete(type);
-    else overlayVisibleTypes.add(type);
-    applyOverlayFilters();
-  };
-
-  // Fetch story graph data
-  if (!currentStoryGraphPath) {
-    document.getElementById('sg-overlay-loading').style.display = 'none';
-    return;
-  }
-  // Set storyGraphDir before convertToElements so reference_image paths resolve correctly
-  if (typeof extractStoryGraphDir === 'function') {
-    storyGraphDir = extractStoryGraphDir(currentStoryGraphPath);
-  }
-  // Also pre-load shot-plan.json for the assets view
-  const spOverlayUrl = storyGraphUrl(currentStoryGraphPath.replace(/story-graph\.json$/, 'shot-plan.json'));
-  fetch(spOverlayUrl).then(r => r.ok ? r.json() : null).then(sp => {
-    if (sp) {
-      window._shotPlanData = sp;
-    }
-  }).catch(() => {});
-
-  const url = storyGraphUrl(currentStoryGraphPath);
-  fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-  .then(data => {
-    sgOverlayData = data;
-    document.getElementById('sg-overlay-loading').style.display = 'none';
-    const cyEl = document.getElementById('sg-overlay-cy');
-    cyEl.style.display = 'block';
-    // Build unified elements: narrative + assets (if shot-plan available)
-    const elements = window._shotPlanData
-      ? buildAssetsViewElements(data, window._shotPlanData, window._outputFiles || [])
-      : convertToElements(data);
-    if (sgOverlayCy) sgOverlayCy.destroy();
-    sgOverlayCy = cytoscape({
-      container: cyEl,
-      elements: elements,
-      style: buildStylesheet(),
-      layout: { name: 'preset' },
-      minZoom: 0.1, maxZoom: 4, wheelSensitivity: 0.3,
-    });
-    // Layout — use merged layout when shot-plan available
-    const outFiles = window._outputFiles || [];
-    const positions = window._shotPlanData
-      ? computeAssetsViewPositions(data, window._shotPlanData, outFiles)
-      : computePositions(data);
-    sgOverlayCy.nodes().forEach(n => { const p = positions[n.id()]; if (p) n.position(p); });
-    applyOverlayFilters();
-    sgOverlayCy.fit(undefined, 50);
-    applyImageStatusClasses(sgOverlayCy);
-    checkRefImageStatus(sgOverlayCy);
-    checkShotClipStatus(sgOverlayCy);
-
-    checkExecutionClipStatus(sgOverlayCy);
-    // Node click
-    buildEventOrder(data);
-    sgOverlayCy.on('tap', 'node', function(evt) {
-      const node = evt.target;
-      console.log('[SG-overlay-open tap] node:', node.id(), 'type:', node.data('nodeType'));
-      // Show detail panel
-      const panel = document.getElementById('sg-overlay-detail');
-      const title = document.getElementById('sg-overlay-detail-title');
-      const body = document.getElementById('sg-overlay-detail-body');
-      title.textContent = node.data('fullLabel') || node.id();
-      body.innerHTML = `<div class="sg-detail-section">
-        <span class="sg-detail-badge sg-type-${node.data('nodeType')}">${node.data('nodeType')}</span>
-        <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">${node.id()}</span>
-      </div>` + renderRawFields(node.data('raw') || {}, node.data('nodeType'));
-      panel.classList.add('open');
-      // Highlight neighbors (temporarily swap cy to overlay instance)
-      const _cy = cy; cy = sgOverlayCy;
-      highlightNeighbors(node);
-      if (node.data('nodeType') === 'event') showRelationships(node.id());
-      else clearRelationships();
-      cy = _cy;
-    });
-    sgOverlayCy.on('tap', function(evt) {
-      if (evt.target === sgOverlayCy) {
-        document.getElementById('sg-overlay-detail').classList.remove('open');
-        sgOverlayCy.batch(() => {
-          sgOverlayCy.nodes().removeClass('highlighted dimmed');
-          sgOverlayCy.edges().removeClass('highlighted dimmed');
-        });
-        const _cy = cy; cy = sgOverlayCy; clearRelationships(); cy = _cy;
-      }
-    });
-    // Start periodic refresh while overlay is open (picks up new reference_image paths)
-    if (_sgOverlayRefreshTimer) clearInterval(_sgOverlayRefreshTimer);
-    _sgOverlayRefreshTimer = setInterval(() => {
-      if (!sgOverlayCy || !currentStoryGraphPath) return;
-      if (_sgOverlayRefreshing) return;  // skip if previous refresh still in flight
-      _sgOverlayRefreshing = true;
-      const refreshUrl = storyGraphUrl(currentStoryGraphPath) + '?t=' + Date.now();
-      fetch(refreshUrl).then(r => {
-        const lastMod = r.headers.get('last-modified') || r.headers.get('etag') || '';
-        return r.ok ? r.json().then(data => ({ data, lastMod })) : null;
-      }).then(result => {
-        if (!result || !result.data || !sgOverlayCy) return;
-        const { data, lastMod } = result;
-        let changed = false;
-        // Detect if story-graph.json was rewritten (even if reference_image paths unchanged)
-        const fileChanged = lastMod && _sgOverlayLastModified !== null && _sgOverlayLastModified !== lastMod;
-        _sgOverlayLastModified = lastMod || _sgOverlayLastModified;
-        const bustTs = '?t=' + Date.now();
-        // Update reference_image on entity/state nodes
-        const allEntities = [
-          ...(data.characters || []), ...(data.props || []), ...(data.locations || []),
-          ...(data.character_appearances || []), ...(data.prop_states || []), ...(data.location_states || []),
-        ];
-        const refCheckTasks = [];
-        for (const ent of allEntities) {
-          const n = sgOverlayCy.getElementById(ent.id);
-          if (!n.length) continue;
-          if (ent.reference_image) {
-            const newUrl = resolveRefImageUrl(ent.reference_image);
-            const oldUrl = (n.data('imageUrl') || '').replace(/[?]t=\d+$/, '');
-            if (!n.data('imageUrl') || oldUrl !== newUrl || fileChanged) {
-              // Path changed, first set, or file was rewritten — update with cache-buster
-              n.data('imageUrl', newUrl + bustTs);
-              changed = true;
-            }
-          } else if (!n.data('imageUrl')) {
-            // reference_image is null in JSON — probe disk via convention path
-            const conventionUrl = resolveRefImageUrl('assets/images/' + ent.id + '.png');
-            if (conventionUrl) {
-              refCheckTasks.push(() => fetch(conventionUrl, { method: 'HEAD' }).then(r => {
-                if (r.ok && !n.data('imageUrl')) {
-                  n.data('imageUrl', conventionUrl + bustTs);
-                  n.removeClass('img-pending img-generating img-generating-dim');
-                  if (!n.data('_origLabel')) n.data('_origLabel', n.data('label'));
-                  n.data('label', '✓ ' + n.data('_origLabel'));
-                }
-              }).catch(() => {}));
-            }
-          }
-        }
-        if (refCheckTasks.length) _runWithConcurrency(refCheckTasks, 3);
-        // Update clip status on shot nodes by checking file existence (concurrency-limited)
-        if (data.camera_directives) {
-          const clipTasks = [];
-          for (const cam of data.camera_directives) {
-            const evts = Array.isArray(cam.for_event) ? cam.for_event : [cam.for_event];
-            const eventId = evts[0] || cam.id;
-            for (const shot of (cam.shots || [])) {
-              const order = shot.order || 0;
-              const shotNodeId = eventId ? `${eventId}_shot_${order}` : `${cam.id}_shot_${order}`;
-              const n = sgOverlayCy.getElementById(shotNodeId);
-              if (n.length && !n.data('clipUrl')) {
-                const clipPath = n.data('clipPath');
-                if (clipPath) {
-                  const clipUrl = resolveRefImageUrl(clipPath);
-                  if (clipUrl) {
-                    clipTasks.push(() => fetch(clipUrl, { method: 'HEAD' }).then(r => {
-                      if (r.ok && !n.data('clipUrl')) {
-                        n.data('clipUrl', clipUrl);
-                        changed = true;
-                        applyImageStatusClasses(sgOverlayCy);
-                      }
-                    }).catch(() => {}));
-                  }
-                }
-              }
-            }
-          }
-          _runWithConcurrency(clipTasks, 3);
-        }
-        if (changed) applyImageStatusClasses(sgOverlayCy);
-      }).catch(() => {}).finally(() => { _sgOverlayRefreshing = false; });
-    }, 3000);
-  }).catch(err => {
-    document.getElementById('sg-overlay-loading').textContent = 'Failed to load: ' + err.message;
-  });
-}
-
-function applyOverlayFilters() {
-  if (!sgOverlayCy) return;
-  const vis = window.sgOverlayVisibleTypes;
-  sgOverlayCy.batch(() => {
-    sgOverlayCy.nodes().forEach(n => {
-      if (vis.has(n.data('nodeType'))) n.removeClass('hidden'); else n.addClass('hidden');
-    });
-    sgOverlayCy.edges().forEach(e => {
-      if (e.source().hasClass('hidden') || e.target().hasClass('hidden')) e.addClass('hidden'); else e.removeClass('hidden');
-    });
-  });
-}
-
-function closeStoryGraphOverlay() {
-  const overlay = document.getElementById('sg-overlay');
-  if (overlay) overlay.style.display = 'none';
-  if (sgOverlayCy) { sgOverlayCy.destroy(); sgOverlayCy = null; }
-  if (_sgOverlayRefreshTimer) { clearInterval(_sgOverlayRefreshTimer); _sgOverlayRefreshTimer = null; }
-  _sgOverlayLastModified = null;
-  _sgOverlayRefreshing = false;
-  // Update sticky bar button text
-  document.querySelectorAll('.sg-sticky-btn').forEach(btn => btn.textContent = 'Show Graph');
-}
-
-// switchOverlayView and renderOverlayAssetsView removed — views merged into unified graph
-
-function fitOverlayGraph() {
-  if (sgOverlayCy) sgOverlayCy.fit(undefined, 40);
-}
 
 
-function toggleStoryGraphPanel() {
-  const overlay = document.getElementById('sg-overlay');
-  if (overlay && overlay.style.display !== 'none') {
-    closeStoryGraphOverlay();
-  } else {
-    openStoryGraphOverlay();
-    // Update sticky bar button text
-    document.querySelectorAll('.sg-sticky-btn').forEach(btn => btn.textContent = 'Hide Graph');
-  }
-}
+// [story-graph removed] — preview, overlay, and panel functions deleted
+
+// Stubs for any remaining callsites
+function addStoryGraphPreview() {}
+function refreshStoryGraphPanel() {}
+function showStickyBar() {}
+function toggleStoryGraphPanel() {}
+function openStoryGraphOverlay() {}
+function closeStoryGraphOverlay() {}
 
 // ==== Sidebar (Screenplay + Director) ====
 // Rendering logic in screenplay-viewer.js and director-viewer.js (loaded separately)
@@ -3234,52 +2628,10 @@ function onRoomKey(e) {
 
 // ==== Init: apply tabs & pre-connect all ====
 applyTabs();
-['maker', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
+['producer', 'maker', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
 </script>
 
 <script>
-// Override highlightNeighbors AFTER deferred story-graph.js loads
-// defer scripts run after parsing, so we use window.addEventListener('load', ...) to run after them
-window.addEventListener('load', function() {
-  highlightNeighbors = function(node) {
-    cy.batch(() => {
-      cy.elements().addClass('dimmed').removeClass('highlighted');
-      let neighborhood = node.neighborhood().add(node);
-
-      const neighborIds = new Set();
-      neighborhood.nodes().forEach(n => neighborIds.add(n.id()));
-
-      const extra = cy.collection();
-      neighborhood.nodes().forEach(n => {
-        const type = n.data('nodeType');
-        if (type === 'character_appearance' ||
-            type === 'prop_state' || type === 'location_state' || type === 'audio_bgm' || type === 'audio_dialogue') {
-          n.connectedEdges().forEach(e => {
-            const et = e.data('edgeType');
-            if (et === 'HAS_STATE' && e.target().id() === n.id()) {
-              extra.merge(e.source());
-              extra.merge(e);
-            }
-          });
-        }
-        // Only highlight minds that are also neighbors of the clicked node
-        if (type === 'character_appearance') {
-          n.connectedEdges('[edgeType="HAS_MIND"]').forEach(e => {
-            const mindNode = e.target();
-            if (neighborIds.has(mindNode.id())) {
-              extra.merge(mindNode);
-              extra.merge(e);
-            }
-          });
-        }
-      });
-
-      neighborhood = neighborhood.add(extra);
-      neighborhood.removeClass('dimmed').addClass('highlighted');
-    });
-  };
-});
-
 // ==== Operation Graph ====
 let opCy = null;
 let opGraphData = null;
