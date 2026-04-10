@@ -34,7 +34,7 @@ Story Graph 是 Operation Graph 的**输入之一**——agent 读取 story grap
   "purpose": "为所有角色生成风格一致的参考图，用于后续视频生成时保持角色一致性",
   "check_criteria": [
     "每张参考图的画风必须与 style_guide 一致（水彩绘本风格）",
-    "角色外貌必须与 story-graph.json 中的描述匹配",
+    "角色外貌必须与 entities.json / states.json 中的描述匹配",
     "图片质量清晰，无明显畸变（如多余手指、扭曲五官）",
     "所有角色都有对应的参考图，不能遗漏"
   ],
@@ -109,7 +109,7 @@ planned → running → done → verified（验证通过）
 | type | 说明 | 举例 |
 |---|---|---|
 | `input` | 用户提供的输入 | 故事描述文本、上传的参考图 |
-| `json` | 结构化数据文件 | story-graph.json、style_guide.json、shot-plan.json |
+| `json` | 结构化数据文件 | entities.json、events.json、states.json、shots.json |
 | `image` | 图片 | 参考图、首帧图、尾帧截图 |
 | `video` | 视频片段 | 单个 shot clip、最终成片 |
 | `audio` | 音频 | BGM、音效、旁白 |
@@ -183,7 +183,7 @@ planned → running → done → verified（验证通过）
 Agent 读取 story graph 和已有约束，在 operation graph 上规划：
 
 ```
-输入：story-graph.json（5个角色、3个场景、8个事件、12个镜头）
+输入：entities.json + events.json + states.json + shots.json（5个角色、3个场景、8个事件、12个镜头）
 约束：[不要写实风格]、[gemini拒绝暴力内容]
 
 Agent 建图：
@@ -361,7 +361,7 @@ OperationGraph(action="update", target_id="op_gen_shot_5", updates={ "status": "
 
 ```
 output/{session_id}/{project_name}/
-  ├── story-graph.json        # 故事内容图
+  ├── entities.json / events.json / states.json / shots.json  # 故事内容（分文件存储）
   ├── operation-graph.json    # 操作执行图（本方案）
   ├── style_guide.json
   └── assets/

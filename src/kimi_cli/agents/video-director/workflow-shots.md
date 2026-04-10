@@ -52,7 +52,7 @@
 1. **确认上下文**：
    - 从 events.json 读取事件描述、characters、interactions、dialogues、mood
    - 从 states.json 的 active_during 查出该事件中每个角色的 CharacterAppearance ID、场景的 LocationState ID、道具的 PropState ID
-   - 查看前一个事件的最后一个 shot（用于衔接设计）
+   - 查看前一个事件的最后一个 shot（用于衔接设计），**记录其中每个角色的最终物理位置**（从 content 的"最终状态"段提取）
 
 2. **决定 shot 数量**：
    - 根据该事件的时长预算和内容复杂度决定
@@ -93,7 +93,7 @@
 
    按"起始状态 → 动态变化 → 最终状态"的顺序写，用"→"分隔三段：
 
-   - **起始状态**：镜头开始时，角色在场景中的物理位置（用场景内参照物如"起跑线左端""树根旁"，不用"画面左侧""前景"等构图语言）、角色之间的相对位置和朝向、姿态表情
+   - **起始状态**：镜头开始时，角色在场景中的物理位置（用场景内参照物如"起跑线左端""树根旁"，不用"画面左侧""前景"等构图语言）、角色之间的相对位置和朝向、姿态表情。**空间连续性**：如果某角色在前一事件结束时处于某个位置，本事件中该角色的起始位置必须与之一致，除非事件描述中有明确的移动动作。角色不能凭空换位——睡着的角色醒来时还在原地，走路的角色从上次停下的地方继续
    - **动态变化**：这段时间里发生的动作、互动、状态变化。从当前 event 的 interactions 和 state_changes 推导具体动作。多角色时写角色之间的互动和反应。**对话和音效按时间顺序写在对应动作节拍中**（对话用「」标注说话者和语气，音效直接描述声源和声音）
    - **最终状态**：镜头结束时角色的位置、姿态、表情
 
@@ -181,6 +181,7 @@
 12. **shot_order 完整**：shot_order 包含所有 shot ID，无遗漏、无重复，同 event 内 shot 的相对顺序与 order 字段一致
 13. **细碎度检查**：审视整体 shot 时长分布。如果大部分 shot 都集中在最短时长（3-4秒），整片节奏会显得细碎急促，观众来不及消化画面内容。检查 shot 时长是否有高低变化，是否体现了 narrative_weight 的差异——climax / turning_point 的核心 shot 应比 transition 的过渡 shot 有更充分的时长
 14. **连贯性检查**：按 shot_order 审视相邻 shot 的衔接。连续多个短 shot 硬切（尤其跨场景时）会破坏视觉连贯性。每次换场景（scene_continuous = false）的第一个 shot 需要足够时长让观众建立新的空间认知，不应是最短时长
+15. **跨事件空间连续性**：按 shot_order 检查每个跨事件边界——前一事件最后一个 shot 的"最终状态"中角色的物理位置，与后一事件第一个 shot 的"起始状态"中同一角色的物理位置是否一致。不一致且事件 description 中没有解释角色如何移动的，必须修正 content
 
 发现问题直接修复并重新写入 shots.json。
 
@@ -201,7 +202,9 @@
 
 **自检：** 生成前先计算预期题目数。对每个 shot，统计 focus_on 中的角色数 N（仅 CharacterAppearance，不含 LocationState/PropState），该 shot 应生成 N + N*(N-1)/2 题。所有 shot 求和即为总题数。生成后核对实际题数是否等于预期，不等则补齐。
 
-用 WriteFile 将测试题写入 `{project_path}/content-quiz.json`：
+用 WriteFile 分别写入两个文件：
+
+`{project_path}/content-quiz.json`（只含问题，供观众盲答）：
 
 ```json
 {
@@ -210,13 +213,28 @@
     {
       "id": "q_001",
       "shot_id": "evt_001_shot_1",
-      "question": "小明在客厅中的什么位置？",
-      "answer": "靠近窗户，面朝门口"
+      "question": "小明在客厅中的什么位置？"
     },
     {
       "id": "q_002",
       "shot_id": "evt_001_shot_1",
-      "question": "小明和小红的相对位置是什么？",
+      "question": "小明和小红的相对位置是什么？"
+    }
+  ]
+}
+```
+
+`{project_path}/content-quiz-answers.json`（含标准答案，观众对比时才读取）：
+
+```json
+{
+  "answers": [
+    {
+      "id": "q_001",
+      "answer": "靠近窗户，面朝门口"
+    },
+    {
+      "id": "q_002",
       "answer": "小明在左侧靠窗，小红在右侧门口处，两人面对面"
     }
   ]
@@ -227,7 +245,8 @@
 
 在项目路径下生成：
 - `shots.json` — 逐事件的镜头列表 + 播放顺序（shot_order）+ 总时长
-- `content-quiz.json` — content 可读性测试题（供观众审查使用）
+- `content-quiz.json` — content 可读性测试题，只含问题（供观众盲答）
+- `content-quiz-answers.json` — 测试题标准答案（供观众对比）
 
 ## 错误处理
 

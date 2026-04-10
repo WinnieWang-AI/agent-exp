@@ -32,7 +32,9 @@ class Params(BaseModel):
     reference_images: list[str] = Field(
         default=[],
         description="Paths to reference images for multi-reference video generation. Max 4 images. "
-        "In prompts, reference them as <<<image_1>>>, <<<image_2>>>, etc.",
+        "In prompts, reference them by filename stem: <<<appear_hare_default>>>, <<<lstate_forest_bright>>>, etc. "
+        "Use <<<composition>>> for composition images, <<<tail_frame>>> for tail frames. "
+        "Named tags are auto-converted to positional <<<image_N>>> before sending to the API.",
     )
     subjects: list[Subject] = Field(
         default=[],
@@ -68,6 +70,35 @@ _MIN_POLL = 5.0
 _MAX_POLL = 30.0
 
 
+def _resolve_named_image_tags(prompt: str, reference_images: list[str]) -> str:
+    """Convert named <<<state_id>>> tags to positional <<<image_N>>> tags.
+
+    Named tags like <<<appear_tortoise_default>>> are matched to reference_images
+    by filename stem. Special conventions:
+    - <<<composition>>> matches any path whose stem ends with _comp
+    - <<<tail_frame>>> matches any path whose stem ends with _tail
+    """
+    named_tags = set(re.findall(r"<<<([a-zA-Z_][a-zA-Z0-9_]*)>>>", prompt))
+    if not named_tags:
+        return prompt  # All tags are numeric (<<<image_N>>>), no conversion needed
+
+    # Build name -> 1-indexed position mapping from reference_images paths
+    name_to_index: dict[str, int] = {}
+    for i, path in enumerate(reference_images):
+        stem = Path(path).stem
+        name_to_index[stem] = i + 1
+        if stem.endswith("_comp"):
+            name_to_index["composition"] = i + 1
+        if stem.endswith("_tail"):
+            name_to_index["tail_frame"] = i + 1
+
+    resolved = prompt
+    for tag in named_tags:
+        if tag in name_to_index:
+            resolved = resolved.replace(f"<<<{tag}>>>", f"<<<image_{name_to_index[tag]}>>>")
+    return resolved
+
+
 class GenerateVideoSync(CallableTool2[Params]):
     """Submit a video generation job, poll until done, and download — all in one call.
 
@@ -97,9 +128,14 @@ class GenerateVideoSync(CallableTool2[Params]):
         if not approved:
             return builder.error(message="Video generation rejected by user.", brief="Rejected")
 
+        # --- Resolve named image tags (<<<state_id>>>) to positional (<<<image_N>>>) ---
+        prompt = params.prompt
+        if params.reference_images:
+            prompt = _resolve_named_image_tags(prompt, params.reference_images)
+
         # --- Validate image marker consistency ---
         if params.reference_images:
-            markers = set(int(m) for m in re.findall(r"<<<image_(\d+)>>>", params.prompt))
+            markers = set(int(m) for m in re.findall(r"<<<image_(\d+)>>>", prompt))
             n_refs = len(params.reference_images)
             expected = set(range(1, n_refs + 1))
             if markers != expected:
@@ -136,7 +172,7 @@ class GenerateVideoSync(CallableTool2[Params]):
         # --- Submit ---
         request = GenerationRequest(
             mode=params.mode,
-            prompt=params.prompt,
+            prompt=prompt,
             duration_seconds=params.duration_seconds,
             aspect_ratio=params.aspect_ratio,
             reference_image_path=params.reference_image_path,

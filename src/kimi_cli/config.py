@@ -686,10 +686,11 @@ def _merge_statsig_configs(config: Config) -> None:
 
     Mapping
     -------
+    * ``bytedance`` → ``video_providers["seedance"]`` (type ``seedance``)
     * ``kling26`` → ``video_providers["kling"]`` (type ``kling``)
     * ``shengshu`` → ``video_providers["vidu"]`` (type ``vidu``)
 
-    Kling is inserted first so it becomes the default provider.
+    Seedance is inserted first so it becomes the default provider.
 
     Requires ``STATSIG_SK`` environment variable.
     Errors are logged as warnings and never block startup.
@@ -705,6 +706,43 @@ def _merge_statsig_configs(config: Config) -> None:
         try:
             user = StatsigUser(user_id="kimi_cli")
 
+            # --- bytedance → video_providers["seedance"] (type=seedance) ---
+            if "seedance" not in config.video_providers:
+                bytedance = statsig.get_config(user, "bytedance").get_value()
+                logger.info(
+                    "Statsig: bytedance config fetched, keys={keys}",
+                    keys=list(bytedance.keys()) if bytedance else "empty",
+                )
+                if bytedance:
+                    api_key = bytedance.get("api_key", "")
+                    base_url = bytedance.get("base_url", "https://ark.cn-beijing.volces.com")
+                    # Pick the preferred model from the video config map.
+                    model_name = ""
+                    video_cfgs = bytedance.get("video", {})
+                    for key in ("dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-260128"):
+                        if key in video_cfgs:
+                            model_name = video_cfgs[key].get("model_name", key)
+                            break
+                    if not model_name and video_cfgs:
+                        first = next(iter(video_cfgs.values()))
+                        model_name = first.get("model_name", "")
+                    if api_key:
+                        # Insert seedance at the front so it is the default provider.
+                        old = config.video_providers.copy()
+                        config.video_providers.clear()
+                        config.video_providers["seedance"] = VideoProviderConfig(
+                            type="seedance",
+                            api_key=SecretStr(api_key),
+                            base_url=base_url,
+                            model_name=model_name,
+                        )
+                        config.video_providers.update(old)
+                        logger.info("Statsig: merged bytedance into video_providers['seedance'], model={model}", model=model_name)
+                    else:
+                        logger.warning("Statsig: bytedance config has no api_key, skipping seedance")
+                else:
+                    logger.warning("Statsig: bytedance config is empty, seedance not loaded")
+
             # --- kling26 → video_providers["kling"] (type=kling) ---
             if "kling" not in config.video_providers:
                 kling26 = statsig.get_config(user, "kling26").get_value()
@@ -713,16 +751,12 @@ def _merge_statsig_configs(config: Config) -> None:
                     base_url = kling26.get("base_url", "https://api.klingai.com")
                     model_name = kling26.get("model_name", "")
                     if api_key:
-                        # Insert kling at the front so it is the default provider.
-                        old = config.video_providers.copy()
-                        config.video_providers.clear()
                         config.video_providers["kling"] = VideoProviderConfig(
                             type="kling",
                             api_key=SecretStr(api_key),
                             base_url=base_url,
                             model_name=model_name,
                         )
-                        config.video_providers.update(old)
                         logger.debug("Statsig: merged kling26 into video_providers['kling']")
 
             # --- shengshu → video_providers["vidu"] (type=vidu) ---

@@ -1,0 +1,12 @@
+{
+  "title": "小红帽",
+  "video_info": {
+    "aspect_ratio": "16:9",
+    "duration": "1min",
+    "language": "中文"
+  },
+  "style": {
+    "style_prefix": "hand-drawn illustration, warm color palette, children's storybook style",
+    "negative_prefix": "photorealistic, dark, horror"
+  }
+}

@@ -35,7 +35,7 @@ The above is a list of messages in a **video production producer** agent convers
 <project>
 - project_name: [name]
 - project_dir: [absolute path]
-- session_ids: screenwriter_[x], director_[x], art_[x], camera_[x], composer_[x], editor_[x]
+- session_ids: screenwriter_[x], director_[x], audience_[x], art_[x], camera_[x], composer_[x], editor_[x]
 </project>
 
 <user_requirements>

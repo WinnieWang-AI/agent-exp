@@ -36,12 +36,12 @@ Example: Use `session_id="eval_project1"` for all calls to an evaluator subagent
 
 Use `context_files` to pass structured data files to the subagent instead of copying file content into the prompt. The subagent will see each file's content prepended to the prompt in `<file>` tags.
 
-This is the preferred way to share project data (story graph, shot plan, configuration) with subagents:
+This is the preferred way to share project data (entities, events, states, shots) with subagents:
 - Keeps the prompt focused on the instruction (what to do)
 - Avoids duplicating large file contents in the maker's context
 - The subagent gets the latest file content at call time
 
-Example: `context_files: ["/path/to/story-graph.json", "/path/to/shot-plan.json"]`
+Example: `context_files: ["/path/to/entities.json", "/path/to/events.json", "/path/to/shots.json"]`
 
 Note: For stateful sessions (with `session_id`), the subagent already remembers files it read in previous calls. Only pass `context_files` on the first call or when files have changed.
 

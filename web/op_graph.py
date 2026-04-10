@@ -157,6 +157,25 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
     # Map inner tool_call_id → tool node id (for matching ToolResult)
     inner_call_to_node: dict[str, str] = {}
 
+    # --- Token & timing tracking ---
+    # Accumulated token usage per agent name
+    token_by_agent: dict[str, dict[str, int]] = {}
+    # Accumulated token usage per delegation node id
+    token_by_delegation: dict[str, dict[str, int]] = {}
+    # Total token usage
+    total_tokens: dict[str, int] = {"input_other": 0, "output": 0, "input_cache_read": 0, "input_cache_creation": 0}
+    # Delegation start/end timestamps for duration
+    delegation_start_ts: dict[str, float] = {}  # call_id -> start timestamp
+    # Tool call start timestamps
+    tool_start_ts: dict[str, float] = {}  # tool_call_id -> start timestamp
+    # Session time range
+    session_start_ts: float = 0.0
+    session_end_ts: float = 0.0
+
+    def _acc_tokens(target: dict[str, int], usage: dict[str, int]) -> None:
+        for k in ("input_other", "output", "input_cache_read", "input_cache_creation"):
+            target[k] = target.get(k, 0) + usage.get(k, 0)
+
     # For detecting parallel vs serial delegations:
     # Collect pending Task ToolCalls (not yet resolved by ToolResult).
     # If we see another Task ToolCall before the previous one's ToolResult, they are parallel.
@@ -209,6 +228,12 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
         content = entry.get("content")
         ts = entry.get("timestamp", 0)
 
+        # Track session time range
+        if ts:
+            if session_start_ts == 0.0:
+                session_start_ts = ts
+            session_end_ts = ts
+
         # User message -> potential goal (skip trivial confirmations)
         if role == "user" and isinstance(content, str) and content.strip():
             text = content.strip()
@@ -238,6 +263,15 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                     if not goal_text:
                         goal_text = text
                     ensure_goal(text)
+
+        # Top-level StatusUpdate — accumulate token usage for maker agent
+        if msg_type == "StatusUpdate":
+            usage = payload.get("token_usage", {})
+            if usage:
+                agent_name = entry.get("agent", "maker")
+                token_by_agent.setdefault(agent_name, {"input_other": 0, "output": 0, "input_cache_read": 0, "input_cache_creation": 0})
+                _acc_tokens(token_by_agent[agent_name], usage)
+                _acc_tokens(total_tokens, usage)
 
         # Top-level ToolCall
         if msg_type == "ToolCall":
@@ -274,6 +308,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 nodes.append(node_data)
                 node_ids.add(did)
                 delegations[call_id] = {"id": did, "agent": subagent, "call_id": call_id}
+                delegation_start_ts[call_id] = ts
 
                 # goal -> only the first delegation after this goal
                 if current_goal_id and not goal_connected:
@@ -306,6 +341,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 node_ids.add(tid)
                 if call_id:
                     inner_call_to_node[call_id] = tid
+                    tool_start_ts[call_id] = ts
 
                 produced, consumed = _extract_file_paths(fn_name, args)
                 for p in consumed:
@@ -328,10 +364,21 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                         if n["id"] == tool_node_id:
                             n["result"] = msg_text
                             n["is_error"] = rv.get("is_error", False)
+                            # Duration for tool_call
+                            start = tool_start_ts.get(result_call_id, 0)
+                            if start and ts:
+                                n["duration_s"] = round(ts - start, 2)
                             break
-            # Track completed Task delegations for attaching maker summaries
+            # Track completed Task delegations — compute duration
             if result_call_id in delegations:
-                recently_completed_delegations.append(delegations[result_call_id]["id"])
+                did = delegations[result_call_id]["id"]
+                recently_completed_delegations.append(did)
+                start = delegation_start_ts.get(result_call_id, 0)
+                if start and ts:
+                    for n in nodes:
+                        if n["id"] == did:
+                            n["duration_s"] = round(ts - start, 2)
+                            break
 
             if result_call_id in pending_task_calls:
                 pending_task_calls.remove(result_call_id)
@@ -367,6 +414,19 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
             if not delegation_info:
                 continue
 
+            # SubagentEvent StatusUpdate — accumulate token usage for subagent
+            if inner_type == "StatusUpdate":
+                inner_payload = inner.get("payload", {})
+                usage = inner_payload.get("token_usage", {})
+                if usage and delegation_info:
+                    agent_name = delegation_info["agent"]
+                    token_by_agent.setdefault(agent_name, {"input_other": 0, "output": 0, "input_cache_read": 0, "input_cache_creation": 0})
+                    _acc_tokens(token_by_agent[agent_name], usage)
+                    did = delegation_info["id"]
+                    token_by_delegation.setdefault(did, {"input_other": 0, "output": 0, "input_cache_read": 0, "input_cache_creation": 0})
+                    _acc_tokens(token_by_delegation[did], usage)
+                    _acc_tokens(total_tokens, usage)
+
             if inner_type == "ToolCall":
                 inner_payload = inner.get("payload", {})
                 fn = inner_payload.get("function", {})
@@ -396,6 +456,7 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 node_ids.add(tid)
                 if inner_call_id:
                     inner_call_to_node[inner_call_id] = tid
+                    tool_start_ts[inner_call_id] = ts
 
                 # delegation -> tool_call
                 edges.append({"source": delegation_info["id"], "target": tid, "type": "executes"})
@@ -433,6 +494,10 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                         if n["id"] == tool_node_id:
                             n["result"] = result_text
                             n["is_error"] = is_error
+                            # Duration for subagent tool_call
+                            start = tool_start_ts.get(result_call_id, 0)
+                            if start and ts:
+                                n["duration_s"] = round(ts - start, 2)
                             break
 
             # ContentPart inside SubagentEvent — step declaration or report
@@ -526,6 +591,19 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
                 "tool_call_ids": [n["id"]],
             })
 
+    # Attach token_usage to delegation nodes
+    for n in nodes:
+        if n["type"] == "delegation":
+            tok = token_by_delegation.get(n["id"])
+            if tok:
+                n["token_usage"] = tok
+
+    # Compute error count
+    error_count = sum(1 for n in nodes if n.get("is_error"))
+
+    # Compute total session duration
+    total_duration_s = round(session_end_ts - session_start_ts, 2) if session_start_ts else 0.0
+
     return {
         "goal": goal_text,
         "nodes": nodes,
@@ -536,5 +614,15 @@ def parse_chat_to_op_graph(chat_path: Path) -> dict[str, Any]:
             "delegations": delegation_idx,
             "tool_calls": tool_idx,
             "resources": len(resource_nodes),
+        },
+        "metrics": {
+            "total_tokens": total_tokens,
+            "total_input_tokens": total_tokens["input_other"] + total_tokens["input_cache_read"] + total_tokens["input_cache_creation"],
+            "total_output_tokens": total_tokens["output"],
+            "total_duration_s": total_duration_s,
+            "error_count": error_count,
+            "delegation_count": delegation_idx,
+            "tool_call_count": tool_idx,
+            "token_by_agent": token_by_agent,
         },
     }

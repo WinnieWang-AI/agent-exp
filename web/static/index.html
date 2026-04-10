@@ -51,6 +51,34 @@ body {
   overflow: hidden;
 }
 
+/* ---- Login Overlay ---- */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 20000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.login-overlay.hidden { display: none; }
+.login-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 40px; width: 340px;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+.login-box h2 { font-size: 18px; font-weight: 700; }
+.login-box input {
+  width: 100%; padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface2);
+  color: var(--text); font-size: 14px; outline: none;
+  font-family: var(--font-sans);
+}
+.login-box input:focus { border-color: var(--accent-blue); }
+.login-box .login-btn {
+  width: 100%; padding: 10px; border: none; border-radius: var(--radius-sm);
+  background: var(--accent-blue); color: #fff; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.15s;
+}
+.login-box .login-btn:hover { opacity: 0.85; }
+.login-box .login-err { color: var(--accent-red); font-size: 12px; min-height: 16px; }
+
 /* ---- Header ---- */
 .header {
   display: flex; align-items: center; gap: 12px;
@@ -569,6 +597,8 @@ body {
 .vv-video-card:not(.vv-video-card-latest):hover { opacity:1; }
 .vv-video-card-header { display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
 .vv-video-card-title { font-size:13px; font-weight:700; color:var(--text); }
+.vv-download-btn { margin-left:auto; font-size:16px; text-decoration:none; color:var(--accent-blue); cursor:pointer; padding:2px 6px; border-radius:4px; }
+.vv-download-btn:hover { background:var(--accent-blue); color:#fff; }
 .vv-video-card-player { margin-bottom:8px; }
 .vv-video-card-timeline { border-top:1px solid var(--border); padding-top:8px; }
 
@@ -667,6 +697,15 @@ body {
 </style>
 </head>
 <body>
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <h2>Video Agent Studio</h2>
+    <input id="loginUsername" type="text" placeholder="Enter username..." autofocus
+      onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin()}" />
+    <div class="login-err" id="loginErr"></div>
+    <button class="login-btn" onclick="doLogin()">Login</button>
+  </div>
+</div>
 <div class="header">
   <h1>Video Agent Studio</h1>
   <div class="tab-bar">
@@ -696,6 +735,7 @@ body {
     </div>
   </div>
   <div class="header-right">
+    <span id="userBadge" class="session-badge" style="display:none;cursor:pointer;" onclick="doLogout()" title="Click to logout"></span>
     <input id="resumeInput" type="text" placeholder="Paste session ID..." onkeydown="if(event.key==='Enter'){event.preventDefault();resumeSession()}" style="font-family:var(--font-mono);font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;color:var(--text);width:180px;outline:none;" />
     <button id="resumeBtn" onclick="resumeSession()" style="font-size:11px;padding:4px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface3);color:var(--text);cursor:pointer;white-space:nowrap;">Resume</button>
     <span id="sessionBadge" class="session-badge" style="display:none" title="Click to copy"></span>
@@ -1033,6 +1073,63 @@ body {
 </div><!-- .main -->
 
 <script>
+// ==== User Login ====
+let currentUserId = localStorage.getItem('userId') || '';
+
+function doLogin() {
+  const inp = document.getElementById('loginUsername');
+  const err = document.getElementById('loginErr');
+  const username = inp.value.trim();
+  if (!username) { err.textContent = 'Please enter a username'; return; }
+  err.textContent = '';
+  fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  }).then(r => {
+    if (!r.ok) return r.json().then(d => { throw new Error(d.detail || 'Login failed'); });
+    return r.json();
+  }).then(data => {
+    currentUserId = data.user_id;
+    localStorage.setItem('userId', currentUserId);
+    showApp();
+  }).catch(e => { err.textContent = e.message; });
+}
+
+function doLogout() {
+  currentUserId = '';
+  localStorage.removeItem('userId');
+  // Close all WebSocket connections
+  for (const t in S.ws) {
+    if (S.ws[t] && S.ws[t].readyState <= 1) { S.ws[t].close(1000); S.ws[t] = null; }
+  }
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginUsername').focus();
+}
+
+function showApp() {
+  document.getElementById('loginOverlay').classList.add('hidden');
+  const badge = document.getElementById('userBadge');
+  badge.textContent = currentUserId;
+  badge.title = 'Logged in as ' + currentUserId + ' (click to logout)';
+  badge.style.display = 'inline-block';
+  // Connect WebSockets after login
+  ['producer', 'maker', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
+}
+
+// Auto-login if userId is already stored
+if (currentUserId) {
+  // Validate stored userId by calling login again (also ensures dir exists)
+  fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: currentUserId }),
+  }).then(r => r.ok ? showApp() : doLogout()).catch(() => doLogout());
+} else {
+  document.getElementById('loginOverlay').classList.remove('hidden');
+}
+
 const S = {
   tab: 'producer',
   ws: {},
@@ -1040,6 +1137,8 @@ const S = {
   hasMsg: { maker: false, eval: false, auto: false, room: false, optimizer: false, producer: false },
   // Per-agent status tracking for chat room mode
   roomAgentStatus: { 'video-maker': 'ready', 'video-auto-eval': 'ready' },
+  // Message queue: when user sends while agent is busy, queue it for later
+  messageQueue: {},
 };
 const AGENTS = { maker: 'video-maker', eval: 'video-auto-eval', optimizer: 'agent-optimizer', producer: 'video-producer' };
 const curAst = {};   // current assistant element per container
@@ -1218,12 +1317,14 @@ let pendingResumeSessionId = null;
 let pendingMessage = null;
 
 function ensureWs(t) {
+  if (!currentUserId) return;
   if (S.ws[t] && S.ws[t].readyState <= 1) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const uid = encodeURIComponent(currentUserId);
   let url;
-  if (t === 'auto') url = `${proto}//${location.host}/ws/auto`;
-  else if (t === 'room') url = `${proto}//${location.host}/ws/room`;
-  else url = `${proto}//${location.host}/ws/chat/${AGENTS[t]}`;
+  if (t === 'auto') url = `${proto}//${location.host}/ws/auto?user_id=${uid}`;
+  else if (t === 'room') url = `${proto}//${location.host}/ws/room?user_id=${uid}`;
+  else url = `${proto}//${location.host}/ws/chat/${AGENTS[t]}?user_id=${uid}`;
   setStatus(t, 'connecting', 'Connecting...');
   const ws = new WebSocket(url);
   ws.onopen = () => {
@@ -1288,15 +1389,22 @@ function resumeSession() {
 function send(t) {
   const btn = document.getElementById(`btn-${t}`);
   if (btn && btn.disabled) return;
-  // If agent is working, send cancel instead
-  const st = S.status[t];
-  if (st && st.k === 'working') {
-    cancelAgent(t);
-    return;
-  }
   const inp = document.getElementById(`input-${t}`);
   const txt = inp.value.trim();
   if (!txt) return;
+  // If agent is working, queue the message for later
+  const st = S.status[t];
+  if (st && st.k === 'working') {
+    S.messageQueue[t] = txt;
+    inp.value = ''; autoH(inp);
+    if (t === 'room') closeMentionDropdown();
+    // Show queued message in chat
+    if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
+    const cid = t === 'auto' ? 'messages-auto-eval' : (t === 'room' ? 'messages-room' : `messages-${t}`);
+    if (t === 'room') addUserRoom(cid, txt);
+    else addUser(cid, txt);
+    return;
+  }
   const ws = S.ws[t];
   if (!ws || ws.readyState !== 1) { pendingMessage = { tab: t }; ensureWs(t); return; }
   if (!S.hasMsg[t]) { clearEmpty(t); S.hasMsg[t] = true; }
@@ -1305,13 +1413,23 @@ function send(t) {
   else addUser(cid, txt);
   ws.send(JSON.stringify({ type: 'message', content: txt }));
   inp.value = ''; autoH(inp);
-  // Close mention dropdown
   if (t === 'room') closeMentionDropdown();
+}
+function stopAgent(t) {
+  cancelAgent(t);
 }
 function cancelAgent(t) {
   const ws = S.ws[t];
   if (!ws || ws.readyState !== 1) return;
   ws.send(JSON.stringify({ type: 'cancel' }));
+}
+function flushMessageQueue(t) {
+  const txt = S.messageQueue[t];
+  if (!txt) return;
+  delete S.messageQueue[t];
+  const ws = S.ws[t];
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'message', content: txt }));
 }
 function onKey(e, t) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(t); }
@@ -1321,21 +1439,29 @@ function autoH(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scr
 
 // ==== Status ====
 function setStatus(t, k, txt) {
+  const wasWorking = S.status[t] && S.status[t].k === 'working';
   S.status[t] = { k, txt };
   const btn = document.getElementById(`btn-${t}`);
   if (btn) {
     if (k === 'connecting') {
       btn.disabled = true;
       btn.textContent = t === 'auto' ? 'Start' : 'Send';
+      btn.onclick = function() { send(t); };
     } else if (k === 'working' && t !== 'room') {
       btn.disabled = false;
       btn.textContent = 'Stop';
+      btn.onclick = function() { stopAgent(t); };
     } else {
       btn.disabled = false;
       btn.textContent = t === 'auto' ? 'Start' : 'Send';
+      btn.onclick = function() { send(t); };
     }
   }
   if (t === S.tab) updStatus(t);
+  // Flush queued message when agent finishes
+  if (wasWorking && k !== 'working' && k !== 'connecting') {
+    flushMessageQueue(t);
+  }
 }
 function updStatus(t) {
   const s = S.status[t] || { k: 'ready', txt: 'Ready' };
@@ -1356,7 +1482,7 @@ function onWsMsg(t, m) {
     // Update badge
     const badge = document.getElementById('sessionBadge');
     badge.textContent = 'Session: ' + short;
-    badge.title = m.session_id + ' (click to copy full ID)\nOutput: output/' + m.session_id + '/';
+    badge.title = m.session_id + ' (click to copy full ID)\nOutput: output/' + currentUserId + '/' + m.session_id + '/';
     badge.style.display = 'inline-block';
     badge.onclick = () => { navigator.clipboard.writeText(m.session_id); badge.textContent = 'Copied!'; setTimeout(() => { badge.textContent = 'Session: ' + short; }, 1500); };
     // Also show session_id as plain text next to status
@@ -1392,6 +1518,16 @@ function onWsMsg(t, m) {
       if (drTabBtn) drTabBtn.classList.add('has-data');
       if (!currentScreenplayPath) spOpenSidebar('director');
       else { _updateReopenLabel(); drLoadData(); }
+    }
+    // Restore video viewer from resume summary
+    if (m.summary && (m.summary.final_video || m.summary.director_path)) {
+      const videoBase = m.summary.director_path || (m.summary.final_video ? m.summary.final_video.substring(0, m.summary.final_video.lastIndexOf('/output/')) : '');
+      if (videoBase) {
+        vvProjectBase = videoBase;
+        const vvTabBtn = document.getElementById('sidebar-tab-vv');
+        if (vvTabBtn) vvTabBtn.classList.add('has-data');
+        vvScheduleRefresh();
+      }
     }
   } else if (m.type === 'agents' && t === 'room') {
     initRoomAgents(m.agents);
@@ -1455,23 +1591,10 @@ function routeWire(tab, wd, agent, depth) {
       finishTool(c);  // close any previous pending tool
       curAst[c] = null; // break text accumulation
       addToolActivity(c, name, p.function?.arguments, 'running');
-      // Track story-graph.json writes from ToolCall directly (more reliable than curTool for subagent events)
       if ((name === 'WriteFile' || name === 'StrReplaceFile') && p.function?.arguments) {
         try {
           const args = typeof p.function.arguments === 'string' ? JSON.parse(p.function.arguments) : p.function.arguments;
           const fp = args.path || args.file_path || '';
-          if (fp.endsWith('story-graph.json')) {
-            console.log('[SG-detect] ToolCall WriteFile detected:', fp);
-            currentStoryGraphPath = fp;
-            showStickyBar(c, fp);
-            // Schedule a delayed refresh so the graph panel picks up new reference_image paths
-            // (especially from subagent StrReplaceFile updates that may not trigger via ToolResult)
-            clearTimeout(window._sgRefreshTimer);
-            window._sgRefreshTimer = setTimeout(() => {
-              refreshStoryGraphPanel();
-            }, 1500);
-          }
-          // operation-graph.json detection removed — assets view now uses story-graph + shot-plan
           // Screenplay file detection
           spDetectScreenplayWrite(fp);
           // Director file detection
@@ -1531,7 +1654,7 @@ function routeWire(tab, wd, agent, depth) {
         output = rv.display.filter(d => d.type === 'brief').map(d => d.text || '').join('');
       }
       finishTool(c, rv.is_error ? 'error' : 'done', output);
-      // Check display blocks for media and story_graph_view
+      // Check display blocks for media
       const display = rv.display || [];
       for (const db of display) {
         if (db.type === 'image' && db.url) addMedia(c, db.url, 'image');
@@ -1571,46 +1694,9 @@ function routeWire(tab, wd, agent, depth) {
             applyTabs();
           }
         }
-        else if (db.type === 'story_graph_view' && !rv.is_error) {
-          // Detect story graph path from the ValidateStoryGraph tool args or currentStoryGraphPath
-          const sgToolInfo = curTool[c] || toolInfo;
-          const sgArgs = sgToolInfo?.args || {};
-          const sgFilePath = sgArgs.file_path || sgArgs.path || currentStoryGraphPath;
-          if (sgFilePath && sgFilePath.endsWith('story-graph.json')) {
-            console.log('[SG-detect] story_graph_view display block found, path:', sgFilePath);
-            currentStoryGraphPath = sgFilePath;
-            showStickyBar(c, sgFilePath);
-            addStoryGraphPreview(c, sgFilePath);
-            // Clear _sgPendingValidation to avoid duplicate preview from the check below
-            window._sgPendingValidation = null;
-            fetchAndLoadStoryGraph(sgFilePath);
-          }
-        }
+
       }
-      // Auto-load story graph detection
       {
-        // Also check toolInfo (works for direct tool calls, may not work for subagent)
-        if (toolInfo && !rv.is_error) {
-          const toolName = toolInfo.name || '';
-          const filePath = toolInfo.args?.path || toolInfo.args?.file_path || '';
-          if ((toolName === 'WriteFile' || toolName === 'StrReplaceFile') && filePath.endsWith('story-graph.json')) {
-            currentStoryGraphPath = filePath;
-            showStickyBar(c, filePath);
-            // Auto-refresh graph when story-graph.json is updated (e.g. reference_image paths added)
-            refreshStoryGraphPanel();
-          }
-        }
-
-        // Fallback: detect story-graph.json path in ToolResult output text
-        if (!rv.is_error && output) {
-          const sgMatch = output.match(/(\/[^\s"']+story-graph\.json)/);
-          if (sgMatch) {
-            console.log('[SG-detect] Found path in output:', sgMatch[1]);
-            currentStoryGraphPath = sgMatch[1];
-            showStickyBar(c, sgMatch[1]);
-          }
-        }
-
         // Track GenerateImage completion to update graph node status
         {
           const genToolName = toolInfo?.name || '';
@@ -1667,16 +1753,6 @@ function routeWire(tab, wd, agent, depth) {
         for (const { path, type } of mediaPaths) {
           addMedia(c, path, type);
         }
-        // Detect story-graph.json path in assistant text (fallback for subagent results)
-        const sgTextMatch = astText.match(/(\/[^\s"']+story-graph\.json)/);
-        if (sgTextMatch && !currentStoryGraphPath) {
-          currentStoryGraphPath = sgTextMatch[1];
-          showStickyBar(c, sgTextMatch[1]);
-        }
-      }
-      // If we have a known story graph path, ensure sticky bar is visible
-      if (currentStoryGraphPath) {
-        showStickyBar(c, currentStoryGraphPath);
       }
       curAst[c] = null;
       finishTool(c);
@@ -1901,7 +1977,7 @@ function addToolActivity(c, name, argsStr, status) {
   $(c).appendChild(wrapper);
   scrollBot(c);
 
-  // Store args for later inspection (e.g., detecting story-graph.json writes)
+  // Store args for later inspection
   let parsedArgs = null;
   try {
     if (argsStr && typeof argsStr === 'string') parsedArgs = JSON.parse(argsStr);
@@ -2045,11 +2121,6 @@ function showResumedSummary(t, summary) {
   }
 
   const items = [];
-  if (summary.story_graph) {
-    const sg = summary.story_graph;
-    const nRefs = (sg.entity_reference_images || 0) + (sg.state_reference_images || 0);
-    items.push(`Story Graph: ${sg.characters} characters, ${sg.locations} locations, ${sg.events} events, ${nRefs} ref images`);
-  }
   if (summary.shot_plan) {
     items.push(`Shot Plan: ${summary.shot_plan.total_shots} shots`);
   }
@@ -2074,22 +2145,6 @@ function showResumedSummary(t, summary) {
   container.appendChild(card);
   scrollBot(cid);
 
-  // If story graph exists, show inline preview and load into graph panel
-  if (summary.story_graph && summary.story_graph.path) {
-    const sgPath = summary.story_graph.path;
-    currentStoryGraphPath = sgPath;
-    showStickyBar(cid, sgPath);
-    addStoryGraphPreview(cid, sgPath);
-    fetchAndLoadStoryGraph(sgPath);
-  }
-
-  // Pre-load shot-plan.json for assets view (if story graph exists)
-  if (summary.story_graph && summary.story_graph.path) {
-    const spPath = summary.story_graph.path.replace('story-graph.json', 'shot-plan.json');
-    fetch(storyGraphUrl(spPath) + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).then(sp => {
-      if (sp) window._shotPlanData = sp;
-    }).catch(() => {});
-  }
 }
 
 function escHtml(s) {
@@ -2172,15 +2227,6 @@ function toMediaUrl(src) {
 
 
 
-// [story-graph removed] — preview, overlay, and panel functions deleted
-
-// Stubs for any remaining callsites
-function addStoryGraphPreview() {}
-function refreshStoryGraphPanel() {}
-function showStickyBar() {}
-function toggleStoryGraphPanel() {}
-function openStoryGraphOverlay() {}
-function closeStoryGraphOverlay() {}
 
 // ==== Sidebar (Screenplay + Director) ====
 // Rendering logic in screenplay-viewer.js and director-viewer.js (loaded separately)
@@ -2626,9 +2672,8 @@ function onRoomKey(e) {
   setTimeout(() => autoH(e.target), 0);
 }
 
-// ==== Init: apply tabs & pre-connect all ====
+// ==== Init: apply tabs (WebSocket connections happen after login in showApp()) ====
 applyTabs();
-['producer', 'maker', 'eval', 'auto', 'room', 'optimizer'].forEach(t => ensureWs(t));
 </script>
 
 <script>

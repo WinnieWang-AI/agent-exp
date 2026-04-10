@@ -70,35 +70,13 @@
 
 #### 3.2 选择工具：视频 API 能覆盖什么？
 
-**视频模式决策**（参照 guide-shot-strategy.md）：
-
-先判断尾帧用法（由导演的 `scene_continuous` 字段驱动）：
-
-| 条件 | 尾帧 |
-|------|------|
-| `scene_continuous = true` | 使用 |
-| `scene_continuous = false` + `transition_in = dissolve` | 使用 |
-| `scene_continuous = false` + `transition_in = cut` | 不使用 |
-
-当使用尾帧时，判断画面能否从尾帧自然延续：
-- 构图没变（景别、角度一致）+ 无新角色 → 尾帧做 `reference_image_path`，模式 = `image_to_video`，`reference_images` 留空（尾帧已包含角色画面）
-- 否则 → 尾帧放入 `reference_images`（占一个名额），模式 = `reference_to_video`
-
-生成模式：
-- 所有角色开头可见 + 动作小 → `image_to_video`（先生成首帧）
-- 角色中途出场 / 背对 / 大幅运动 → `reference_to_video`
-- 无参考图 → `text_to_video`
-
-参考图选择（参照 guide-shot-strategy.md）：
-- 从 active_during 查 focus_on 各实体的状态 → 取 reference_image 路径
-- 跨 event changed_entities → 用新状态参考图
-- 优先级截断：角色 > 场景 > 道具 > 尾帧参考
+**视频模式**：统一使用 `reference_to_video`。按 guide-shot-strategy.md 判断尾帧用法、是否需要构图参考图、参考图选择。
 
 **选择 provider：**
 
 参照 guide-tool-capabilities.md，根据该 shot 的视频模式和音频需求，选择最合适的 provider。例如：
 - 需要 reference_to_video → 排除 Kling（不支持）
-- 需要音频（有对白/音效）→ 优先选 Vidu Q3
+- 需要音频（有对白/音效）→ 优先选 Vidu
 - 纯环境镜头无音频需求 → 任意 provider 均可
 
 **音频策略决策：**
@@ -117,26 +95,26 @@
       "plan": {
         "provider": "vidu",
         "video_mode": "reference_to_video",
-        "reference_images": ["assets/images/appear_red_neat.png"],
+        "reference_images": ["assets/images/appear_red_neat.png", "assets/images/lstate_forest_bright.png"],
         "need_tail_frame": false,
-        "need_first_frame": false,
+        "need_composition_image": false,
         "audio_strategy": "video_api",
         "need_tts": false
       },
-      "reasoning": "需要 ref2v + 音频 → 选 Vidu Q3。transition_in=cut 不用尾帧。角色有走动选 ref2v"
+      "reasoning": "ref2v + 音频 → Vidu。transition_in=cut 不用尾帧。单角色无复杂空间关系，不需要构图图"
     },
-    "evt_narration_shot_1": {
+    "evt_finish_reversal_shot_3": {
       "status": "planned",
       "plan": {
         "provider": "vidu",
-        "video_mode": "text_to_video",
-        "reference_images": [],
-        "need_tail_frame": false,
-        "need_first_frame": false,
+        "video_mode": "reference_to_video",
+        "reference_images": ["__TAIL_FRAME__", "assets/images/appear_hare_flustered.png", "assets/images/lstate_trail_finish_bright.png", "assets/images/pstate_ribbon_snap.png"],
+        "need_tail_frame": true,
+        "need_composition_image": true,
         "audio_strategy": "video_api",
         "need_tts": false
       },
-      "reasoning": "纯环境镜头无参考图选 t2v。Vidu Q3 支持音频，旁白通过 prompt Sound 段描述由视频 API 生成"
+      "reasoning": "scene_continuous + 构图从 close_up 变 medium_close + 多角色空间关系 → 需要构图参考图锁定位置"
     }
   }
 }
@@ -165,51 +143,41 @@ ExtractFrame(
 )
 ```
 
-#### 4.2 首帧生成（plan.need_first_frame = true 时）
+#### 4.2 构图参考图生成（plan.need_composition_image = true 时）
+
+用于 scene_continuous 且构图变化的 shot，或有复杂空间位置关系需要精确控制的 shot。
 
 ```
 GenerateImage(
-  prompt=<首帧 prompt，按 guide-prompt-video.md 的首帧规范组装>,
-  reference_image_paths=<plan.reference_images>,
+  prompt=<构图 prompt：描述各元素的精确位置关系，按 guide-prompt-video.md 的首帧规范组装>,
+  reference_image_paths=<尾帧（如有）+ 角色/场景/道具参考图>,
   aspect_ratio=<从 meta.json>,
   negative_prompt=<从 meta.json>,
-  output_path="{project_path}/assets/frames/{shot_id}_first.png"
+  output_path="{project_path}/assets/frames/{shot_id}_comp.png"
 )
 ```
 
-首帧 prompt 使用 `@[image N]` 标记引用所有参考图，编号按 reference_image_paths 列表顺序。
+构图 prompt 使用 `@[image N]` 标记引用所有输入参考图。重点描述各角色、道具在画面中的位置和相对关系。
 
-完成后更新 generation-status.json：写入 `first_frame` 路径和 `first_frame_prompt`。
+完成后将生成的构图图路径**替换** plan.reference_images 中的尾帧位置（构图图已包含尾帧信息），更新 generation-status.json。
 
 #### 4.3 组装 Prompt + 视频生成
 
-**先确定 reference_images 数组，再写 prompt。**
+确定 reference_images 数组（顺序：构图参考图或尾帧（如有）→ 角色参考图（按 focus_on 顺序）→ 场景参考图 → 道具参考图）。
 
-Step A — 列出 reference_images 数组（按此顺序）：
-1. 尾帧（如使用）→ image_1
-2. 角色参考图（按 focus_on 顺序）→ image_2, image_3, ...
-3. 场景参考图 → 紧接角色之后
-4. 道具参考图 → 最后
-
-写下编号映射表（如 `image_1=尾帧, image_2=兔子, image_3=乌龟, image_4=场景`）。
-
-Step B — 按 `guide-prompt-video.md` 组装视频 prompt，覆盖：
-- style_prefix（开头）
-- 镜头语言（framing + angle + movement）
-- 画面内容（content）
-- 场景环境（LocationState 的 lighting/atmosphere）
-- 角色外形（从简）
-- 角色行为（interactions / mood / state_changes）
-- 角色对白（content 中已按时间顺序标注，翻译时保留位置，附带 voice_description 音色描述）
-- 旁白（narration 字段，如有）
-- Sound 段（环境音 + content 中的音效，无论音频策略如何都写入）
-- `<<<image_N>>>` 标记——**严格按 Step A 的编号映射表填写，N = 该图在 reference_images 数组中的位置（1-indexed）**
-
-Step C — 自检：逐个核对 prompt 中每个 `<<<image_N>>>` 的 N 是否与 reference_images 数组的第 N 项一致。数组有几张图，prompt 中就必须有几个不同的 `<<<image_N>>>`，不多不少。
+按 `guide-prompt-video.md` 的分段标注格式组装视频 prompt：
+- **Style**: style_prefix
+- **Camera**: framing + angle + movement
+- **Scene**: LocationState 的 lighting / atmosphere，用 `<<<location_state_id>>>` 标记
+- **Action**: content + interactions/mood/state_changes + 对白（附带 voice_description）+ 旁白。每个实体用 `<<<state_id>>>` 标记（如 `<<<appear_hare_default>>>`）
+- **Sound**: 环境音 + content 中的音效
+- **Note**: "No background music. Smooth natural motion. Physically plausible movements." + 其他约束
+- 构图参考图用 `<<<composition>>>`，尾帧用 `<<<tail_frame>>>`
+- reference_images 有几张图，prompt 中就必须有几个不同的 `<<<...>>>` 标记
 
 **跨镜头 prompt 写法**（使用了尾帧时）：
 - 描述从前一状态到当前状态的转换
-- `"The video starts from <<<image_N>>>"` 标记尾帧
+- `"The video starts from <<<tail_frame>>>"` 标记尾帧
 
 **Prompt 必须用英文。** 组装完执行 guide-prompt-video.md 的 3 点自检。
 
@@ -217,17 +185,14 @@ Step C — 自检：逐个核对 prompt 中每个 `<<<image_N>>>` 的 N 是否�
 GenerateVideoSync(
   provider=<plan.provider>,
   prompt=<组装好的 prompt>,
-  mode=<plan.video_mode>,
-  reference_images=<plan.reference_images>（仅 reference_to_video；image_to_video 时传空列表）,
-  reference_image_path=<首帧/尾帧路径>（仅 image_to_video）,
+  mode="reference_to_video",
+  reference_images=<plan.reference_images>（包含构图参考图（如有）、尾帧（如有）、角色/场景/道具参考图）,
   duration_seconds=<shot.duration_seconds>,
   aspect_ratio=<从 meta.json>,
   negative_prompt=<从 meta.json>,
   download_path="{project_path}/assets/shots/{shot_id}.mp4"
 )
 ```
-
-**注意**：`image_to_video` 模式下 `reference_images` 必须为空。角色参考图已在首帧生成（Step 4.2）或尾帧中体现，传入 reference_images 会导致 Vidu 静默切换到 ref2v 模式并丢弃首帧/尾帧。
 
 完成后更新 generation-status.json：写入 `steps.video`，记录 `has_audio`、`output_path`。
 
@@ -273,7 +238,7 @@ GenerateSpeech(
     },
     "evt_narration_shot_1": {
       "status": "done",
-      "plan": { "provider": "vidu", "video_mode": "text_to_video", "audio_strategy": "video_api", "need_tts": false },
+      "plan": { "provider": "vidu", "video_mode": "reference_to_video", "audio_strategy": "video_api", "need_tts": false },
       "steps": {
         "video": {"status": "done", "output_path": "assets/shots/evt_narration_shot_1.mp4", "has_audio": true}
       },
@@ -302,7 +267,7 @@ GenerateSpeech(
 
 1. **网络错误 / 超时** → 用相同参数重试 1 次
 2. **参数格式错误** → 修正参数后重试
-3. **`image_to_video` 失败** → 可升级为 `reference_to_video`（放宽约束）
+3. **构图参考图生成失败** → 跳过构图图，用尾帧 + 角色参考图直接 ref2v（降级为无空间精确控制）
 4. **provider 报能力不支持**（如 model not supported）→ 标记 failed，不降级、不换 provider
 5. **累计 2 次失败** → 标记 failed，继续下一个 shot
 6. **多个 shot 因同一 provider 报错** → 汇报时汇总说明
@@ -322,11 +287,11 @@ GenerateSpeech(
 在项目路径下生成：
 - `assets/shots/{shot_id}.mp4` — 视频片段
 - `assets/frames/{shot_id}_tail.png` — 尾帧（接续用）
-- `assets/frames/{shot_id}_first.png` — 首帧图（如有）
+- `assets/frames/{shot_id}_comp.png` — 构图参考图（如有）
 - `generation-status.json` — per-shot 生成状态
 
 ## 错误处理
 
 - **shots.json 缺少 shot_order**：按 events.json 的 event_sequence + shot 的 event_id/order 推断顺序，报告 warning。
-- **states.json 中 reference_image 路径不存在**：该状态无参考图，降级为 text_to_video 或仅用其他可用参考图。
+- **states.json 中 reference_image 路径不存在**：该状态无参考图，仅用其他可用参考图继续 reference_to_video。
 - **所有 shot 均失败**：停止并上报调用方，不尝试本地生成。

@@ -106,7 +106,7 @@ class StrReplaceFile(CallableTool2[Params]):
 
             # Serialize concurrent edits to the same file to prevent
             # read-modify-write race conditions (e.g. parallel StrReplaceFile
-            # calls updating story-graph.json simultaneously).
+            # calls updating the same project JSON file simultaneously).
             lock = _get_file_lock(str(p))
             async with lock:
                 # Read the file content

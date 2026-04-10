@@ -1,0 +1,147 @@
+{
+  "act_id": "act_1",
+  "scenes": [
+    {
+      "id": "scene_001",
+      "title": "妈妈的嘱托",
+      "location": "loc_village",
+      "time_of_day": "morning",
+      "mood": "温馨明快",
+      "description": "清晨的阳光洒在石板路上，小村庄刚刚苏醒。小红帽家的花园里，晨露还挂在花瓣上。",
+      "characters_present": ["char_red"],
+      "character_states": {
+        "char_red": {
+          "emotion": "开心期待",
+          "appearance": null
+        }
+      },
+      "location_state": null,
+      "props_in_scene": ["prop_basket"],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "小红帽站在家门口，阳光照在她的红色斗篷上。妈妈从屋内走出，递给她一个藤编篮子。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "妈妈，篮子里装了什么呀？好香！",
+          "tone": "好奇，兴奋"
+        },
+        {
+          "type": "action",
+          "text": "妈妈蹲下来，帮小红帽整理斗篷，轻轻拍了拍她的脸颊。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "narrator",
+          "text": "妈妈叮嘱小红帽：走大路，不要在林子里逗留，不要和陌生人说话。"
+        },
+        {
+          "type": "action",
+          "text": "小红帽用力点头，提起篮子，蹦蹦跳跳地沿着石板路向村口走去。"
+        }
+      ]
+    },
+    {
+      "id": "scene_002",
+      "title": "林间漫步",
+      "location": "loc_forest_path",
+      "time_of_day": "morning",
+      "mood": "轻快愉悦",
+      "description": "金色的阳光透过树冠洒下斑驳光影，林间小径两旁开满了野花，蝴蝶在花丛中翩翩起舞。",
+      "characters_present": ["char_red"],
+      "character_states": {
+        "char_red": {
+          "emotion": "快乐天真",
+          "appearance": null
+        }
+      },
+      "location_state": null,
+      "props_in_scene": ["prop_basket"],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "小红帽走在铺满落叶的林间小路上，红色斗篷在树影间闪动。她一手提着篮子，一手拨开路旁的灌木。"
+        },
+        {
+          "type": "action",
+          "text": "一只蓝色蝴蝶飞到小红帽鼻尖，她咯咯笑着伸手去追，在花丛间转了个圈。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "外婆一定会喜欢这些花的！",
+          "tone": "自言自语，开心"
+        },
+        {
+          "type": "action",
+          "text": "小红帽弯腰摘了几朵野花，小心翼翼地放进篮子。远处树丛中，一双黄色的眼睛正注视着她。"
+        }
+      ]
+    },
+    {
+      "id": "scene_003",
+      "title": "狼的出现",
+      "location": "loc_forest_deep",
+      "time_of_day": "midday",
+      "mood": "表面友善，暗藏危险",
+      "description": "树木变得高大而密集，阳光被遮挡得只剩零星光斑。一棵巨大的橡树旁，空气中弥漫着潮湿的泥土味。",
+      "characters_present": ["char_red", "char_wolf"],
+      "character_states": {
+        "char_red": {
+          "emotion": "从好奇到轻信",
+          "appearance": null
+        },
+        "char_wolf": {
+          "emotion": "伪善友好，内心贪婪",
+          "appearance": null
+        }
+      },
+      "location_state": {
+        "appearance": "树木高大密集，光线突然变暗，地面长满苔藓",
+        "lighting": "阳光被遮挡，只有零星光斑穿透树冠"
+      },
+      "props_in_scene": ["prop_basket"],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "小红帽走进森林深处，周围突然安静下来。一个高大的身影从橡树后缓缓走出——是一只灰褐色的大灰狼。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "你好啊小姑娘，你要去哪里呀？",
+          "tone": "温和友善，略带虚伪"
+        },
+        {
+          "type": "action",
+          "text": "小红帽没有害怕。她不认识大灰狼，觉得他看起来就像一只大狗。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "我去外婆家，给她送蛋糕和葡萄酒。她生病了，住在森林那头的小木屋里。",
+          "tone": "天真坦诚"
+        },
+        {
+          "type": "action",
+          "text": "大灰狼的耳朵微微竖起，尾巴不自觉地摇了一下。他的脑海中已经在盘算。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "这片林子里有好多漂亮的花，你为什么不摘一些带给外婆呢？",
+          "tone": "诱导，暗藏算计"
+        },
+        {
+          "type": "action",
+          "text": "小红帽看向路边的花丛，眼睛亮了起来。当她转身去摘花时，大灰狼已经悄无声息地消失在树丛中。"
+        }
+      ]
+    }
+  ]
+}

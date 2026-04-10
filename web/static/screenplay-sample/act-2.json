@@ -1,0 +1,159 @@
+{
+  "act_id": "act_2",
+  "scenes": [
+    {
+      "id": "scene_004",
+      "title": "狼的诡计",
+      "location": "loc_grandma_house",
+      "area": "area_doorway",
+      "time_of_day": "midday",
+      "mood": "紧张凶险",
+      "description": "外婆的小木屋安静地坐落在林间空地上，烟囱冒着淡淡的炊烟，碎花窗帘随风微动。",
+      "characters_present": ["char_wolf", "char_grandma"],
+      "character_states": {
+        "char_wolf": {
+          "emotion": "凶狠急切",
+          "appearance": null
+        },
+        "char_grandma": {
+          "emotion": "虚弱，被惊吓",
+          "appearance": null
+        }
+      },
+      "location_state": null,
+      "props_in_scene": [],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "大灰狼气喘吁吁地跑到外婆家门前。他整理了一下毛皮，压低嗓音。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "外婆，是我，小红帽。给您送蛋糕来了。",
+          "tone": "模仿小女孩的声音"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_grandma",
+          "text": "拉一下门栓就开了，孩子。外婆今天没力气起床。",
+          "tone": "虚弱，慈祥"
+        },
+        {
+          "type": "action",
+          "text": "大灰狼推开门，露出森森白牙。外婆惊恐地睁大眼睛，但来不及呼救。"
+        }
+      ]
+    },
+    {
+      "id": "scene_005",
+      "title": "伪装",
+      "location": "loc_grandma_house",
+      "area": "area_bedroom",
+      "time_of_day": "afternoon",
+      "mood": "诡异不安",
+      "description": "小木屋内，壁炉的火光映着墙上的影子。床上的被褥凌乱，外婆的花边睡帽和眼镜放在床头柜上。",
+      "characters_present": ["char_wolf"],
+      "character_states": {
+        "char_wolf": {
+          "emotion": "得意狡猾",
+          "appearance": "穿着外婆的白色睡衣，戴着花边睡帽，把自己裹在被子里"
+        }
+      },
+      "location_state": {
+        "appearance": "被褥凌乱，地上有挣扎的痕迹",
+        "lighting": "壁炉火光映着墙上的阴影，光线昏暗"
+      },
+      "props_in_scene": [],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "大灰狼笨拙地穿上外婆的白色睡衣，把花边睡帽扣在头上，尖耳朵从帽边露出来。"
+        },
+        {
+          "type": "action",
+          "text": "他爬上床，把被子拉到下巴，只露出戴着睡帽的脑袋。壁炉的暖光让这一切看起来几乎天衣无缝。"
+        },
+        {
+          "type": "action",
+          "text": "远处传来轻快的脚步声和小女孩的哼唱。大灰狼咧嘴笑了。"
+        }
+      ]
+    },
+    {
+      "id": "scene_006",
+      "title": "经典问答",
+      "location": "loc_grandma_house",
+      "area": "area_bedroom",
+      "time_of_day": "afternoon",
+      "mood": "悬疑紧张，从疑惑升级到恐惧",
+      "description": "温暖的小屋内，午后的阳光从碎花窗帘间透进来，壁炉劈柴声噼啪作响。",
+      "characters_present": ["char_red", "char_wolf"],
+      "character_states": {
+        "char_red": {
+          "emotion": "从疑惑到恐惧",
+          "appearance": null
+        },
+        "char_wolf": {
+          "emotion": "从伪装到暴露",
+          "appearance": "从伪装的外婆恢复原形，掀开被子露出灰褐色毛皮和尖齿"
+        }
+      },
+      "location_state": null,
+      "props_in_scene": ["prop_basket"],
+      "prop_states": {
+        "prop_basket": {
+          "appearance": "被放在桌上，格子布掀开一角"
+        }
+      },
+      "beats": [
+        {
+          "type": "action",
+          "text": "小红帽推门进来，把篮子放在桌上。她走向床边，觉得外婆今天看起来有些不同。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "外婆，你的耳朵怎么这么大呀？",
+          "tone": "疑惑"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "为了更好地听你说话呀，孩子。",
+          "tone": "压低声音模仿外婆"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "外婆，你的眼睛怎么这么大呀？",
+          "tone": "越来越不安"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "为了更好地看清你呀，孩子。",
+          "tone": "声音渐渐变粗"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "外婆，你的嘴巴怎么这么大呀？",
+          "tone": "恐惧颤抖"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_wolf",
+          "text": "为了——吃掉你！",
+          "tone": "凶狠，暴露真面目"
+        },
+        {
+          "type": "action",
+          "text": "大灰狼猛地掀开被子，扑向小红帽。小红帽发出一声尖叫。"
+        }
+      ]
+    }
+  ]
+}

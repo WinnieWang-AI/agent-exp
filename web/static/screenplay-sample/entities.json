@@ -1,0 +1,101 @@
+{
+  "characters": [
+    {
+      "id": "char_red",
+      "name": "小红帽",
+      "tags": ["主角"],
+      "fixed_traits": {
+        "age": "7岁",
+        "hair": "棕色卷发",
+        "signature_look": "红色丝绒斗篷，白色连衣裙"
+      },
+      "relationships": {
+        "char_grandma": [{"kind": "亲人"}],
+        "char_wolf": [
+          {"kind": "陌生人", "until": "scene_002"},
+          {"kind": "被欺骗者", "from": "scene_003", "until": "scene_005"},
+          {"kind": "恐惧对象", "from": "scene_006"}
+        ]
+      }
+    },
+    {
+      "id": "char_wolf",
+      "name": "大灰狼",
+      "tags": ["反派"],
+      "fixed_traits": {
+        "body": "体型高大，灰褐色毛皮",
+        "features": "尖耳竖立，尖齿，蓬松尾巴"
+      },
+      "relationships": {
+        "char_red": [
+          {"kind": "猎物目标", "until": "scene_005"},
+          {"kind": "伪装者", "from": "scene_006", "until": "scene_006"}
+        ]
+      }
+    },
+    {
+      "id": "char_grandma",
+      "name": "外婆",
+      "tags": ["主角"],
+      "fixed_traits": {
+        "age": "70岁",
+        "appearance": "灰白发丝，花边睡帽，白色睡衣",
+        "condition": "体弱多病"
+      },
+      "relationships": {
+        "char_red": [{"kind": "亲人"}]
+      }
+    },
+    {
+      "id": "char_hunter",
+      "name": "猎人",
+      "tags": ["配角"],
+      "fixed_traits": {
+        "appearance": "壮实中年男子，绿色猎装，背着猎枪",
+        "personality": "正义，警觉"
+      },
+      "relationships": {}
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_village",
+      "name": "村庄",
+      "description": "宁静的欧洲小村庄，石板路，花园篱笆"
+    },
+    {
+      "id": "loc_forest_path",
+      "name": "森林小路",
+      "description": "阳光穿透树冠的林间小径，野花遍地，蝴蝶飞舞"
+    },
+    {
+      "id": "loc_forest_deep",
+      "name": "森林深处",
+      "description": "大橡树旁的阴暗林地，光线昏暗，氛围紧张"
+    },
+    {
+      "id": "loc_grandma_house",
+      "name": "外婆的小屋",
+      "description": "林中温馨小木屋，壁炉、摇椅、碎花窗帘",
+      "areas": [
+        {"id": "area_doorway", "name": "门口", "description": "木门，门廊上挂着干花"},
+        {"id": "area_bedroom", "name": "卧室", "description": "碎花窗帘，铁架床，壁炉旁的摇椅"},
+        {"id": "area_dining", "name": "餐桌旁", "description": "木质餐桌，桌上铺着格子桌布"}
+      ]
+    }
+  ],
+  "props": [
+    {
+      "id": "prop_basket",
+      "name": "篮子",
+      "description": "藤编篮子，盖着红白格子布，装着蛋糕和葡萄酒",
+      "belongs_to": "char_red"
+    },
+    {
+      "id": "prop_axe",
+      "name": "猎斧",
+      "description": "猎人随身携带的铁斧",
+      "belongs_to": "char_hunter"
+    }
+  ]
+}

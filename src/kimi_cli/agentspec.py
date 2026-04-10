@@ -26,6 +26,7 @@ VIDEO_PRODUCER_AGENT_FILE = get_agents_dir() / "video-producer" / "agent.yaml"
 VIDEO_SCREENWRITER_AGENT_FILE = get_agents_dir() / "video-screenwriter" / "agent.yaml"
 VIDEO_CAMERA_AGENT_FILE = get_agents_dir() / "video-camera" / "agent.yaml"
 VIDEO_AUDIENCE_AGENT_FILE = get_agents_dir() / "video-audience" / "agent.yaml"
+VIDEO_AGENT_EVOLVER_FILE = get_agents_dir() / "video-agent-evolver" / "agent.yaml"
 
 
 class Inherit(NamedTuple):

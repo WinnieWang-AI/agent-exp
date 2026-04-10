@@ -31,7 +31,7 @@
 | `negative_prompt` | 负面提示词 |
 | `aspect_ratio` | 画面比例 |
 | `reference_image_paths` | 参考图路径列表（Layer 2 必填） |
-| `source` | story-graph 中的原始数据（`fixed_traits`、`visual`、`appearance`），是校验语义准确性的唯一依据 |
+| `source` | 项目数据文件中的原始数据（`fixed_traits`、`visual`、`appearance`），是校验语义准确性的唯一依据 |
 
 ---
 

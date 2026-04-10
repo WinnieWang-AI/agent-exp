@@ -22,6 +22,10 @@ def create_provider(
         from kimi_cli.tools.video.providers.kling import KlingVideoProvider
 
         return KlingVideoProvider(config, tos_config)
+    if provider_type == "seedance":
+        from kimi_cli.tools.video.providers.seedance import SeedanceVideoProvider
+
+        return SeedanceVideoProvider(config, tos_config)
     raise ValueError(f"Unknown video provider type: {config.type}")
 
 
@@ -40,8 +44,14 @@ def get_default_provider(
     """
     if not providers:
         raise ValueError("No video providers configured")
-    if preferred and preferred in providers:
-        return preferred, create_provider(providers[preferred], tos_config)
+    if preferred:
+        if preferred in providers:
+            return preferred, create_provider(providers[preferred], tos_config)
+        raise ValueError(
+            f'Unknown video provider "{preferred}". '
+            f"Available providers: {list(providers.keys())}. "
+            f"Use a provider name, not a model name."
+        )
     name = next(iter(providers))
     return name, create_provider(providers[name], tos_config)
 
@@ -77,7 +87,13 @@ def get_default_image_provider(
     """
     if not providers:
         raise ValueError("No image providers configured")
-    if preferred and preferred in providers:
-        return preferred, create_image_provider(providers[preferred], tos_config)
+    if preferred:
+        if preferred in providers:
+            return preferred, create_image_provider(providers[preferred], tos_config)
+        raise ValueError(
+            f'Unknown image provider "{preferred}". '
+            f"Available providers: {list(providers.keys())}. "
+            f"Use a provider name, not a model name."
+        )
     name = next(iter(providers))
     return name, create_image_provider(providers[name], tos_config)

@@ -91,6 +91,7 @@
 5. **事件数量合理**：与 Step 3 的估算对比，偏差不超过 50%
 6. **无遗漏场景**：outline 中的每个场景都被至少一个事件的 source_scenes 覆盖
 7. **对白完整**：剧本中的所有对白 beats 都出现在某个事件的 dialogues 中
+8. **动作完整**：剧本中的所有 action beats 都在对应事件的 description 中体现（逐场景比对 act 文件的 action beats 与事件 description，确认无遗漏）
 
 发现问题直接修复并重新写入 events.json，不需要报告给调用方。
 

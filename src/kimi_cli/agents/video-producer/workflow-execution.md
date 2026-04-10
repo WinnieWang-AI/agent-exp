@@ -1,12 +1,13 @@
 # 执行阶段：摄影 + 作曲 → 剪辑 → 交付
 
-## 前置检查
+## 输入
 
 进入执行阶段前，检查美术产出是否完整：
 
-1. 读取 `{project_path}/states.json`，收集所有 `character_appearances` 中的状态 id
-2. 检查每个角色状态是否有 `reference_image` 字段，且对应文件存在
-3. 汇总缺失列表
+1. 用 ReadFile 读取 `{project_path}/states.json`
+2. 从中收集所有 `character_appearances` 条目的 `reference_image` 字段值
+3. 对每个 `reference_image` 路径，用 `Glob` 检查文件是否存在
+4. 汇总缺失列表
 
 **判定：**
 - 所有角色状态都有参考图 → 继续执行
@@ -77,7 +78,7 @@ prompt: 项目路径、输出路径和执行指令
 context_files: ["{project_path}/meta.json", "{project_path}/shots.json"]
 ```
 
-**确定输出路径**：调度剪辑前，先用 `Glob("{project_path}/output/video_*.mp4")` 查看已有成片数量 N，本次输出路径为 `{project_path}/output/video_{N+1}.mp4`。首次为 `video_1.mp4`。
+**确定输出路径**：调度剪辑前，先用 `Glob("{project_path}/output/video_*.mp4")` 获取已有成片列表，从文件名中提取最大序号 N（如 video_1.mp4 和 video_3.mp4 → N=3），本次输出路径为 `{project_path}/output/video_{N+1}.mp4`。无已有成片时为 `video_1.mp4`。
 
 **prompt 中必须包含且仅包含：**
 - 项目路径（绝对路径）
@@ -107,6 +108,10 @@ context_files: ["{project_path}/meta.json", "{project_path}/shots.json"]
 - **满意**：项目完成
 - **要求修改**：用 ReadFile 加载 `${AGENT_DIR}/workflow-modify.md`，按其中的步骤处理。
 - **要求完整重做**：从 Step 1 重新开始（仍使用同一 session_id，子 agent 知道之前的问题）
+
+## 输出
+
+本阶段结束时，项目目录下应有成片 `{project_path}/output/video_{N}.mp4`。
 
 ## 错误处理
 

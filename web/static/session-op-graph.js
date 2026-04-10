@@ -123,7 +123,8 @@ function _sogOverview(data, nodes, edges, dataNodes, nodeMap, produces, consumes
     const tools = dataNodes.filter(c => c.type === 'tool_call' && c.parent_delegation === n.id).length;
     const agent = n.agent ? `[${n.agent}]` : '';
     const lines = [];
-    lines.push(`Step ${stepIdx} ${agent}  \u00b7 ${tools} tools`);
+    const dur = n.duration_s != null ? `  \u00b7 ${_sogFmtDuration(n.duration_s)}` : '';
+    lines.push(`Step ${stepIdx} ${agent}  \u00b7 ${tools} tools${dur}`);
     if (n.goal) {
       lines.push(`\ud83c\udfaf ${n.goal}`);
     } else {
@@ -396,6 +397,13 @@ function sogShowDetail(nodeData, targetPrefix) {
     if (raw.check_criteria) h += _sogField('\u2705 Verify', `<div style="font-size:11px;color:#6ee7b7;white-space:pre-wrap">${_sogEsc(raw.check_criteria)}</div>`);
     if (raw.seq) h += _sogField('Sequence', `#${raw.seq}` + (raw.parallel_group ? ' <span style="color:#f59e0b">parallel</span>' : ''));
     if (raw.agent) h += _sogField('Agent', _sogEsc(raw.agent));
+    // Duration & token usage
+    if (raw.duration_s != null) h += _sogField('Duration', `<span style="color:#fbbf24">${_sogFmtDuration(raw.duration_s)}</span>`);
+    if (raw.token_usage) {
+      const tu = raw.token_usage;
+      const inp = (tu.input_other||0) + (tu.input_cache_read||0) + (tu.input_cache_creation||0);
+      h += _sogField('Tokens', `<span style="color:#60a5fa">${_sogFmtTokens(inp)} in / ${_sogFmtTokens(tu.output||0)} out</span>`);
+    }
     if (raw.session_id) h += _sogField('Session', `<span style="font-family:var(--font-mono);font-size:11px">${_sogEsc(raw.session_id)}</span>`);
     if (sogData) {
       const kids = (sogData.nodes || []).filter(n => n.type === 'tool_call' && n.parent_delegation === raw.id);
@@ -409,6 +417,7 @@ function sogShowDetail(nodeData, targetPrefix) {
     if (raw.check_criteria) h += _sogField('\u2705 Verify', `<div style="font-size:11px;color:#6ee7b7;white-space:pre-wrap">${_sogEsc(raw.check_criteria)}</div>`);
     h += _sogField('Tool', `<span style="color:#6ee7b7;font-weight:600">${_sogEsc(raw.tool || '')}</span>`);
     if (raw.agent) h += _sogField('Called by', _sogEsc(raw.agent));
+    if (raw.duration_s != null) h += _sogField('Duration', `<span style="color:#fbbf24">${_sogFmtDuration(raw.duration_s)}</span>`);
     if (raw.args_preview) h += _sogField('Args', `<div style="font-family:var(--font-mono);font-size:10px;white-space:pre-wrap;max-height:200px;overflow-y:auto">${_sogEsc(raw.args_preview)}</div>`);
     if (raw.result != null) {
       const rc = raw.is_error ? '#ef4444' : '#6ee7b7';
@@ -468,11 +477,48 @@ function sogRender(data, mode) {
 }
 
 // ==== Summary ====
+function _sogFmtTokens(n) {
+  if (n == null) return '0';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function _sogFmtDuration(s) {
+  if (s == null || s <= 0) return '-';
+  if (s < 60) return s.toFixed(1) + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + Math.round((s % 3600) / 60) + 'm';
+}
+
 function sogBuildSummary(data) {
   const st = data.stats || {};
+  const m = data.metrics || {};
   let h = `<div style="font-size:11px;color:var(--text-mid);line-height:1.8;">`;
   h += `Goals: <strong>${st.goals||0}</strong> &middot; Delegations: <strong>${st.delegations||0}</strong> &middot; Tools: <strong>${st.tool_calls||0}</strong> &middot; Resources: <strong>${st.resources||0}</strong>`;
+  // Metrics row
+  if (m.total_input_tokens || m.total_output_tokens) {
+    h += `<br>Tokens: <strong>${_sogFmtTokens(m.total_input_tokens)}</strong> in / <strong>${_sogFmtTokens(m.total_output_tokens)}</strong> out`;
+  }
+  if (m.total_duration_s > 0) {
+    h += ` &middot; Duration: <strong>${_sogFmtDuration(m.total_duration_s)}</strong>`;
+  }
+  if (m.error_count > 0) {
+    h += ` &middot; <span style="color:#ef4444">Errors: <strong>${m.error_count}</strong></span>`;
+  }
   h += `</div>`;
+  // Per-agent token breakdown
+  const tba = m.token_by_agent;
+  if (tba && Object.keys(tba).length > 0) {
+    h += `<div style="margin-top:4px;font-size:10px;color:var(--text-dim);line-height:1.6;">`;
+    for (const [agent, tok] of Object.entries(tba)) {
+      const inp = (tok.input_other||0) + (tok.input_cache_read||0) + (tok.input_cache_creation||0);
+      const out = tok.output||0;
+      const ac = SOG_STYLES.agent[agent] || '#93c5fd';
+      h += `<span style="color:${ac}">${_sogEsc(agent)}</span>: ${_sogFmtTokens(inp)}/${_sogFmtTokens(out)} &nbsp;`;
+    }
+    h += `</div>`;
+  }
   if (data.goal) {
     h += `<div style="margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:4px;border-left:3px solid #7c3aed;font-size:11px;color:var(--text);">${_sogEsc(data.goal)}</div>`;
   }

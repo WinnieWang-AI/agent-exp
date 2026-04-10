@@ -57,7 +57,7 @@ context_files: ["{project_path}/entities.json", "{project_path}/events.json", "{
 
 **修复流程（最多 1 轮）：**
 
-1. 读取 `{project_path}/audience-review.json`，提取所有 issue（error 和 warning）
+1. 用 ReadFile 读取 `{project_path}/audience-review.json`，校验 JSON 顶层有 `issues` 数组且非空，每个 issue 至少包含 `event_id` 和 `description`。校验失败则跳过修复，直接继续 Step 3。
 2. 用同一 session_id 调度导演修复：
 
 ```
@@ -73,10 +73,11 @@ context_files: ["{project_path}/audience-review.json", "{project_path}/content-q
 观众审查发现以下问题，请读取 guide-fix-audience-issues.md 逐个修复：
 
 {逐条列出 issue，每条包含：}
-- 问题类型：{type}
+- 维度：{dimension}
+- 严重度：{severity}
 - 位置：{event_id} / {shot_id}
 - 问题：{description}
-- 细节：{detail}
+- 证据：{evidence}
 ```
 
 3. 导演修复并重新校验后，再调度一次观众审查（新 session_id：`audience_{project_name}_r2`）
@@ -105,7 +106,14 @@ art-designer 有自己的工作流和 prompt 规范，会从 states.json 的视�
 
 ### Step 4: 进入执行阶段
 
-美术完成后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-execution.md`，按其中的步骤调度摄影、作曲和剪辑。不等待用户确认参考图。
+美术完成后，校验制作计划文件：
+
+1. 用 `Glob("{project_path}/events.json")` 检查 events.json 是否存在
+2. 用 `Glob("{project_path}/states.json")` 检查 states.json 是否存在
+3. 用 `Glob("{project_path}/shots.json")` 检查 shots.json 是否存在
+
+全部存在 → 用 ReadFile 加载 `${AGENT_DIR}/workflow-execution.md`，按其中的步骤调度摄影、作曲和剪辑。不等待用户确认参考图。
+任一缺失 → 向用户报告缺失文件列表，不进入下一阶段。
 
 ## 输出
 
@@ -113,7 +121,8 @@ art-designer 有自己的工作流和 prompt 规范，会从 states.json 的视�
 - `events.json` — 事件列表（导演）
 - `states.json` — 实体状态与参考图路径（导演 + 美术）
 - `shots.json` — 镜头列表与播放顺序（导演）
-- `content-quiz.json` — content 可读性测试题（导演）
+- `content-quiz.json` — content 可读性测试题，只含问题（导演）
+- `content-quiz-answers.json` — 测试题标准答案（导演）
 - `audience-review.json` — 观众审查报告（观众）
 - `validation-report.json` — 导演校验报告（导演）
 - `assets/images/` — 参考图文件（美术）

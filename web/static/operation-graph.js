@@ -994,7 +994,7 @@ function computeOpGraphSummary(data) {
   return { total, done, failed, running, planned, skipped, totalDuration };
 }
 
-// ---- Utility: escape HTML (reuse from story-graph.js if available) ----
+// ---- Utility: escape HTML ----
 if (typeof escHtml === 'undefined') {
   function escHtml(s) {
     if (typeof s !== 'string') s = String(s ?? '');

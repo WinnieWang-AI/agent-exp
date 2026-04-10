@@ -30,7 +30,8 @@
 video-producer (制片人)
   ├── video-screenwriter (编剧)        — 剧本创作
   ├── video-director (导演)            — 制作计划
-  │     └── art-designer (美术)        — 参考图生成
+  ├── video-audience (观众)            — 制作计划审查
+  ├── art-designer (美术)              — 参考图生成
   ├── video-camera (摄影)              — 逐 shot 视频生成
   ├── video-composer (作曲)            — BGM 生成
   └── video-editor (剪辑)             — 后期组装
@@ -69,10 +70,14 @@ video-producer (制片人)
 顶层 agent，与用户直接对话。
 
 **文件：**
-- `agent.yaml` — 工具：Task, ReadFile, WriteFile, Glob, Grep；subagent：video-screenwriter, video-director
+- `agent.yaml` — 工具：Task, ReadFile, WriteFile, Glob, Grep, ManageVideoProject；subagent：video-screenwriter, video-director, video-audience, art-designer, video-camera, video-composer, video-editor
 - `system.md` — L0 身份层，制片人角色定义
+- `compact.md` — 上下文压缩模板
 - `workflow-setup.md` — L1 流程：需求确认 → 项目初始化 → 调度编剧
-- `workflow-production.md` — L1 流程：调度导演完成制作计划
+- `workflow-production.md` — L1 流程：调度导演 → 观众审查 → 调度美术
+- `workflow-execution.md` — L1 流程：调度摄影+作曲（并行）→ 剪辑 → 交付
+- `workflow-modify.md` — L1 流程：用户反馈修改策略（路由→执行→传播）
+- `workflow-resume.md` — L1 流程：会话恢复（项目定位→进度推断→session 恢复）
 
 **核心规则：**
 - 不做创作决策，不替子 agent 定格式
@@ -144,28 +149,26 @@ Producer 面板内的 screenplay 侧边栏（取代旧的全屏 overlay）：
 导演 agent，将编剧的剧本转化为可执行的制作计划。
 
 **文件：**
-- `agent.yaml` — 工具：Task, ReadFile, WriteFile, Glob, Grep, ValidateDirectorOutput；subagent：art-designer
+- `agent.yaml` — 工具：ReadFile, WriteFile, Glob, Grep, ValidateDirectorOutput；无 subagent
 - `system.md` — L0 身份层，导演角色定义
 - `workflow-breakdown.md` — L1：事件拆解（剧本 → events.json）
 - `workflow-states.md` — L1：实体状态规划（events.json → states.json）
-- `workflow-art.md` — L1：调度 art-designer 生成参考图
 - `workflow-shots.md` — L1：镜头设计 + 时长分配
 - `workflow-validate.md` — L1：跨文件一致性校验
 - `guide-events-schema.md` — L2：Event / Interaction / StateChange / Dialogue / EventSequence 字段定义
 - `guide-states-schema.md` — L2：CharacterAppearance / CharacterMind / PropState / LocationState / active_during 字段定义
 - `guide-shots-schema.md` — L2：镜头数据格式定义
 
-**工作流（5 步）：**
+**工作流（4 步）：**
 1. 事件拆解：读取剧本 → 将场景/beats 拆解为事件序列 → 写 events.json
 2. 实体状态规划：逐实体（角色→场景→道具）规划跨事件状态变化 → 写 states.json
-3. 美术设计：调度 art-designer 生成参考图
-4. 镜头设计：为每个事件设计 shots（画面 + 音频 + 时长）
-5. 校验：用 ValidateDirectorOutput 做跨文件一致性检查
+3. 镜头设计：为每个事件设计 shots（画面 + 音频 + 时长）
+4. 校验：用 ValidateDirectorOutput 做跨文件一致性检查
 
 **核心规则：**
 - 开始工作前先 ReadFile 加载 workflow 和 schema 文件
 - 创作决策有剧本依据，不凭空发明
-- 不碰上游（编剧产出）和下游（参考图由 art-designer 生成）
+- 不碰上游（编剧产出）和下游（参考图由 producer 调度 art-designer 生成）
 - ID 引用必须正确
 
 ### 6. 示例数据更新 (`web/static/screenplay-sample/`)
@@ -271,7 +274,7 @@ Producer 面板内的 screenplay 侧边栏（取代旧的全屏 overlay）：
 
 **进行中：**
 - [ ] Producer → Director 完整链路测试
-- [ ] Director → art-designer 参考图生成链路测试
+- [ ] Producer → art-designer 参考图生成链路测试
 
 **已实现（执行阶段）：**
 - [x] 实现 video-camera agent

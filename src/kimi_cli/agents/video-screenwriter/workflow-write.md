@@ -31,12 +31,14 @@
 - **竖屏 (9:16)**：适合单人特写、纵向空间、近距离情感
 - **横屏 (16:9)**：适合多人互动、环境交代、横向运动
 
-### Step 2: 写 meta.json
+### Step 2: 写 meta.json 并推导视觉世界规则
 
 `{project_path}/meta.json` 包含：
 - `title`：故事标题
 - `video_info`：`aspect_ratio`、`duration`、`language`（从创意简报提取）
 - `style`：`style_prefix`、`negative_prefix`（从创意简报提取）
+
+写完 meta.json 后，根据 style_prefix 推导本项目的**视觉世界规则**：画面质感、光影风格、色调、材质表现。风格决定事物**看起来**怎样（渲染方式），主题决定故事里**有什么**（角色、世界观）。后续所有视觉设计（角色 fixed_traits、地点 description、道具 description、场景 appearance）用视觉世界规则决定画面质感，用主题决定角色和世界的本体设定。
 
 ### Step 3: 设计叙事骨架
 
@@ -94,11 +96,13 @@ for each 叙事节点（按时间顺序）:
 
 outline.json 已确定所有场景、角色、地点。现在从大纲中提取实体，写入 `{project_path}/entities.json`。
 
+本步骤所有视觉描述（fixed_traits、location description、prop description）必须在 Step 2 推导的视觉世界规则内设计。
+
 #### 4.1 提取角色（characters）
 
 遍历 outline.json 所有场景的 `characters` 字段，收集去重后的角色 ID 列表。为每个角色设计：
 
-- `fixed_traits`：**必须具体且有区分度**。如果两个角色性别/年龄相近，必须在发色、服装、体型等方面制造明显差异，确保生成参考图时一眼可辨。
+- `fixed_traits`：**必须具体且有区分度**，且必须是视觉世界规则下物理上可信的特征。区分度应通过风格允许的手段实现。
 - `relationships`：引用 outline.json 中已确认的 scene ID（`from`/`until`），不要引用不存在的场景。
 
 #### 4.2 提取地点（locations）
@@ -133,7 +137,7 @@ outline.json 已确定所有场景、角色、地点。现在从大纲中提取�
 - `type: "action"`：描述观众看到的动作和画面（可见的行为，不是内心活动）
 - `type: "dialogue"`：角色对白，含 `speaker`（角色 ID 或 "narrator"）、`text`、`tone`
 - 按时间顺序排列，每个 beat 是一个叙事最小单元
-- action 要具体："小红帽弯腰摘了几朵野花" 而非 "小红帽在路边玩耍"
+- action 句子必须完整（主谓宾）：写明谁做了什么。"小红帽弯腰摘了几朵野花" 而非 "小红帽在路边玩耍"；"老奶奶推开木门走进屋内" 而非 "木门被推开"
 - 旁白（narrator）用于补充无法通过画面直接表达的信息，尽量少用
 
 **编写时持续维护观众认知状态：** 每写完一个场景的 beats，确认观众在看完这些 beats 后，已掌握理解下一场景所需的全部信息。如果发现缺口，立即补充 beat 或回到 Step 3.2 插入桥接场景。
@@ -145,7 +149,7 @@ outline.json 已确定所有场景、角色、地点。现在从大纲中提取�
 1. **空间连贯**：角色只在其所在场景中行动，场景转换有逻辑
 2. **时间线合理**：`time_of_day` 和 `period` 前后不矛盾
 3. **角色一致**：`characters_present` 与 beats 中出场的角色一致
-4. **状态显式**：所有视觉变化（换装、受伤、环境变化）都在对应的 states 中声明
+4. **状态显式**：所有视觉变化（换装、受伤、环境变化）都在对应的 states 中声明，且所有视觉描述在 Step 2 的视觉世界规则内可信
 5. **ID 引用正确**：所有角色/场景/道具 ID 在 entities.json 中存在
 6. **对白语言**：对白语言与 meta.json 中的 `language` 一致
 7. **时长匹配**：场景总数与 Step 1 的估算大致吻合

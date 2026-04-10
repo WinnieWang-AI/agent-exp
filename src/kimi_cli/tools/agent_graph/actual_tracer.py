@@ -44,7 +44,7 @@ _RESOURCE_TOOLS = {
 
 _FILE_ARG_KEYS = {
     "path", "file_path", "output_path", "image_path",
-    "save_path", "input_path", "story_graph_path", "video_path",
+    "save_path", "input_path", "video_path",
 }
 
 _TRIVIAL_RE = re.compile(

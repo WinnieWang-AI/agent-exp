@@ -34,6 +34,7 @@ ManageVideoProject(
     "session_ids": {
       "screenwriter": "screenwriter_{project_name}",
       "director": "director_{project_name}",
+      "audience": "audience_{project_name}",
       "art": "art_{project_name}",
       "camera": "camera_{project_name}",
       "composer": "composer_{project_name}",
@@ -58,8 +59,8 @@ prompt: 创意简报内容（见下方）
 ```
 
 **创意简报必须包含且仅包含：**
-- 主题：用户的故事描述
-- 风格：视觉风格关键词（英文，用于 style_prefix）
+- 主题：从用户输入中提取故事描述，原样传递
+- 风格：将用户的风格关键词直译为英文
 - 时长：如 "1min"
 - 画面比例：如 "16:9"
 - 语言：如 "中文"
@@ -75,7 +76,19 @@ prompt: 创意简报内容（见下方）
 
 ### Step 4: 进入制作阶段
 
-编剧完成后，立即用 ReadFile 加载 `${AGENT_DIR}/workflow-production.md`，按其中的步骤调度导演。不等待用户确认剧本。
+编剧完成后，校验产出文件：
+
+1. 用 `Glob("{project_path}/meta.json")` 检查 meta.json 是否存在
+2. 用 `Glob("{project_path}/entities.json")` 检查 entities.json 是否存在
+3. 用 `Glob("{project_path}/outline.json")` 检查 outline.json 是否存在
+4. 用 `Glob("{project_path}/act-*.json")` 检查至少有一个 act 文件
+
+全部存在 → 用 ReadFile 加载 `${AGENT_DIR}/workflow-production.md`，按其中的步骤调度导演。不等待用户确认剧本。
+任一缺失 → 向用户报告缺失文件列表，不进入下一阶段。
+
+## 输出
+
+本阶段结束时，项目目录下应有编剧产出：`meta.json`、`entities.json`、`outline.json`、`act-*.json`。
 
 ## 错误处理
 

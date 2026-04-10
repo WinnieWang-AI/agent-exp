@@ -75,16 +75,6 @@ class ManageVideoProject(CallableTool2[Params]):
         project_name = project.name
         project_data = {
             "name": project_name,
-            "status": "initialized",
-            "story_graph_path": str(project / "story-graph.json"),
-            "shot_plan_path": str(project / "shot-plan.json"),
-            "session_ids": {
-                "graph": f"graph_{project_name}",
-                "create_image": f"create_image_{project_name}",
-                "create": f"create_{project_name}",
-                "create_audio": f"create_audio_{project_name}",
-                "eval": f"eval_{project_name}",
-            },
             **metadata,
         }
         project_json.write_text(

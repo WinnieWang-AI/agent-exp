@@ -1,0 +1,114 @@
+{
+  "act_id": "act_3",
+  "scenes": [
+    {
+      "id": "scene_007",
+      "title": "猎人登场",
+      "location": "loc_grandma_house",
+      "area": "area_bedroom",
+      "time_of_day": "afternoon",
+      "mood": "紧张果断",
+      "description": "小木屋外，阳光透过树叶在地面投下光斑。屋内传来不寻常的鼾声，像野兽的呼噜。",
+      "characters_present": ["char_hunter", "char_wolf"],
+      "character_states": {
+        "char_hunter": {
+          "emotion": "警觉果断",
+          "appearance": null
+        },
+        "char_wolf": {
+          "emotion": "沉睡",
+          "appearance": "肚子膨胀，仍穿着外婆的睡衣，躺在床上打鼾"
+        }
+      },
+      "location_state": {
+        "appearance": "房间凌乱，被褥歪斜，地上散落着外婆的拖鞋",
+        "lighting": "午后阳光从窗户斜照进来"
+      },
+      "props_in_scene": ["prop_axe"],
+      "prop_states": null,
+      "beats": [
+        {
+          "type": "action",
+          "text": "猎人巡林路过外婆的小屋，听到里面传来震天的鼾声。他皱起眉头——老太太不会打这么响的呼噜。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_hunter",
+          "text": "不对劲……",
+          "tone": "低声自语，警觉"
+        },
+        {
+          "type": "action",
+          "text": "猎人轻轻推开门，看到床上躺着一只肚子鼓胀的大灰狼，穿着外婆的睡衣，正打着呼噜。"
+        },
+        {
+          "type": "action",
+          "text": "猎人迅速从背后取下猎斧，一步步靠近床边。他注意到大灰狼鼓起的肚子还在动。"
+        }
+      ]
+    },
+    {
+      "id": "scene_008",
+      "title": "团圆",
+      "location": "loc_grandma_house",
+      "area": "area_dining",
+      "time_of_day": "afternoon",
+      "mood": "温暖感恩",
+      "description": "外婆的小屋恢复了温馨。壁炉的火焰跳动，摇椅轻轻晃动，窗台上的花又重新被阳光照亮。",
+      "characters_present": ["char_red", "char_grandma", "char_hunter"],
+      "character_states": {
+        "char_red": {
+          "emotion": "劫后余生，感恩",
+          "appearance": null
+        },
+        "char_grandma": {
+          "emotion": "虚弱但欣慰",
+          "appearance": null
+        },
+        "char_hunter": {
+          "emotion": "欣慰",
+          "appearance": null
+        }
+      },
+      "location_state": {
+        "appearance": "小屋恢复整洁温馨，壁炉火焰跳动",
+        "lighting": "阳光从窗口照进来，温暖明亮"
+      },
+      "props_in_scene": ["prop_basket", "prop_axe"],
+      "prop_states": {
+        "prop_basket": {
+          "appearance": "篮子打开，蛋糕和葡萄酒摆在桌上"
+        },
+        "prop_axe": {
+          "appearance": "猎斧靠在墙角"
+        }
+      },
+      "beats": [
+        {
+          "type": "action",
+          "text": "猎人小心地用猎斧割开大灰狼的肚子。小红帽先跳了出来，然后外婆也被救了出来。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "char_red",
+          "text": "外婆！",
+          "tone": "哭着扑过去"
+        },
+        {
+          "type": "action",
+          "text": "小红帽紧紧抱住外婆，外婆虚弱地抚摸着她的头发。猎人站在一旁，露出宽慰的笑容。"
+        },
+        {
+          "type": "action",
+          "text": "三人围坐在桌边，吃着篮子里的蛋糕。阳光从窗口照进来，一切重归平静。"
+        },
+        {
+          "type": "dialogue",
+          "speaker": "narrator",
+          "text": "从那以后，小红帽再也不敢不听妈妈的话了。她学到了最重要的一课：不要轻信陌生人的花言巧语。",
+          "tone": "温暖收束"
+        }
+      ]
+    }
+  ]
+}

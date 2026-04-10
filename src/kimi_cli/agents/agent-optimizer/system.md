@@ -334,11 +334,14 @@ agent:
 
 用户提供的项目 ID 就是 session_id（UUID 格式）。数据分布在两个位置：
 
-**项目产物**（story-graph.json、assets、视频片段等）：
+**项目产物**（entities/events/states/shots JSON、assets、视频片段等）：
 ```
 output/{session_id}/
 ├── project.json          # 项目元数据
-├── story-graph.json      # 故事图
+├── entities.json         # 角色、场景、道具
+├── events.json           # 事件列表
+├── states.json           # 实体状态
+├── shots.json            # 镜头列表
 ├── assets/               # 生成的图片、视频等
 └── ...
 ```

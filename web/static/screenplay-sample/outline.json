@@ -1,0 +1,102 @@
+{
+  "acts": [
+    {
+      "id": "act_1",
+      "title": "第一幕：出发",
+      "summary": "小红帽受妈妈嘱托，带着篮子前往外婆家，在森林中遇到大灰狼。",
+      "scenes": [
+        {
+          "id": "scene_001",
+          "title": "妈妈的嘱托",
+          "summary": "小红帽在村庄家中收到妈妈准备的篮子，被叮嘱走大路、不要和陌生人说话。",
+          "location": "loc_village",
+          "characters": ["char_red"],
+          "time_of_day": "morning",
+          "mood": "温馨明快"
+        },
+        {
+          "id": "scene_002",
+          "title": "林间漫步",
+          "summary": "小红帽走在阳光明媚的森林小路上，欣赏花草蝴蝶，心情愉悦。",
+          "location": "loc_forest_path",
+          "characters": ["char_red"],
+          "time_of_day": "morning",
+          "mood": "轻快愉悦"
+        },
+        {
+          "id": "scene_003",
+          "title": "狼的出现",
+          "summary": "大灰狼在森林深处拦住小红帽，假装友善套话，得知她要去外婆家。",
+          "location": "loc_forest_deep",
+          "characters": ["char_red", "char_wolf"],
+          "time_of_day": "midday",
+          "mood": "表面友善，暗藏危险"
+        }
+      ]
+    },
+    {
+      "id": "act_2",
+      "title": "第二幕：危机",
+      "summary": "大灰狼抢先到达外婆家，吞掉外婆并伪装成外婆等待小红帽。",
+      "scenes": [
+        {
+          "id": "scene_004",
+          "title": "狼的诡计",
+          "summary": "大灰狼抄近路飞奔到外婆家，敲门骗过外婆，将外婆吞入腹中。",
+          "location": "loc_grandma_house",
+          "area": "area_doorway",
+          "characters": ["char_wolf", "char_grandma"],
+          "time_of_day": "midday",
+          "mood": "紧张凶险"
+        },
+        {
+          "id": "scene_005",
+          "title": "伪装",
+          "summary": "大灰狼穿上外婆的睡衣，戴上睡帽，躺在床上等待小红帽。",
+          "location": "loc_grandma_house",
+          "area": "area_bedroom",
+          "characters": ["char_wolf"],
+          "time_of_day": "afternoon",
+          "mood": "诡异不安"
+        },
+        {
+          "id": "scene_006",
+          "title": "经典问答",
+          "summary": "小红帽到达外婆家，对'外婆'的大眼睛、大耳朵、大嘴巴产生疑问，大灰狼露出真面目。",
+          "location": "loc_grandma_house",
+          "area": "area_bedroom",
+          "characters": ["char_red", "char_wolf"],
+          "time_of_day": "afternoon",
+          "mood": "悬疑紧张，从疑惑升级到恐惧"
+        }
+      ]
+    },
+    {
+      "id": "act_3",
+      "title": "第三幕：拯救",
+      "summary": "猎人及时赶到，救出小红帽和外婆，大灰狼受到惩罚。",
+      "scenes": [
+        {
+          "id": "scene_007",
+          "title": "猎人登场",
+          "summary": "路过的猎人听到屋内异常的鼾声，破门而入发现大灰狼。",
+          "location": "loc_grandma_house",
+          "area": "area_bedroom",
+          "characters": ["char_hunter", "char_wolf"],
+          "time_of_day": "afternoon",
+          "mood": "紧张果断"
+        },
+        {
+          "id": "scene_008",
+          "title": "团圆",
+          "summary": "猎人用猎斧救出外婆和小红帽，三人团聚，小红帽学到教训。",
+          "location": "loc_grandma_house",
+          "area": "area_dining",
+          "characters": ["char_red", "char_grandma", "char_hunter"],
+          "time_of_day": "afternoon",
+          "mood": "温暖感恩"
+        }
+      ]
+    }
+  ]
+}

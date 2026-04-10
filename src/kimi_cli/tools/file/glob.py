@@ -1,5 +1,7 @@
 """Glob tool implementation."""
 
+import re
+from itertools import product
 from pathlib import Path
 from typing import override
 
@@ -41,6 +43,32 @@ class Glob(CallableTool2[Params]):
     def __init__(self, builtin_args: BuiltinSystemPromptArgs) -> None:
         super().__init__()
         self._work_dir = builtin_args.KIMI_WORK_DIR
+
+    @staticmethod
+    def _expand_braces(pattern: str) -> list[str]:
+        """Expand shell-style brace expressions in a glob pattern.
+
+        e.g. "*.{mp3,wav}" -> ["*.mp3", "*.wav"]
+             "a{1,2}/b{x,y}" -> ["a1/bx", "a1/by", "a2/bx", "a2/by"]
+             "no_braces/*" -> ["no_braces/*"]
+        """
+        # Find all {a,b,...} groups
+        brace_re = re.compile(r"\{([^{}]+)\}")
+        brace_groups = brace_re.findall(pattern)
+        if not brace_groups:
+            return [pattern]
+
+        # Split each group by comma
+        alternatives = [g.split(",") for g in brace_groups]
+
+        # Generate all combinations
+        expanded = []
+        for combo in product(*alternatives):
+            result = pattern
+            for alt in combo:
+                result = brace_re.sub(alt, result, count=1)
+            expanded.append(result)
+        return expanded
 
     async def _validate_pattern(self, pattern: str) -> ToolError | None:
         """Validate that the pattern is safe to use."""
@@ -109,10 +137,19 @@ class Glob(CallableTool2[Params]):
                     brief="Invalid directory",
                 )
 
+            # Expand shell-style brace expressions (e.g. *.{mp3,wav})
+            # before calling Path.glob() which doesn't support them.
+            expanded_patterns = self._expand_braces(params.pattern)
+
             # Perform the glob search - users can use ** directly in pattern
             matches: list[KaosPath] = []
-            async for match in dir_path.glob(params.pattern):
-                matches.append(match)
+            seen: set[str] = set()
+            for pat in expanded_patterns:
+                async for match in dir_path.glob(pat):
+                    key = str(match)
+                    if key not in seen:
+                        seen.add(key)
+                        matches.append(match)
 
             # Filter out directories if not requested
             if not params.include_dirs:

@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from kaos.path import KaosPath
 
-from kimi_cli.agentspec import VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, VIDEO_PRODUCER_AGENT_FILE, VIDEO_SCREENWRITER_AGENT_FILE, VIDEO_CAMERA_AGENT_FILE
+from kimi_cli.agentspec import VIDEO_AUTO_EVAL_AGENT_FILE, AGENT_OPTIMIZER_AGENT_FILE, VIDEO_PRODUCER_AGENT_FILE, VIDEO_SCREENWRITER_AGENT_FILE, VIDEO_CAMERA_AGENT_FILE, VIDEO_AGENT_EVOLVER_FILE
 from web.op_graph import parse_chat_to_op_graph
 from kimi_cli.app import KimiCLI, enable_logging
 from kimi_cli.session import Session
@@ -78,9 +78,10 @@ async def no_cache_static(request, call_next):
 
 WORK_DIR = KaosPath.unsafe_from_local_path(Path.cwd())
 
-# Directory for web session metadata (chat logs, session info)
-WEB_SESSIONS_DIR = Path.cwd() / "output" / ".sessions"
-WEB_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+def _get_user_output_dir(user_id: str) -> Path:
+    """Get the base output directory for a user: output/{user_id}/"""
+    return Path.cwd() / "output" / user_id
 
 AGENT_FILES = {
     "video-auto-eval": VIDEO_AUTO_EVAL_AGENT_FILE,
@@ -88,6 +89,7 @@ AGENT_FILES = {
     "video-producer": VIDEO_PRODUCER_AGENT_FILE,
     "video-screenwriter": VIDEO_SCREENWRITER_AGENT_FILE,
     "video-camera": VIDEO_CAMERA_AGENT_FILE,
+    "video-agent-evolver": VIDEO_AGENT_EVOLVER_FILE,
 }
 
 
@@ -126,11 +128,11 @@ async def serve_local_file(file_path: str):
 
 @app.get("/read-json/{file_path:path}")
 async def read_json_file(file_path: str):
-    """Serve a local JSON file (e.g., story-graph.json) so the frontend can load it."""
+    """Serve a local JSON file so the frontend can load it."""
     # Try as absolute path first
     full_path = Path("/") / file_path
     if not full_path.is_file():
-        # Try relative to cwd (handles paths like "output/session_id/project/story-graph.json")
+        # Try relative to cwd
         full_path = (Path.cwd() / file_path).resolve()
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
@@ -142,28 +144,6 @@ async def read_json_file(file_path: str):
         headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
     )
 
-
-@app.get("/api/sessions/{session_id}/story-graph-view")
-async def get_story_graph_view(session_id: str):
-    """Return the raw story graph JSON for a session."""
-    session_output_dir = Path.cwd() / "output" / session_id
-    if not session_output_dir.is_dir():
-        raise HTTPException(status_code=404, detail="Session output directory not found")
-
-    story_graph_path = None
-    for p in session_output_dir.rglob("story-graph.json"):
-        story_graph_path = p
-        break
-
-    if not story_graph_path or not story_graph_path.exists():
-        raise HTTPException(status_code=404, detail="story-graph.json not found")
-
-    try:
-        sg_data = json.loads(story_graph_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse story-graph.json: {e}")
-
-    return sg_data
 
 
 @app.get("/list-dir/{dir_path:path}")
@@ -187,16 +167,16 @@ def serialize_wire_message(msg: Any) -> dict:
     return envelope.model_dump(mode="json")
 
 
-def _get_session_dir(session_id: str) -> Path:
+def _get_session_dir(session_id: str, user_id: str = "default") -> Path:
     """Get the web session directory for a given session_id."""
-    d = WEB_SESSIONS_DIR / session_id
+    d = _get_user_output_dir(user_id) / ".sessions" / session_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def _save_session_meta(session_id: str, agent_name: str, mode: str) -> None:
+def _save_session_meta(session_id: str, agent_name: str, mode: str, user_id: str = "default") -> None:
     """Save session metadata (agent, mode, timestamps)."""
-    meta_path = _get_session_dir(session_id) / "meta.json"
+    meta_path = _get_session_dir(session_id, user_id) / "meta.json"
     meta: dict[str, Any] = {}
     if meta_path.exists():
         meta = json.loads(meta_path.read_text())
@@ -239,11 +219,11 @@ def _extract_screenplay_dir(content: Any) -> str | None:
     return None
 
 
-def _build_session_summary(session_id: str) -> dict[str, Any]:
+def _build_session_summary(session_id: str, user_id: str = "default") -> dict[str, Any]:
     """Build a summary of an existing session for display on resume."""
     summary: dict[str, Any] = {"session_id": session_id}
 
-    session_output_dir = Path.cwd() / "output" / session_id
+    session_output_dir = _get_user_output_dir(user_id) / session_id
     if not session_output_dir.is_dir():
         return summary
 
@@ -371,7 +351,7 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
         summary["final_video"] = str(final_videos[0])
 
     # Scan chat log for last user message and screenplay path
-    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    chat_path = _get_session_dir(session_id, user_id) / "chat.jsonl"
     if chat_path.exists():
         last_user_msg = None
         screenplay_dir = None
@@ -397,10 +377,20 @@ def _build_session_summary(session_id: str) -> dict[str, Any]:
             if (sp_dir / "events.json").exists():
                 summary["director_path"] = screenplay_dir
 
+    # Fallback: if chat.jsonl scan didn't find screenplay_dir (e.g. WriteFile calls
+    # happened in subagent sessions), check the project directory on disk.
+    if "screenplay_path" not in summary and project_name:
+        candidate = session_output_dir / project_name
+        screenplay_markers = {"meta.json", "entities.json", "outline.json"}
+        if candidate.is_dir() and all((candidate / f).exists() for f in screenplay_markers):
+            summary["screenplay_path"] = str(candidate)
+            if (candidate / "events.json").exists():
+                summary["director_path"] = str(candidate)
+
     return summary
 
 
-def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
+def _build_resume_context(summary: dict[str, Any], session_id: str, user_id: str = "default") -> str:
     """Build an actionable resume context from the op graph (execution history).
 
     Writes the full execution history to a resume-state.md file in the project
@@ -408,7 +398,7 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
     This avoids bloating the agent context with repeated long resume messages.
     """
     # Parse op graph from chat.jsonl
-    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    chat_path = _get_session_dir(session_id, user_id) / "chat.jsonl"
     op_graph = parse_chat_to_op_graph(chat_path) if chat_path.exists() else None
 
     project_name = summary.get("project_name", "unknown")
@@ -500,7 +490,7 @@ def _build_resume_context(summary: dict[str, Any], session_id: str) -> str:
     detail_lines.append("Resume instruction: Continue from where the last step left off. Do NOT repeat DONE steps. For PARTIAL/ERROR steps, only redo the failed parts. Do NOT re-ask the user for topic/style/duration.")
 
     # --- Write full history to file ---
-    session_output_dir = Path.cwd() / "output" / session_id
+    session_output_dir = _get_user_output_dir(user_id) / session_id
     project_dir = session_output_dir / project_name if project_name != "unknown" else session_output_dir
     project_dir.mkdir(parents=True, exist_ok=True)
     resume_file = project_dir / "resume-state.md"
@@ -559,9 +549,9 @@ def _context_has_recent_resume(cli) -> bool:
     return False
 
 
-def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> None:
+def _append_chat_log(session_id: str, role: str, agent: str, content: Any, user_id: str = "default") -> None:
     """Append a chat entry to the session's chat.jsonl."""
-    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+    chat_path = _get_session_dir(session_id, user_id) / "chat.jsonl"
     entry = {
         "timestamp": time.time(),
         "role": role,
@@ -572,13 +562,13 @@ def _append_chat_log(session_id: str, role: str, agent: str, content: Any) -> No
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[KimiCLI, bool]:
+async def create_cli(agent_name: str, session_id: str | None = None, user_id: str = "default") -> tuple[KimiCLI, bool]:
     """Create a KimiCLI instance for the given agent, optionally resuming an existing session.
 
     Returns (cli, resumed) where resumed=True if an existing session was loaded.
 
-    Each session gets its own work_dir under output/{session_id}/ so that
-    project files (video clips, scripts, etc.) are isolated per session.
+    Each session gets its own work_dir under output/{user_id}/{session_id}/ so that
+    project files (video clips, scripts, etc.) are isolated per user and session.
     """
     work_dir = WORK_DIR
     agent_file = AGENT_FILES[agent_name]
@@ -588,7 +578,7 @@ async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[Ki
     if session_id:
         existing = await Session.find(work_dir, session_id)
         if existing and not existing.is_empty():
-            session_output_dir = Path.cwd() / "output" / session_id
+            session_output_dir = _get_user_output_dir(user_id) / session_id
             session_output_dir.mkdir(parents=True, exist_ok=True)
             cli = await KimiCLI.create(
                 existing,
@@ -601,7 +591,7 @@ async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[Ki
     # Create new session
     if session_id is None:
         session_id = str(uuid.uuid4())
-    session_output_dir = Path.cwd() / "output" / session_id
+    session_output_dir = _get_user_output_dir(user_id) / session_id
     # Don't mkdir here — the directory will be created on demand when tools
     # actually write files.  Creating it eagerly leaves empty dirs behind
     # when WebSocket connections fail before any real work happens.
@@ -620,12 +610,25 @@ async def create_cli(agent_name: str, session_id: str | None = None) -> tuple[Ki
 # ─── Session REST APIs ───────────────────────────────────────────────
 
 
+@app.post("/api/login")
+async def login(body: dict):
+    """Login with username only (no password). Creates user output directory."""
+    username = body.get("username", "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    if not re.match(r'^[\w\-]+$', username):
+        raise HTTPException(status_code=400, detail="Username can only contain letters, numbers, underscores, and hyphens")
+    _get_user_output_dir(username).mkdir(parents=True, exist_ok=True)
+    return {"user_id": username}
+
+
 @app.get("/api/sessions")
-async def list_sessions():
-    """List all web sessions, sorted by most recent."""
+async def list_sessions(user_id: str = "default"):
+    """List all web sessions for a user, sorted by most recent."""
     sessions = []
-    if WEB_SESSIONS_DIR.exists():
-        for d in WEB_SESSIONS_DIR.iterdir():
+    sessions_dir = _get_user_output_dir(user_id) / ".sessions"
+    if sessions_dir.exists():
+        for d in sessions_dir.iterdir():
             meta_path = d / "meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
@@ -635,9 +638,9 @@ async def list_sessions():
 
 
 @app.get("/api/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, user_id: str = "default"):
     """Get session metadata and chat history."""
-    session_dir = WEB_SESSIONS_DIR / session_id
+    session_dir = _get_user_output_dir(user_id) / ".sessions" / session_id
     if not session_dir.is_dir():
         raise HTTPException(status_code=404, detail="Session not found")
     meta_path = session_dir / "meta.json"
@@ -651,13 +654,112 @@ async def get_session(session_id: str):
     return {"meta": meta, "messages": messages}
 
 
+# Cache for op graph: {chat_path_str: (mtime, parsed_result)}
+_op_graph_cache: dict[str, tuple[float, dict]] = {}
+# Sessions that have already triggered the evolver (dedup)
+_evolver_triggered: set[str] = set()
+
+# Idle threshold for triggering evolver on abandoned sessions (seconds)
+_SESSION_IDLE_THRESHOLD = 600  # 10 minutes
+
+
+def _detect_session_complete(result: dict, chat_path: Path) -> bool:
+    """Check if the session looks complete based on op graph data.
+
+    Returns True if:
+    - A final video resource (output/*.mp4) is detected, OR
+    - The session has been idle longer than the threshold
+    """
+    # Check for final video in resource nodes
+    for n in result.get("nodes", []):
+        if n.get("type") == "resource" and n.get("resource_type") == "video":
+            path = n.get("path", "")
+            if "/output/" in path and path.endswith(".mp4"):
+                return True
+
+    # Check idle timeout (only for recent sessions, not ancient history)
+    try:
+        last_activity = chat_path.stat().st_mtime
+        idle_seconds = time.time() - last_activity
+        # Only trigger idle detection for sessions active within the last 24 hours
+        # (avoid triggering evolver on all historical sessions at startup)
+        if _SESSION_IDLE_THRESHOLD < idle_seconds < 86400:
+            return True
+    except OSError:
+        pass
+
+    return False
+
+
 @app.get("/api/sessions/{session_id}/op-graph")
-async def get_session_op_graph(session_id: str):
-    """Return the agent operation graph parsed from a session's chat.jsonl."""
-    chat_path = _get_session_dir(session_id) / "chat.jsonl"
+async def get_session_op_graph(session_id: str, user_id: str = "default"):
+    """Return the agent operation graph parsed from a session's chat.jsonl.
+
+    Uses mtime-based caching: re-parses only when chat.jsonl has been modified.
+    Designed for real-time polling (frontend polls every few seconds).
+    Also detects session completion and triggers evolver analysis once.
+    """
+    chat_path = _get_session_dir(session_id, user_id) / "chat.jsonl"
     if not chat_path.exists():
         raise HTTPException(status_code=404, detail="No chat log found for this session")
-    return parse_chat_to_op_graph(chat_path)
+
+    key = str(chat_path)
+    mtime = chat_path.stat().st_mtime
+    cached = _op_graph_cache.get(key)
+    if cached and cached[0] == mtime:
+        result = cached[1]
+    else:
+        result = parse_chat_to_op_graph(chat_path)
+        _op_graph_cache[key] = (mtime, result)
+
+    # Auto-trigger evolver when session completion is detected
+    # Must run on every poll (including cache hits) for idle timeout to work
+    if session_id not in _evolver_triggered and _detect_session_complete(result, chat_path):
+        _evolver_triggered.add(session_id)
+        asyncio.create_task(_run_evolver(session_id, user_id))
+
+    return result
+
+
+async def _run_evolver(session_id: str, user_id: str) -> None:
+    """Run the video-agent-evolver in the background to analyze a completed session."""
+    try:
+        agent_file = AGENT_FILES["video-agent-evolver"]
+        session = await Session.create(WORK_DIR)
+        session_output_dir = _get_user_output_dir(user_id) / ".sessions" / session_id
+        cli = await KimiCLI.create(
+            session,
+            agent_file=agent_file,
+            session_output_dir=str(session_output_dir),
+            yolo=True,
+        )
+        cancel = asyncio.Event()
+        prompt = f"分析 session {session_id}，session 日志路径：{session_output_dir}/chat.jsonl"
+        async for _ in cli.run(prompt, cancel):
+            pass  # consume all messages, we don't need the output
+    except Exception:
+        traceback.print_exc()
+
+
+@app.get("/api/download/{file_path:path}")
+async def download_file(file_path: str, session_id: str | None = None, user_id: str = "default"):
+    """Serve a file for download. If session_id is provided, mark session complete and trigger evolver."""
+    full_path = Path("/") / file_path
+    if not full_path.is_file():
+        full_path = Path.cwd() / file_path
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Fallback trigger: evolver analysis on video download (deduped)
+    if session_id and full_path.suffix == ".mp4" and session_id not in _evolver_triggered:
+        _evolver_triggered.add(session_id)
+        asyncio.create_task(_run_evolver(session_id, user_id))
+
+    return FileResponse(
+        str(full_path),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{full_path.name}"'},
+    )
 
 
 async def handle_question(websocket: WebSocket, msg: QuestionRequest, pending: dict):
@@ -678,7 +780,7 @@ async def handle_question(websocket: WebSocket, msg: QuestionRequest, pending: d
 
 
 @app.websocket("/ws/chat/{agent_name}")
-async def ws_chat(websocket: WebSocket, agent_name: str):
+async def ws_chat(websocket: WebSocket, agent_name: str, user_id: str = "default"):
     """
     WebSocket endpoint for chatting with a single agent.
 
@@ -703,22 +805,22 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
     requested_session_id = first_raw.get("session_id")
 
     try:
-        cli, resumed = await create_cli(agent_name, session_id=requested_session_id)
+        cli, resumed = await create_cli(agent_name, session_id=requested_session_id, user_id=user_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
         return
 
     session_id = cli.session.id
-    _save_session_meta(session_id, agent_name, mode="chat")
+    _save_session_meta(session_id, agent_name, mode="chat", user_id=user_id)
     await websocket.send_json({"type": "session", "session_id": session_id})
 
     resume_context = ""
     if resumed:
-        summary = _build_session_summary(session_id)
+        summary = _build_session_summary(session_id, user_id=user_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
         # Build resume context (writes full history to file, returns compact pointer)
-        resume_context = _build_resume_context(summary, session_id)
+        resume_context = _build_resume_context(summary, session_id, user_id=user_id)
         # Dedup: skip injection if the agent context already has a recent resume message
         if _context_has_recent_resume(cli):
             resume_context = ""
@@ -783,7 +885,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
                 content = resume_context + content
                 resume_context = ""  # only inject once
 
-            _append_chat_log(session_id, "user", "user", content)
+            _append_chat_log(session_id, "user", "user", content, user_id=user_id)
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
@@ -793,7 +895,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
                         try:
                             data = serialize_wire_message(msg)
                             await websocket.send_json({"type": "wire", "data": data})
-                            _append_chat_log(session_id, "assistant", agent_name, data)
+                            _append_chat_log(session_id, "assistant", agent_name, data, user_id=user_id)
                         except Exception:
                             pass
 
@@ -805,12 +907,13 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
 
                 except Exception as e:
                     await websocket.send_json({"type": "error", "message": str(e)})
-                _save_session_meta(session_id, agent_name, mode="chat")
+                _save_session_meta(session_id, agent_name, mode="chat", user_id=user_id)
                 await websocket.send_json({"type": "status", "status": "ready"})
 
             agent_task = asyncio.create_task(run_agent())
 
             # While agent is running, keep processing incoming messages (answers)
+            deferred_message = None
             while not agent_task.done():
                 try:
                     raw2 = await asyncio.wait_for(incoming_queue.get(), timeout=0.1)
@@ -827,8 +930,15 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
                     qmsg = pending_questions.pop(qid, None)
                     if qmsg:
                         qmsg.resolve(raw2.get("answers", {}))
+                elif raw2.get("type") == "message":
+                    # Defer: will be re-injected after agent finishes
+                    deferred_message = raw2
 
             await agent_task
+
+            # Re-inject deferred message so outer loop processes it next
+            if deferred_message is not None:
+                await incoming_queue.put(deferred_message)
 
     except WebSocketDisconnect:
         pass
@@ -839,7 +949,7 @@ async def ws_chat(websocket: WebSocket, agent_name: str):
 
 
 @app.websocket("/ws/auto")
-async def ws_auto(websocket: WebSocket):
+async def ws_auto(websocket: WebSocket, user_id: str = "default"):
     """
     WebSocket endpoint for auto-interaction mode.
 
@@ -861,21 +971,21 @@ async def ws_auto(websocket: WebSocket):
     requested_session_id = first_raw.get("session_id")
 
     try:
-        cli, resumed = await create_cli("video-auto-eval", session_id=requested_session_id)
+        cli, resumed = await create_cli("video-auto-eval", session_id=requested_session_id, user_id=user_id)
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agent: {e}"})
         await websocket.close()
         return
 
     session_id = cli.session.id
-    _save_session_meta(session_id, "video-auto-eval", mode="auto")
+    _save_session_meta(session_id, "video-auto-eval", mode="auto", user_id=user_id)
     await websocket.send_json({"type": "session", "session_id": session_id})
 
     resume_context = ""
     if resumed:
-        summary = _build_session_summary(session_id)
+        summary = _build_session_summary(session_id, user_id=user_id)
         await websocket.send_json({"type": "resumed", "summary": summary})
-        resume_context = _build_resume_context(summary, session_id)
+        resume_context = _build_resume_context(summary, session_id, user_id=user_id)
         if _context_has_recent_resume(cli):
             resume_context = ""
 
@@ -917,7 +1027,7 @@ async def ws_auto(websocket: WebSocket):
                 content = resume_context + content
                 resume_context = ""
 
-            _append_chat_log(session_id, "user", "user", content)
+            _append_chat_log(session_id, "user", "user", content, user_id=user_id)
             await websocket.send_json({"type": "status", "status": "thinking"})
             cancel_event = asyncio.Event()
 
@@ -935,7 +1045,7 @@ async def ws_auto(websocket: WebSocket):
                                 "agent": agent_label,
                                 "data": data,
                             })
-                            _append_chat_log(session_id, "assistant", agent_label, data)
+                            _append_chat_log(session_id, "assistant", agent_label, data, user_id=user_id)
                         except Exception:
                             pass
 
@@ -950,7 +1060,7 @@ async def ws_auto(websocket: WebSocket):
                 except Exception as e:
                     tb = traceback.format_exc()
                     await websocket.send_json({"type": "error", "message": f"{e}\n{tb}"})
-                _save_session_meta(session_id, "video-auto-eval", mode="auto")
+                _save_session_meta(session_id, "video-auto-eval", mode="auto", user_id=user_id)
                 await websocket.send_json({"type": "status", "status": "ready"})
 
             agent_task = asyncio.create_task(run_auto_agent())
@@ -1024,7 +1134,7 @@ Rules:
 
 
 @app.websocket("/ws/room")
-async def ws_room(websocket: WebSocket):
+async def ws_room(websocket: WebSocket, user_id: str = "default"):
     """
     Multi-agent chat room WebSocket endpoint.
 
@@ -1057,14 +1167,14 @@ async def ws_room(websocket: WebSocket):
     clis: dict[str, KimiCLI] = {}
     try:
         for agent_name in AGENT_FILES:
-            cli, _ = await create_cli(agent_name)
+            cli, _ = await create_cli(agent_name, user_id=user_id)
             clis[agent_name] = cli
     except Exception as e:
         await websocket.send_json({"type": "error", "message": f"Failed to create agents: {e}"})
         await websocket.close()
         return
 
-    _save_session_meta(session_id, "room", mode="room")
+    _save_session_meta(session_id, "room", mode="room", user_id=user_id)
     await websocket.send_json({"type": "session", "session_id": session_id})
 
     # Inject chat room context into each agent's system prompt
@@ -1104,7 +1214,7 @@ async def ws_room(websocket: WebSocket):
                     await safe_send({
                         "type": "wire", "agent": agent_name, "data": data,
                     })
-                    _append_chat_log(session_id, "assistant", agent_name, data)
+                    _append_chat_log(session_id, "assistant", agent_name, data, user_id=user_id)
                 except Exception:
                     pass
 
@@ -1120,7 +1230,7 @@ async def ws_room(websocket: WebSocket):
             await safe_send({
                 "type": "error", "agent": agent_name, "message": f"{e}\n{tb}",
             })
-        _save_session_meta(session_id, "room", mode="room")
+        _save_session_meta(session_id, "room", mode="room", user_id=user_id)
         await safe_send({
             "type": "status", "agent": agent_name, "status": "ready",
         })
@@ -1150,7 +1260,7 @@ async def ws_room(websocket: WebSocket):
             if not content:
                 continue
 
-            _append_chat_log(session_id, "user", "user", content)
+            _append_chat_log(session_id, "user", "user", content, user_id=user_id)
 
             # Parse @mentions to determine target agents
             mentions = set(m.lower() for m in MENTION_RE.findall(content))

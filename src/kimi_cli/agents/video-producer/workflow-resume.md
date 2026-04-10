@@ -28,7 +28,7 @@ Glob("${SESSION_OUTPUT_DIR}/*/meta.json")
 |----------|---------|---------|
 | 无 `meta.json` | 未开始 | 加载 workflow-setup，从 Step 1 开始 |
 | 有 `meta.json` + `entities.json` + `outline.json` + `act-*.json`，无 `events.json` | 剧本已完成 | 加载 workflow-production，从 Step 1 开始 |
-| 有 `shots.json`，无 `assets/images/*.png` | 制作计划已完成，参考图未开始 | 加载 workflow-production，从 Step 4（调度美术）开始 |
+| 有 `shots.json`，无 `assets/images/*.png` | 制作计划已完成，参考图未开始 | 加载 workflow-production，从 Step 3（调度美术）开始 |
 | 有 `shots.json` + `assets/images/*.png`，无 `generation-status.json` | 参考图已完成 | 加载 workflow-execution，从 Step 1 开始 |
 | 有 `generation-status.json` 或 `music-status.json` | 执行进行中 | ReadFile 查看状态文件，判断哪些完成哪些未完成，恢复执行 |
 | 有 `output/video_*.mp4` | 已有成片 | 向用户展示最新成片，等待反馈 |

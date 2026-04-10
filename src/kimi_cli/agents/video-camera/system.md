@@ -43,7 +43,7 @@ ${ROLE_ADDITIONAL}
 
 1. **开始工作前先加载流程和参考。** 用 ReadFile 加载 workflow-shoot.md、guide-prompt-video.md、guide-shot-strategy.md，不凭记忆操作。
 2. **所有视频必须通过 API 生成。** 禁止用 ffmpeg/Ken Burns/animatic 等本地工具生成占位视频。
-3. **prompt 必须包含 `<<<image_N>>>` 标记。** 每传入一张 reference_image，prompt 中必须有对应标记，否则角色一致性丢失。
+3. **prompt 必须包含 `<<<state_id>>>` 标记。** 每传入一张 reference_image，prompt 中必须有对应的命名标记（如 `<<<appear_hare_default>>>`），否则角色一致性丢失。工具会自动转换为位置编号。
 4. **每个 shot 独立决策。** 一个 shot 的失败不影响后续 shot 的策略选择。
 5. **诚实汇报，禁止编造。** 不编造失败原因，不虚报进展。
 

@@ -50,8 +50,9 @@ class ExtractFrame(CallableTool2[Params]):
                     message="Failed to determine video duration.",
                     brief="Probe failed",
                 )
-            # Seek to a small offset before the end to grab the last frame.
-            seek = max(duration - 0.05, 0)
+            # Seek near the end. Use a larger offset (0.5s) because some codecs
+            # cannot decode a frame when seeking very close to the end.
+            seek = max(duration - 0.5, 0)
             cmd = self._build_seek_cmd(video_path, output_path, seek)
         else:
             try:
